@@ -6,15 +6,19 @@
 ; and, once loaded, the engine's own main-RAM image.
 ;
 ;   1. MODE 129 (shadow Mode 1) + palette, while the OS is whole.
-;   2. Banks 4 and 7: staged at $3000, copied into their sideways banks.
-;   3. MHAZEL: staged at $3000 and parked in SHADOW RAM (the screen; it
-;      shows as noise during the load), bounced a page at a time through
-;      $0A00 because the CPU sees either main or shadow at $3000, not both.
+;   2. Banks 4, 7, 5 and 6: staged at $3000, copied into their sideways
+;      banks (5 and 6 are the wall textures; 6's tail the part records).
+;   3. MHAZEL, then MANDY: staged at $3000 and parked in SHADOW RAM (the
+;      screen; it shows as noise during the load) one after the other,
+;      bounced a page at a time through $0A00 because the CPU sees either
+;      main or shadow at $3000, not both.
 ;   4. From the page-9 stub: MMAIN straight to $0F00 (on the Master DFS
 ;      keeps its workspace in HAZEL, so main RAM from $0E00 is free) --
 ;      this overwrites the loader; then MCBITS to $5800. Last disc access.
-;   5. SEI; the parked block goes shadow -> $0A00 -> HAZEL ($C000);
-;      JMP DRV_ORG. No OS call after this point.
+;   5. SEI; the parked HAZEL block goes shadow -> $0A00 -> HAZEL ($C000),
+;      the parked ANDY block shadow -> ANDY ($8000, ROMSEL bit 7: the MOS
+;      keeps its font and workspace there, so it waits for the last OS
+;      call too); JMP DRV_ORG. No OS call after this point.
 ;
 ; (The first cut staged MHAZEL at $3000 AFTER the engine image was in
 ; place, which wrote the HAZEL block over engine code at $3000+.)
@@ -22,6 +26,7 @@
         .include "abi.inc"
 
 ROMSEL_COPY = $F4
+ANDY_PAGES  = 16                        ; MANDY: 4K
 ; the bounce page is $0A00, one free OS buffer page (written inline)
 
         .segment "CODE"
@@ -42,13 +47,43 @@ ldr:
         jsr $FFF7                       ; *LOAD MBANK7 3000 (bank B)
         lda #7
         jsr copy
+        ldx #<c_b5
+        ldy #>c_b5
+        jsr $FFF7                       ; *LOAD MBANK5 3000 (wall textures)
+        lda #5
+        jsr copy
+        ldx #<c_b6
+        ldy #>c_b6
+        jsr $FFF7                       ; *LOAD MBANK6 3000 (textures + parts)
+        lda #6
+        jsr copy
         ldx #<c_hz
         ldy #>c_hz
         jsr $FFF7                       ; *LOAD MHAZEL 3000
-        sei
-        lda #$30                        ; park it in shadow $3000+ (page by page)
-        sta $81
+        lda #$30                        ; park it in shadow $3000+
         ldx #HAZEL_PAGES
+        jsr park
+        ldx #<c_an
+        ldy #>c_an
+        jsr $FFF7                       ; *LOAD MANDY 3000
+        lda #$30 + HAZEL_PAGES          ; park it in shadow above HAZEL's
+        ldx #ANDY_PAGES
+        jsr park
+        ldx #stub_len
+:       lda stub_image-1,x
+        sta $0900-1,x
+        dex
+        bne :-
+        jmp $0900
+
+park:                                   ; main $3000 (X pages) -> shadow page A
+        sta $83
+        lda #$30
+        sta $81
+        lda #0
+        sta $80
+        sta $82
+        sei
 @park:  ldy #0
 @pk1:   lda ($80),y                     ; main page -> bounce
         sta $0A00,y
@@ -58,22 +93,18 @@ ldr:
         ora #$04                        ; X: CPU on shadow
         sta $FE34
 @pk2:   lda $0A00,y                    ; bounce -> shadow page
-        sta ($80),y
+        sta ($82),y
         iny
         bne @pk2
         lda $FE34
         and #$FB
         sta $FE34
         inc $81
+        inc $83
         dex
         bne @park
         cli
-        ldx #stub_len
-:       lda stub_image-1,x
-        sta $0900-1,x
-        dex
-        bne :-
-        jmp $0900
+        rts
 
 copy:                                   ; A = bank: $3000-$6FFF -> $8000
         ldx ROMSEL_COPY
@@ -106,7 +137,10 @@ copy:                                   ; A = bank: $3000-$6FFF -> $8000
 oldrom: .byte 0
 c_b4:   .byte "LOAD MBANK4 3000", 13
 c_b7:   .byte "LOAD MBANK7 3000", 13
+c_b5:   .byte "LOAD MBANK5 3000", 13
+c_b6:   .byte "LOAD MBANK6 3000", 13
 c_hz:   .byte "LOAD MHAZEL 3000", 13
+c_an:   .byte "LOAD MANDY 3000", 13
 vdu_init:
         .byte 22, 129                   ; MODE 129: Mode 1 in shadow RAM
         .byte 19, 1, 1, 0, 0, 0         ; logical 1 -> red
@@ -155,6 +189,27 @@ stub:
         inc $83
         dex
         bne @hz
+        lda #$30 + HAZEL_PAGES          ; ANDY: shadow -> $8000, direct (X puts
+        sta $81                         ; shadow at $3000-$7FFF; ROMSEL bit 7
+        lda #$80                        ; puts ANDY at $8000-$8FFF)
+        sta $83
+        sta $FE30
+        lda $FE34
+        ora #$04
+        sta $FE34
+        ldx #ANDY_PAGES
+@an:    lda ($80),y                     ; (Y = 0 from the HAZEL loop)
+        sta ($82),y
+        iny
+        bne @an
+        inc $81
+        inc $83
+        dex
+        bne @an
+        lda $FE34
+        and #$FB
+        sta $FE34
+        stz $FE30                       ; ANDY out (the engine pages its own)
         jmp DRV_ORG                     ; -> driver (SEI held; no OS from here)
 s_main:  .byte "LOAD MMAIN", 13
 s_cbits: .byte "LOAD MCBITS", 13

@@ -46,6 +46,9 @@ bsp_lo_start:
 ; ============================================================================
 reproject_at_crossing:
 .scope
+.if ::MASTER
+.import mf_xt
+.endif
 ; ---- recover count totals: clipped endpoint -> zp_cr_*, unclipped ->
 ; the zp_br_vx/vy working slots ----
    LDA zp_seg_ep
@@ -102,6 +105,11 @@ rp_norm_done:                              ;  backward-branch save)
    CMP zp_br_vy_l
    BCC rp_t_ok
 rp_use_u_j:
+.if ::MASTER
+   STZ mf_xt                               ; MASTER: t = 256 for the wall
+   LDA #1                                  ; texturer (master/mfill.s): the
+   STA mf_xt+1                             ; crossing IS the unclipped end
+.endif
    JMP rp_use_u                            ; (math block outgrows the span)
 rp_t_ok:
 ; ---- t = (n<<8 + d>>1) / d (u8, RN; n < d proven -> fast path) ----
@@ -113,6 +121,10 @@ rp_t_ok:
    PAGE BANK_C                             ; udiv16_8 lives in the CLIPPER
    JSR udiv16_8                            ; segment = bank C when banked
    STA zp_br_a                             ; (the JSR, not the SC_ inline:
+.if ::MASTER
+   STA mf_xt                               ; MASTER: the wall texturer's u
+   STZ mf_xt+1                             ; at the crossing (master/mfill.s)
+.endif
    PAGE BANK_SEG                           ;  ~100B for a rare path)
 ; ^ restore for the y-stage's VYCACHE reads (the 2026-08-09 "empirically
 ; load-bearing" mystery, root-caused 2026-08-13: project_y's VYCACHE

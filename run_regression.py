@@ -183,10 +183,11 @@ run('textured_ref', ['test_textured_ref.py'],
 # Master textured port, step 3: the span-diff fill model covers every
 # on-map pixel and agrees with the textured reference's surfaces.
 run('fill_ref', ['test_fill_ref.py'], lambda o: 'FILLREF: PASS' in o)
-# ...and the 6502 filler (src/master/mfill.s) draws exactly what it draws.
-run('master_fill', ['test_master_fill.py'], lambda o: 'MASTERFILL: PASS' in o)
 # Step 4a: the integer textured-wall model agrees with the float reference.
 run('tex_ref', ['test_tex_ref.py'], lambda o: 'TEXREF: PASS' in o)
+# Step 4b: the 6502 filler + wall texturer (src/master/mfill.s) draws
+# exactly what tex_ref draws (step 3's solid-shade gate grew into this).
+run('master_tex', ['test_master_tex.py'], lambda o: 'MASTERTEX: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):

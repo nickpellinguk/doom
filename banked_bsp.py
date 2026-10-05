@@ -207,14 +207,21 @@ def build_banked(flatr, master=False):
     # unrolled vertical plot columns + tables ($B200-$BFFF, cfg VPLOTC)
     if master:
         # MASTER: the kept bank-C run ($8000-$A0FF offsets) is MAIN RAM at
-        # CBITS_M..+$20FF; bank 6 is reserved for textures and holds a
-        # POISON pattern in the rig, so any read of bank-C data through the
-        # paged window (a missed rebase) corrupts the output instead of
-        # silently working.
+        # CBITS_M..+$20FF; banks 5 and 6 hold the wall textures (bank 6's
+        # tail the part records), ANDY the per-seg wall tables and main
+        # RAM (mtex_ix) the column index blob -- all from master_walls, as the
+        # disc ships them. (Step 1-3 poisoned bank 6 to catch a missed
+        # bank-C rebase; texels there now garble the output the same way.)
         assert len(clip) <= 0x1800, f'clipper {len(clip)} bytes reaches VEXPL_CONT'
         for i in range(0x2100):
             bm[CB + i] = c[i]
-        bm.define_bank(BANK_C, bytes([0xDB]) * 16384)
+        import master_walls as _mw
+        _ti = _mw.rig_images()
+        bm.define_bank(BANK_C, _ti['b6'])
+        bm.define_bank(5, _ti['b5'])
+        bm.define_andy(_ti['andy'])
+        for i, v in enumerate(_ti['ix']):
+            bm[_ti['ix_base'] + i] = v
     else:
         vp = open('engine_vplot_bankc.bin', 'rb').read()
         assert len(vp) <= 0x0C00, f'vplot {len(vp)} bytes overruns bank C'

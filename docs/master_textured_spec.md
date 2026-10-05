@@ -97,8 +97,10 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Unrolled wall and floor drawing loops, texture directory/headers/index tables and flat tables (1,316 B), flip table (256 B, page-aligned) |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K) |
+| HAZEL (8K) | Boot pattern + HUD at $C000; filler + wall texturer $C800–$D9DA; BSS $DC00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K); bank 6 tail $B900–$BDFF: wall part records + texture constants |
+| ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces), 3.6K |
+| Main $7A00–$7FFF | Texture column index bytes (1,046 B) |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
@@ -108,7 +110,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
   (1.75K of bank 6 spare).
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
-- **Total in the banks: ~54K of 64K.** ANDY (4K) is spare.
+- **Total in the banks: ~54K of 64K.** Since step 4 ANDY holds the per-seg
+  wall tables (3.6K of 4K).
 
 **Boot order**: the filing system uses HAZEL for workspace, so the disc loads
 everything first, then copies the drawing code and tables into HAZEL. No disc
@@ -207,25 +210,38 @@ the emulated Master): stepper set-up uses generic 32-bit maths and every
 strip is written separately with read-modify-write. Step 7 territory, but
 step 4's two-strips-per-byte writer replaces most of the write cost.
 
-**4. Textured walls.** *4a, the bit-exact model — DONE*: `tex_ref.py`
+**4. Textured walls. — DONE.** *4a, the bit-exact model*: `tex_ref.py`
 (`TexRef`, on top of `fill_ref`) textures the wall runs of step 3's fill
 in integer arithmetic the 6502 can reproduce; gated by `test_tex_ref.py`
 (in `run_regression.py`). The rules:
 
 - *v*: 5.11 fixed point, as asked: the 5 integer bits are the texel row
   (wrap at 32 for free), stepped once per line pair (a texel is the byte
-  line and its FLIP line). `step = floor(2048·th·(fc−fh) / (src_h·(B−T)))`,
-  `v = Vtop + (y_even − T)·step`, `Vtop = floor(2048·th·(ztop − fc +
-  yoff) / src_h)`, with T, B the filler's own floored line ends and ztop
-  from DOOM's pegging rules.
-- *u*: perspective-correct at each strip's centre, as an exact rational in
-  the engine's own endpoint reciprocals ((256+M8)/2^S, the nearer end
-  shifted left by the S difference, both kept to 16 bits):
-  `d = (d1·a·dj + d2·b·dk) / (a·dj + b·dk)`, where dj and dk are the
-  strip's distances to the projected ends. Both sums step by a constant
-  per strip, so the 6502 needs adds and one division per strip, no
-  multiply. A near-clipped end takes d from the engine's own crossing
-  fraction (`fp_cross_t16`).
+  line and its FLIP line):
+  - `step = K // (B−T)` per screen line, with
+    `K = 2048·th·(fc−fh) // src_h` precomputed per wall part;
+  - `v = Vtop + (y_even − T)·step`, so a pair moves 2·step;
+  - `Vtop = floor(2048·th·(ztop − fc + yoff) / src_h)`;
+  - T and B are the filler's own floored line ends; ztop follows DOOM's
+    pegging rules.
+- *u*: perspective-correct at each strip's centre. d is the distance
+  along the seg, in 1/16 world units.
+  - Weights: the engine's own endpoint reciprocals, (256+M8)/2^S. The
+    nearer end is shifted left by the S difference, and both are kept to
+    16 bits.
+  - Per seg: d is exact at the first and last visible strip centres:
+    `(d1·a + d2·b) / (a + b)`, with `a = wa·(sx2−xc)` and
+    `b = wb·(xc−sx1)` shifted together below $8000. A near-clipped end
+    takes d1 or d2 from the engine's own crossing fraction
+    (`fp_cross_t16`).
+  - Per strip: a projective map between those two ends, with their raw
+    weights normalised to 8 bits (A, B):
+    `d = (dL·A·dj + dH·B·dk) / (A·dj + B·dk)`. Numerator and denominator
+    step by constants, so the 6502 needs adds and one 32/16 division per
+    strip, and no multiply.
+  - Column: `((u & (16·src_w − 1)) · R) >> 16`, with
+    `R = 4096·tw // src_w`. Every E1M1 source width is a power of two, so
+    the texture period is an AND and no modulo is needed.
 - *Pieces*: the engine merges colinear neighbour segs with the same
   sectors. All 20 merges in E1M1 join **different linedefs** (pillars,
   switches, light strips), so the texture and its u restart at the
@@ -247,11 +263,75 @@ line ends: 6-column errors on far walls), and shifting k/W to 8 bits (a
 near-clipped end projects far off-screen, leaving ~16 u steps across the
 screen).
 
-*4b, the 6502 side* (next): per-seg texture records and their memory home;
-the per-strip u division and v stepper in HAZEL; the two-strip byte writer
-`(TEX1<<2) OR TEX2` with a single-strip fallback at run edges; the stacked
-16-high textures' row offset. *Done when*: back buffer identical to
-`tex_ref` at the 18 poses; cycle baseline recorded.
+*4b, the 6502 side — DONE*: `src/master/mfill.s` textures the wall runs
+of step 3's fill, byte-exact against `tex_ref`, gated by
+`test_master_tex.py` (in `run_regression.py`; it replaces step 3's
+`test_master_fill.py`). The disc boots on jsbeeb's Master 128 with
+textured walls (`test_master_disc.py`).
+
+- *One generator*: `master_walls.py` builds every table from the WAD, for
+  both the model and the machine. E1M1 needs:
+  - 157 wall parts (texture, K, Vtop);
+  - 197 dressings (upper, lower and solid part, u base);
+  - 17 merged segs with 37 pieces in all;
+  - per header slot, a dressing byte and the length L16.
+- *Memory homes*: `ld65` memory areas in `src/engine_master.cfg`
+  (`ANDYM`, `B6TM`, `IXM`). The tables are labelled in `mfill.s`, and the
+  image builders find them through `symmap`, so no address is baked.
+  - **ANDY** ($8000–$8FFF, ROMSEL bit 7): the slot planes, the dressing
+    table and the piece lists, 3.6K. They are read once per seg, in
+    `tx_seg`. No OS runs after the loader, so ANDY is ours; the loader
+    copies it in after the last disc access.
+  - **Bank 6 tail** ($B900–$BDFF, `mb6_*`): the part records and the
+    per-texture constants. Bank 6 is BANK_C, paged for the whole emit
+    cascade.
+  - **Main RAM** `mtex_ix` ($7A00): the column index bytes, 1,046 B. Read
+    with ACCCON X clear.
+  - **HAZEL**: the code. MFILL now runs $C800–$D9DA (4.5K); its BSS moved
+    to $DC00.
+- *Per seg* (`tx_seg`):
+  - the header slot comes from `zp_seg_hdr_p`;
+  - ANDY gives the dressing or pieces and L16;
+  - d1/d2 come from the crossing t, which `reproject_at_crossing` now
+    stores in `mf_xt` (MASTER only);
+  - the weights come from the endpoint reciprocals in the VX structs;
+  - exact d and raw weights at the visible ends;
+  - then the per-strip numerator and denominator and their constant
+    steps.
+- *Per strip*, on demand: d = n / den, one 32/16 division (16 steps), and
+  the piece holding d.
+- *Per run*:
+  - step = K / h, then v0 = Vtop + (y_even − T)·step;
+  - column = ((u & mask)·R) >> 16, then index byte, then the texel column
+    pointer (the stacked textures' 128 row offset is folded in);
+  - v steps 2·step per line pair; row = (v_hi & rowmask).
+- *Two strips per byte*:
+  - a left strip's runs park in two slots;
+  - the right strip's run pairs with an overlapping parked run in the
+    same bank;
+  - shared lines are written whole, `(TEX1<<2) OR TEX2` (FLIP on odd
+    lines), with no read;
+  - the lines before and after the overlap go through the single-strip
+    read-modify-write loop;
+  - unpaired runs flush at the next byte column and at the seg's end.
+- *Cycles* (py65, 18 poses): 56.6M in total, 2.0–5.4M per on-map frame
+  (step 3: 30.2M). Per-strip writes would cost 60.6M; the two-strip writer
+  saves about 7%. jsbeeb shows about 2.5 s a frame at spawn. The rest is
+  per-strip and per-run arithmetic: shift-add multiplies and divides,
+  which step 7 tables and unrolls.
+- *Reference gap, found and reported, not fixed here*:
+  - The Python reference's projector rounds sx where the engine's count
+    projector (`bsp/project.s`, net shift S−3 = 0 at S = 3) truncates.
+    This is a pre-existing Python/6502 mismatch.
+  - It shows on very near walls' off-screen endpoints: 1 seg fill in the
+    18-pose corpus.
+  - Step 3's clamped T/B hid it. The texture's v exposes it.
+  - `test_master_tex.py` reads the engine's own geometry at every
+    `mf_fill`. Such a seg may differ only in its own cells; the count is
+    capped at 2.
+  - Fixing the reference (mirroring the truncating kernel in
+    `fp.fp_project_x` for S ≤ 3) touches every Python gate. It is left
+    for a separate change.
 
 **5. Floors and ceilings.** Row spans from the clip spans' edges; per-row
 distance table and step; 16×16 lookup; NUKAGE frame cycling. *Done when*:
@@ -272,8 +352,13 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
 - **Dark sources go black**: FLAT14 (blue carpet) is entirely black and
   FLOOR1_1 nearly so; COMPTILE's blue panel too. Brightness matching with one
   global gain does this; a per-texture gain is the fix if it matters.
-- **Per-seg texture data** (texture ids, u base, y offset, pegging, and the
-  pieces of the 20 merged segs) is not yet in the budget (step 4b).
+- **Wall parts use static sector heights**: step 6 must recompute K and
+  Vtop for the parts of moving sectors (doors, lift), and the
+  sky-to-sky rule if a mover's ceiling meets the sky.
+- **Two-sided masked middles** (the 7 BRNBIG/BROWNGRN panels) are not drawn
+  yet: the span-diff fill only fills what the span updates remove.
+- **Reference sx rounding at S = 3** (see step 4b): a pre-existing
+  Python/6502 projector mismatch, reported by `test_master_tex.py`.
 - **Frame rate**: filling 10,240 screen bytes at roughly 25–30 cycles per byte
   on top of ~156K cycles of BSP work suggests a few frames per second;
   step 7 decides whether lower-detail options are needed.

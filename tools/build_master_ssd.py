@@ -12,10 +12,14 @@ Files on the disc (DFS, boot option *RUN):
   !BOOT   loader, $1900 (src/master/mboot.s)
   MBANK4  bank A image (seg headers, verts, recips, ...)  staged $3000
   MBANK7  bank B image (nodes, bbox, collision, anim)     staged $3000
+  MBANK5  wall textures                                   staged $3000
+  MBANK6  wall textures, flats, the mb6 part records      staged $3000
   MMAIN   engine MAIN $0F00-$57FF (driver + code)         loads in place
-  MCBITS  bank-C content laid linear, $5800-$79FF         loads in place
-  MHAZEL  HAZEL: pattern, HUD, FLIP, font at $C000; the step-3 filler
-          and its sky map at $C800                        staged $3000
+  MCBITS  bank-C content laid linear, $5800-$79FF, and
+          the mtex_ix column index blob to $7FFF          loads in place
+  MHAZEL  HAZEL: pattern, HUD, FLIP, font at $C000; the filler +
+          wall texturer and its sky map at $C800          staged $3000
+  MANDY   ANDY: the per-seg wall tables (master_walls)    staged $3000
 """
 import os, subprocess, sys
 
@@ -80,29 +84,36 @@ def engine_images():
     r = MasterBspRender(dw.packed_layout, dw.packed_rom_main, dw.packed_rom_detail,
                         dw.packed_bbox_table, dw.MAP_CENTER_X, dw.MAP_CENTER_Y, dw.PRESCALE)
     bm = r.bm
+    import master_walls
+    ti = master_walls.rig_images()
     b4 = bytes(bm._banks[abi.BANK_SEG])
     b7 = bytes(bm._banks[abi.BANK_WALK])
     main = bytes(bm[abi.LOW_BASE:abi.CBITS_M])
-    cbits = bytes(bm[abi.CBITS_M:0x7A00])           # code + C data + VPTAB
-    hzeng = bytes(bm[0xC800:0xD000])                # the filler + its sky map
-    return b4, b7, main, cbits, hzeng
+    cbits = bytes(bm[abi.CBITS_M:0x8000])           # code + C data + VPTAB + mtex_ix
+    assert cbits[ti['ix_base'] - abi.CBITS_M:][:len(ti['ix'])] == ti['ix']
+    hzeng = bytes(bm[0xC800:0xDC00])                # the filler + texturer + sky map
+    return b4, b7, ti['b5'], ti['b6'], ti['andy'], main, cbits, hzeng
 
 
 def build():
     os.makedirs(OUT, exist_ok=True)
     hazel_tables()
-    b4, b7, main, cbits, hzeng = engine_images()
+    b4, b7, b5, b6, andy, main, cbits, hzeng = engine_images()
     hz = asm('mhazel')
     assert len(hz) <= 0x800, 'boot HAZEL block runs into the filler at $C800'
     hz = hz.ljust(0x800, b'\0') + hzeng            # $C000 pattern/HUD | $C800 filler
+    assert len(andy) == 0x1000
     boot = asm('mboot', (f'HAZEL_PAGES={(len(hz) + 255) // 256}',))
-    assert len(main) == 0x4900 and len(cbits) == 0x2200
+    assert len(main) == 0x4900 and len(cbits) == 0x2800
     files = [('!BOOT', HOST | 0x1900, HOST | 0x1900, boot),
              ('MBANK4', HOST | 0x3000, HOST | 0x3000, b4),
              ('MBANK7', HOST | 0x3000, HOST | 0x3000, b7),
+             ('MBANK5', HOST | 0x3000, HOST | 0x3000, b5),
+             ('MBANK6', HOST | 0x3000, HOST | 0x3000, b6),
              ('MMAIN', HOST | abi.LOW_BASE, HOST | abi.LOW_BASE, main),
              ('MCBITS', HOST | abi.CBITS_M, HOST | abi.CBITS_M, cbits),
-             ('MHAZEL', HOST | 0x3000, HOST | 0x3000, hz)]
+             ('MHAZEL', HOST | 0x3000, HOST | 0x3000, hz),
+             ('MANDY', HOST | 0x3000, HOST | 0x3000, andy)]
     path = os.path.join(OUT, 'doom_master.ssd')
     ssd(files, path)
     for n, l, e, d in files:

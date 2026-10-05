@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""Per-seg wall texture data for the BBC Master port (step 4,
+docs/master_textured_spec.md).
+
+ONE generator for both consumers: tex_ref.py (the bit-exact Python model)
+reads its tables from here, and the image builders seed the 6502's copies
+from the same bytes, so the model and the machine cannot disagree about
+what a seg is dressed in.
+
+  texture params  per texture id: tw, th (32, or 16 for the stacked short
+                  ones), mask = 16*src_w - 1 (src_w is a power of two for
+                  every E1M1 texture, so u mod the texture period is an
+                  AND), R = 4096*tw // src_w (column = (u & mask)*R >> 16)
+  PARTS           one textured wall part: (texture id, K, Vtop)
+                    K    = 2048*th*(fc - fh) // src_h  (0 if fc <= fh); the
+                           5.11 step per line pair is K // h, h = B - T
+                    Vtop = 2048*th*(ztop - fc + yoff) // src_h  (s16 mod
+                           2^16), ztop from DOOM's pegging rules
+  DRESSINGS       what one seg (or one piece of a merged seg) wears:
+                  (up part, lo part, mid part, ubase) -- a portal draws its
+                  top band with `up` and its bottom band with `lo`, a solid
+                  seg its whole band with `mid` (mid texture, else lower,
+                  else upper: textured_ref's rule for walled two-sided
+                  lines); ubase = seg offset + sidedef x offset (world
+                  units). NONE ($FF) = no texture: that band's wall rows
+                  show the ceiling shade (a sky-to-sky upper shows sky)
+  MERGED segs     the engine merges colinear neighbour segs with the same
+                  sectors; all 20 merges in E1M1 join different linedefs,
+                  so a merged seg is a list of PIECES (start in 1/16 world
+                  units from the engine seg's v1, dressing id) and a strip
+                  picks the last piece whose start <= d
+  per SLOT        (the engine's page-slotted seg header slot = its packed
+                  seg index): dressing id, or N_DRESS + merged-list id, and
+                  L16 = round(16 * seg length)
+
+Sector heights are the static WAD heights: movers (step 6) will recompute
+the K / Vtop of the parts their sectors touch.
+"""
+import math
+
+DONTPEGTOP, DONTPEGBOTTOM = 0x08, 0x10
+NONE = 0xFF
+SKY = 'F_SKY1'
+
+
+def _name(b):
+    return b.rstrip(b'\0').decode().upper()
+
+
+class Walls:
+    def __init__(self, dw, tex, man):
+        """dw: doom_wireframe; tex: name -> (texel array, src_w, src_h) as
+        textured_ref loads it; man: master_assets manifest (assets.json)."""
+        self.dw = dw
+        self.tex = tex
+        self.tid = {t['name']: t['id'] for t in man['textures']}
+        self.tparams = []
+        for t in man['textures']:
+            tb, sw, sh = tex[t['name']]
+            th, tw = tb.shape
+            assert sw & (sw - 1) == 0, f"{t['name']}: source width {sw} not a power of two"
+            self.tparams.append(dict(name=t['name'], tw=tw, th=th, sw=sw, sh=sh,
+                                     mask=16 * sw - 1, R=(4096 * tw) // sw))
+        self.parts, self._part_ix = [], {}
+        self.dress, self._dress_ix = [], {}
+        self.pieces = []                       # merged segs: [(start16, dressing)]
+        n = len(dw.fp_segs_vwh)
+        self.slot_dress = [0] * n
+        self.slot_len = [0] * n
+        self.info = [self._seg(si) for si in range(n)]
+        # slot byte: a dressing id, or len(dress) + merged-list id
+        nd = len(self.dress)
+        self.slot_dress = [v if v >= 0 else nd + (-1 - v) for v in self.slot_dress]
+        assert nd + len(self.pieces) <= 256, 'slot byte overflow'
+
+    # ---- builders ---------------------------------------------------------
+    def _part(self, name, ztop, fc, fh, yoff):
+        if name == '-' or name not in self.tid:
+            return NONE
+        p = self.tparams[self.tid[name]]
+        K = (2048 * p['th'] * (fc - fh)) // p['sh'] if fc > fh else 0
+        vtop = ((2048 * p['th'] * (ztop - fc + yoff)) // p['sh']) & 0xFFFF
+        key = (self.tid[name], K, vtop)
+        if key not in self._part_ix:
+            self._part_ix[key] = len(self.parts)
+            self.parts.append(dict(tid=key[0], K=K, vtop=vtop))
+        return self._part_ix[key]
+
+    def _dressing(self, sd, flags, ubase, front, back):
+        fh, fc = front[0], front[1]
+        up, lo, mid = _name(sd[2]), _name(sd[3]), _name(sd[4])
+        th = lambda nm: self.tex[nm][2] if nm in self.tex else 0
+        # solid: mid texture, else lower, else upper
+        m = mid if mid != '-' else (lo if lo != '-' else up)
+        ztop = fh + th(m) if flags & DONTPEGBOTTOM else fc   # (the middle
+        p_mid = self._part(m, ztop, fc, fh, sd[1])           #  rule, fallbacks too)
+        p_up = p_lo = NONE
+        if back is not None:
+            sky_sky = _name(front[3]) == SKY and _name(back[3]) == SKY
+            if not sky_sky:
+                ztop = fc if flags & DONTPEGTOP else back[1] + th(up)
+                p_up = self._part(up, ztop, fc, fh, sd[1])
+            ztop = fc if flags & DONTPEGBOTTOM else back[0]
+            p_lo = self._part(lo, ztop, fc, fh, sd[1])
+        assert 0 <= ubase < 256, ubase
+        key = (p_up, p_lo, p_mid, ubase)
+        if key not in self._dress_ix:
+            self._dress_ix[key] = len(self.dress)
+            self.dress.append(key)
+        return self._dress_ix[key]
+
+    def _seg(self, si):
+        dw = self.dw
+        seg, front, back = dw.fp_segs_vwh[si][:3]
+        front = dw.sectors[front]
+        back = dw.sectors[back] if back is not None and back >= 0 else None
+        V1, V2 = dw.vertexes[seg[0]], dw.vertexes[seg[1]]
+        dx, dy = V2[0] - V1[0], V2[1] - V1[1]
+        L2 = dx * dx + dy * dy
+        along = lambda v: (v[0] - V1[0]) * dx + (v[1] - V1[1]) * dy
+        raw = []
+        for s in dw.segs:
+            if s[2] != seg[2]:
+                continue
+            a, b = dw.vertexes[s[0]], dw.vertexes[s[1]]
+            if any((p[0] - V1[0]) * dy != (p[1] - V1[1]) * dx for p in (a, b)):
+                continue
+            if 0 <= along(a) < L2 and 0 < along(b) <= L2:
+                raw.append((along(a), s))
+        raw.sort()
+        assert raw and raw[0][0] == 0, f'seg {si}: no raw seg at v1'
+        pcs = []
+        for at, s in raw:
+            ld = dw.linedefs[s[3]]
+            sd = dw.sidedefs[ld[5] if s[4] == 0 else ld[6]]
+            start = int(round(16 * at / math.sqrt(L2)))
+            pcs.append((start, self._dressing(sd, ld[2], s[5] + sd[0], front, back)))
+        self.slot_len[si] = int(round(16 * math.sqrt(L2)))
+        if len(pcs) == 1:
+            self.slot_dress[si] = pcs[0][1]
+        else:
+            self.slot_dress[si] = -1 - len(self.pieces)    # fixed up below
+            self.pieces.append(pcs)
+        return dict(front=front, back=back, sky=_name(front[3]) == SKY)
+
+    # ---- lookups (the model's view of the tables) -------------------------
+    def dressing_at(self, si, d):
+        """(piece start, dressing) holding distance d (1/16 units) along
+        seg si: the last piece whose start <= d (the first if none)."""
+        v = self.slot_dress[si]
+        if v < len(self.dress):
+            return 0, self.dress[v]
+        cur = None
+        for start, dr in self.pieces[v - len(self.dress)]:
+            if cur is None or d >= start:
+                cur = (start, dr)
+        return cur[0], self.dress[cur[1]]
+
+    def images(self, man):
+        """The 6502's copies: {'andy': 4K at man_slot_d's page (ANDY),
+        'b6t': bytes at mb6_pt_tid (bank 6 tail), 'ix': bytes at mtex_ix},
+        laid out by the MASTER link's labels (src/master/mfill.s)."""
+        from symmap import sym
+        L = lambda n: sym(n, banked=2)
+        andy_base, b6t_base = L('man_slot_d'), L('mb6_pt_tid')
+        assert andy_base == 0x8000
+        andy = bytearray(0x1000)
+        put = lambda n, i, v: andy.__setitem__(L(n) - andy_base + i, v)
+        n = len(self.slot_dress)
+        assert n <= 0x300
+        for i in range(n):
+            put('man_slot_d', i, self.slot_dress[i])
+            put('man_slot_ll', i, self.slot_len[i] & 0xFF)
+            put('man_slot_lh', i, self.slot_len[i] >> 8)
+        assert len(self.dress) <= 0x100
+        for i, (up, lo, mid, ub) in enumerate(self.dress):
+            put('man_dr_up', i, up)
+            put('man_dr_lo', i, lo)
+            put('man_dr_mid', i, mid)
+            put('man_dr_ub', i, ub)
+        k = 0
+        assert len(self.pieces) <= 0x20
+        for m, pcs in enumerate(self.pieces):
+            put('man_pl_first', m, k)
+            put('man_pl_n', m, len(pcs))
+            assert len(pcs) <= 4, 'tx_seg holds at most 4 pieces'
+            for start, dr in pcs:
+                put('man_pc_sl', k, start & 0xFF)
+                put('man_pc_sh', k, start >> 8)
+                put('man_pc_dr', k, dr)
+                k += 1
+        assert k <= 0x40
+        put('man_ndress', 0, len(self.dress))
+        b6t = bytearray(0x500)
+        bput = lambda n, i, v: b6t.__setitem__(L(n) - b6t_base + i, v)
+        assert len(self.parts) <= 0xA0
+        for i, p in enumerate(self.parts):
+            bput('mb6_pt_tid', i, p['tid'])
+            assert p['K'] < 1 << 24
+            for j in range(3):
+                bput(f'mb6_pt_k{j}', i, (p['K'] >> (8 * j)) & 0xFF)
+            bput('mb6_pt_v0', i, p['vtop'] & 0xFF)
+            bput('mb6_pt_v1', i, p['vtop'] >> 8)
+        ix = bytearray()
+        ix_base = L('mtex_ix')
+        assert len(self.tparams) <= 0x20
+        for t, tp in zip(man['textures'], self.tparams):
+            i = t['id']
+            assert t['ptr'] & 0xFF == 0 and t['rowoff'] in (0, 128)
+            assert tp['th'] == (16 if t['rowoff'] or t['height'] == 16 else 32)
+            bput('mb6_tp_rl', i, tp['R'] & 0xFF)
+            bput('mb6_tp_rh', i, tp['R'] >> 8)
+            bput('mb6_tp_ml', i, tp['mask'] & 0xFF)
+            bput('mb6_tp_mh', i, tp['mask'] >> 8)
+            bput('mb6_tp_rowm', i, (tp['th'] - 1) * 8)
+            bput('mb6_tp_ph', i, t['ptr'] >> 8)
+            bput('mb6_tp_bank', i, t['bank'])
+            bput('mb6_tp_ro', i, t['rowoff'])
+            a = ix_base + len(ix)
+            bput('mb6_tp_ixl', i, a & 0xFF)
+            bput('mb6_tp_ixh', i, a >> 8)
+            assert len(t['index']) == tp['tw']
+            ix += bytes(t['index'])
+        assert len(ix) <= 0x600, 'column index blob overruns mtex_ix'
+        return {'andy': bytes(andy), 'b6t': bytes(b6t), 'b6t_base': b6t_base,
+                'ix': bytes(ix), 'ix_base': ix_base}
+
+    def report(self):
+        return (f'{len(self.parts)} parts, {len(self.dress)} dressings, '
+                f'{len(self.pieces)} merged segs '
+                f'({sum(len(p) for p in self.pieces)} pieces), '
+                f'{len(self.slot_dress)} slots')
+
+
+_RIG = None
+
+
+def rig_images():
+    """Everything the MASTER build's wall texturer reads, as the disc ships
+    it: bank 5, bank 6 (texels + the mb6 tail), ANDY, and the mtex_ix blob
+    for main RAM. Cached per process (the asset build and the walk of the
+    map are slow)."""
+    global _RIG
+    if _RIG is None:
+        import textured_ref as T
+        R = T.TexturedRef()
+        W = Walls(R.dw, R.tex, R.A.man)
+        im = W.images(R.A.man)
+        b5 = bytearray(16384)
+        b6 = bytearray(16384)
+        for bank, buf in ((5, b5), (6, b6)):
+            load, data = R.A.banks[bank]
+            buf[load - 0x8000:load - 0x8000 + len(data)] = data
+        t6 = im['b6t_base'] - 0x8000
+        assert len(R.A.banks[6][1]) <= t6, 'bank 6 texels reach the mb6 tail'
+        b6[t6:t6 + len(im['b6t'])] = im['b6t']
+        _RIG = dict(b5=bytes(b5), b6=bytes(b6), andy=im['andy'], ix=im['ix'],
+                    ix_base=im['ix_base'])
+    return _RIG
+
+
+if __name__ == '__main__':
+    import os
+    os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+    import textured_ref as T
+    R = T.TexturedRef()
+    W = Walls(R.dw, R.tex, R.A.man)
+    print(W.report())
+    print('max K', max(p['K'] for p in W.parts), 'max L16', max(W.slot_len))
+    im = W.images(R.A.man)
+    print({k: len(v) for k, v in im.items()})

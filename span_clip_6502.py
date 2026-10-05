@@ -238,10 +238,13 @@ class SpanClip6502:
         mem[0x01DE] = 0xFF
         mpu.processorCycles = 0
         lines = self.last_lines = []
+        hooks = getattr(self, 'pc_hooks', None)    # {pc: fn(mpu)}: gates' probes
         for _ in range(max_cycles):
             pc = mpu.pc
             if pc == 0xFF00:
                 break
+            if hooks and pc in hooks:
+                hooks[pc](mpu)
             op = mem[pc]
             if op == 0x20 or op == 0x48 or op == 0x08 or op == 0x00:
                 sp = mpu.sp
