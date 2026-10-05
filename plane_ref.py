@@ -32,8 +32,8 @@ the pair's odd line).
             steps U += dU, V += dV per byte -- two adds, one texel read.
             Up = 1024 * world x, Vp = -1024 * world y of the eye (DOOM flats
             run -y down), from the engine's 8.8 prescaled position.
-  texel     flat[(V >> 12) * 16 + (U >> 12)]; NUKAGE1 shows frame
-            NUKAGE1 + n (n = the animation frame, 0..2).
+  texel     flat[(V >> 12) * 16 + (U >> 12)] (NUKAGE1 is static: its
+            animation frames were dropped for memory).
   shade     sky ceilings stay solid cyan; a plane the eye is not on the
             right side of (D <= 0) keeps its step-4 shade.
 
@@ -54,9 +54,8 @@ def _name(b):
 
 
 class PlaneRef(X.TexRef):
-    def __init__(self, nukage=0):
+    def __init__(self):
         super().__init__()
-        self.nukage = nukage
         self.flat = self.T.flat                     # name -> 16x16 bytes
         self.fid = {f['name']: f['id'] for f in self.T.A.man['flats']}
 
@@ -113,8 +112,6 @@ class PlaneRef(X.TexRef):
         v = (v0 + kb * dv) & 0xFFFF
         sec = info['front']
         pic = _name(sec[2] if kind == 'f' else sec[3])
-        if pic.startswith('NUKAGE'):
-            pic = f'NUKAGE{(self.fid[pic] + self.nukage) % 3 + 1}'
         return ('F', int(self.flat[pic][v >> 12, u >> 12]), kind, u >> 12, v >> 12, pic)
 
 

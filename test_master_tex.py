@@ -9,8 +9,7 @@ shadow RAM behind ACCCON X, objects off -- and compares the 10K back
 buffer with tex_ref's bytes, byte for byte (step 3's solid-shade gate,
 test_master_fill.py, grew into this one). Poses that look off the map are
 compared too: unfilled cells are zero on both sides. Writes the 6502's
-frames to build/master/tex6502/. Also checks NUKAGE frames 1 and 2 at a
-pose over the nukage pool. Prints MASTERTEX: PASS.
+frames to build/master/tex6502/. Prints MASTERTEX: PASS.
 
 ONE KNOWN REFERENCE GAP, reported, not hidden: the model takes each seg's
 projected geometry from the packed Python reference, and that reference
@@ -39,7 +38,7 @@ from banked_bsp import MasterBspRender
 poses = C.POSITIONS
 if len(sys.argv) == 4:
     poses = [tuple(float(a) if '.' in a else int(a) for a in sys.argv[1:])]
-F = P.PlaneRef()                        # NUKAGE frame 0 (mf_tick poked below)
+F = P.PlaneRef()
 R = MasterBspRender(dw.packed_layout, dw.packed_rom_main, dw.packed_rom_detail,
                     dw.packed_bbox_table, dw.MAP_CENTER_X, dw.MAP_CENTER_Y, dw.PRESCALE)
 from symmap import sym
@@ -70,7 +69,6 @@ fails, tot = [], 0
 for pose in poses:
     want = F.render(*pose)
     eng.clear(); pend.clear()
-    mem[_S('mf_tick')] = 0xFF               # mf_frame steps it to 0: NUKAGE1
     cyc = R.render_frame(*pose, dw.player_floor(*pose[:2]))
     got = R.framebuffer()
     tot += cyc
@@ -96,21 +94,6 @@ for pose in poses:
         fails.append(f'{pose}: {len(bad)} bytes differ, first at line {y} '
                      f'byte column {(i & 511) >> 3}: 6502 ${got[i]:02X} model ${want[i]:02X}')
     print(f'  {pose}: {"same" if not raw else f"{raw - len(bad)} bytes differ in gap segs" if not bad else f"{len(bad)} bytes differ"}, {cyc:,} cycles')
-# NUKAGE: the animation frame (mf_tick / 8 mod 3, stepped by mf_frame) at
-# a pose looking over the nukage pool, frames 1 and 2
-if len(sys.argv) != 4:
-    NPOSE = (1792.34375, -3351.375, 108)
-    for frame in (1, 2):
-        F.nukage = frame
-        want = F.render(*NPOSE)
-        mem[_S('mf_tick')] = 8 * frame - 1
-        R.render_frame(*NPOSE, dw.player_floor(*NPOSE[:2]))
-        got = R.framebuffer()
-        bad = sum(got[i] != want[i] for i in range(10240))
-        print(f'  NUKAGE frame {frame} at {NPOSE}: {"same" if not bad else f"{bad} bytes differ"}')
-        if bad:
-            fails.append(f'NUKAGE frame {frame}: {bad} bytes differ')
-    F.nukage = 0
 print(f'total {tot:,} cycles over {len(poses)} poses; {gap_segs} reference-gap seg(s)')
 if gap_segs > MAX_GAP_SEGS:
     fails.append(f'{gap_segs} segs differ from the reference geometry (cap {MAX_GAP_SEGS})')

@@ -59,13 +59,17 @@ TEX_H = 32                       # stored texture height (texels)
 SHORT_H = 16                     # height of a stacked half
 STACKED = [('NUKE24', 'STEP6'), ('EXITSIGN', 'STEP1')]   # (top, bottom)
 FLAT_N = 16                      # flats are FLAT_N x FLAT_N
-ANIM_FLATS = [['NUKAGE1', 'NUKAGE2', 'NUKAGE3']]          # stored in order
+ANIM_FLATS = []                  # animated flat groups, stored in order (the
+                                 # NUKAGE1-3 cycle was dropped: memory)
 SKY_FLAT = 'F_SKY1'
 
 # Demo economies: a texture clipped to a power-of-two slice of its source
 # (x0, width), which the engine's u mask then tiles. COMPUTE2 (256x56, 18
 # pages) tiles its first 64-unit panel module instead.
 CLIP = {'COMPUTE2': (0, 64)}
+# Two-sided lines' middle textures (masked: grates and fences) are never
+# drawn by the Master renderer and no wall part uses them: not stored.
+DROP = {'BRNBIGC', 'BRNBIGL', 'BRNBIGR'}
 
 
 def clipped(name, img):
@@ -74,7 +78,9 @@ def clipped(name, img):
         x0, cw = CLIP[name]
         img = img[:, x0:x0 + cw]
     return img
-DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0xC000)]
+# Bank 6 stops at $A500: above it the fill's cold code (engine_master.cfg
+# B6CM) and the mb6 tables.
+DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0xA500)]
 
 
 def mode1_byte(pixels):
@@ -219,7 +225,7 @@ def map_usage():
     walls, exposure = set(), {}
     def use(tex, h):
         t = _name(tex)
-        if t != '-':
+        if t != '-' and t not in DROP:
             walls.add(t)
             exposure[t] = max(exposure.get(t, 0), h)
     for ld in lines:

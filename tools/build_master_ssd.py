@@ -86,13 +86,16 @@ def engine_images():
     bm = r.bm
     import master_walls
     ti = master_walls.rig_images()
+    bm.select(5)                                    # (writes back a cached window)
     b4 = bytes(bm._banks[abi.BANK_SEG])
     b7 = bytes(bm._banks[abi.BANK_WALK])
     main = bytes(bm[abi.LOW_BASE:abi.CBITS_M])
     cbits = bytes(bm[abi.CBITS_M:0x8000])           # code + C data + VPTAB + mtex_ix
     assert cbits[ti['ix_base'] - abi.CBITS_M:][:len(ti['ix'])] == ti['ix']
     hzeng = bytes(bm[0xC800:0xDE00])                # the filler + texturers + sky map
-    return b4, b7, ti['b5'], ti['b6'], ti['andy'], main, cbits, hzeng
+    b6 = bytes(bm._banks[abi.BANK_C])               # texels, flats, the fill's
+                                                    # cold code, the mb6 tables
+    return b4, b7, ti['b5'], b6, ti['andy'], main, cbits, hzeng
 
 
 def build():

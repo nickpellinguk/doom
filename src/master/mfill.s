@@ -66,7 +66,7 @@ maskOdd  = RASTER_ZP_CNT+1
 NONE = $FF                              ; no texture (master_walls.NONE)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
-.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame, mf_tick
+.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame
 
 ; ----------------------------------------------------------------------------
 ; Step 4 wall tables: filled by the image builders from master_walls.py
@@ -272,8 +272,6 @@ tx_dp:   .res 2                         ;  (its x, and that d)
 t_kk:    .res 3                         ; the part's K
 ; ---- step 5: floors and ceilings (plane_ref.py is the executable spec) ----
 mf_ep:   .res 1                         ; frame epoch (pc_ep; 0 never valid)
-mf_tick: .res 1                         ; frames (NUKAGE frame = tick/8 mod 3)
-mf_nuk:  .res 1
 pl_up:   .res 2                         ; the frame's view terms: Up, Vp (4.12)
 pl_vp:   .res 2
 pl_sm:   .res 1                         ;  |sin|, unity, negative
@@ -336,6 +334,16 @@ mf_flip:
 .repeat 256, I
    .byte (((I & $AA) >> 1) | ((I & $55) << 1)) & $FF
 .endrepeat
+
+; ============================================================================
+; BANK 6 CODE (MB6C, $A500-): the cold set-up -- everything that runs with
+; bank 6 (BANK_C, the emit cascade's bank) paged. It must never page
+; another sideways bank and keep running: the routines that do (trun's
+; screen side, pl_cell's flat read, the span loops, mf_frame) stay in
+; HAZEL and put bank 6 back before they return. (ANDY is fine: it only
+; overlays $8000-$8FFF.)
+; ============================================================================
+.segment "MB6C"
 
 ; ---- mf_range: [lo, hi) = clamp(sx1), clamp(sx2) to 0..255; C=1 if empty
 mf_range:
@@ -1536,7 +1544,11 @@ trun:
    LDX t_tid
    LDA mb6_tp_rowm,X
    STA t_rowm
-   ; ---- the screen side: whole bytes ----
+   JMP tr_screen
+
+.segment "MFILL"
+; trun's screen side (HAZEL: it pages the texture's bank). X = t_tid.
+tr_screen:
    SEC
    LDA r_ys
    SBC #Y_BIAS
@@ -1614,6 +1626,8 @@ trr_rd:
    LDA #BANK_C
    STA $FE30                            ; and the cascade's bank
    RTS
+
+.segment "MB6C"
 
 ; ---- tvstep: the run's v. In: q_t, q_b (s16 T, B), t_kk (K), t_vt (Vtop),
 ; r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
@@ -1792,8 +1806,9 @@ ln_ptrk:                                ; (A = byte column k)
 ; column (see PLANES AS HORIZONTAL SPANS below).
 ; ============================================================================
 
-; mf_frame: render_frame entry (bsp/walk.s, MASTER) -- new epoch, NUKAGE
-; frame, and the view terms (from the view zero page the harness / driver
+.segment "MFILL"                        ; (HAZEL: entered with bank 7 paged)
+; mf_frame: render_frame entry (bsp/walk.s, MASTER) -- new epoch and
+; the view terms (from the view zero page the harness / driver
 ; staged; copied, so later scratch use of it cannot matter)
 mf_frame:
    INC mf_ep
@@ -1809,16 +1824,6 @@ mf_frame:
 @ep:
    STZ pd_open                          ; no plane spans pending
    STZ pd_open+1
-   INC mf_tick                          ; NUKAGE frame = (tick >> 3) mod 3
-   LDA mf_tick
-   LSR A
-   LSR A
-   LSR A
-:  CMP #3
-   BCC :+
-   SBC #3
-   BRA :-
-:  STA mf_nuk
    LDA zp_br_smag
    STA pl_sm
    LDA zp_br_sone
@@ -1870,7 +1875,8 @@ mf_frame:
    STA $FE30
    RTS
 
-; pl_seg: per seg (tx_seg, pl_ff / pl_fc read from ANDY) -- the NUKAGE frame,
+.segment "MB6C"
+; pl_seg: per seg (tx_seg, pl_ff / pl_fc read from ANDY) -- the light masks,
 ; D = vz - fh / ch - vz (0 if the eye is not on the plane's side)
 pl_seg:
    LDA pl_ff                            ; light: level = top 3 bits
@@ -1887,11 +1893,7 @@ pl_seg:
    STA maskOdd
    LDA pl_ff
    AND #$1F
-   JSR nuk
    STA pl_ff
-   LDA pl_fc
-   JSR nuk
-   STA pl_fc
    SEC
    LDA #0
    SBC zp_seg_bot_dlt                   ; vz - fh
@@ -1910,16 +1912,6 @@ pl_seg:
 light_even: .byte $FF, $AA, $AA, $0A, $0A
 light_odd:  .byte $FF, $FF, $AA, $AA, $0A
 
-nuk:                                    ; A = flat id -> NUKAGE-animated id
-   CMP #3
-   BCS @rts                             ; not a NUKAGE frame ($FF too)
-   CLC
-   ADC mf_nuk
-   CMP #3
-   BCC @rts
-   SBC #3
-@rts:
-   RTS
 
 ; ceil_run / floor_run: [r_ys, r_ye] (biased) of the band's ceiling / floor
 ceil_run:
@@ -2139,12 +2131,18 @@ pl_cell:
    LDA mb6_fl_page,X                    ; (bank 6 tail, before paging)
    STA pc_rd+2
    LDA mb6_fl_bank,X
-   STA $FE30
+   JMP pc_go
+
+.segment "MFILL"
+pc_go:                                  ; (HAZEL: bank 6 goes out)
+   STA $FE30                            ; the flat's bank
 pc_rd:
    LDA $FF00,Y                          ; (patched: the flat's page)
    LDX #BANK_C
    STX $FE30
    RTS
+
+.segment "MB6C"
 
 ; pl_rowc: make sure pc_*[pl_p] holds this frame's row for pl_d
 pl_rowc:
@@ -2215,12 +2213,14 @@ pl_wr1:
 mf_planes:
    RTS
 
-; ---- sp_go2 / sl_go: the span loops (HAZEL: they run with ACCCON X
-; set). sp_setup (main RAM) has set U, V, PTR, Y, the patched steps and
-; page, and paged the flat's bank. sp_go2 writes a line PAIR per byte
-; (even line lit, odd line FLIP lit); sl_go ONE line (sl_draw patches the
-; FLIP and the mask for its parity).
+.segment "MFILL"
+; ---- sp_go2 / sl_go: the span loops (HAZEL: they page the flat's bank).
+; sp_setup has set U, V, PTR, Y, the patched steps and page; A = the
+; flat's bank. sp_go2 writes a line PAIR per byte (even line lit, odd line
+; FLIP lit); sl_go ONE line (sl_draw patches the FLIP and the mask for its
+; parity).
 sp_go2:
+   STA $FE30                            ; the flat's bank
    LDA #ACC_DXY
    STA $FE34
 sp_lp:
@@ -2276,6 +2276,7 @@ sp_advh:
    RTS
 
 sl_go:
+   STA $FE30                            ; the flat's bank
    LDA #ACC_DXY
    STA $FE34
 sl_lp:
@@ -2329,6 +2330,7 @@ sl_advh:
    STA $FE30
    RTS
 
+.segment "MB6C"
 ; kbmul: m_p (16) = m_a * pl_kb (mod 2^16; kb < 64: six shift-add steps)
 kbmul:                                  ; m_p = m_a * pl_kb (mod 2^16)
    LDA pl_kb
@@ -2779,7 +2781,6 @@ pl_zk2:
 .endrepeat
 
 
-.segment "MFILL"
 .segment "MFMAIN"                       ; main RAM (ACCCON X clear only)
 pp_all:  .res 256                       ; partial lines per column, 4 slots of
                                         ;  64 (kind * 2 + odd; $FF none)
@@ -2912,7 +2913,7 @@ pl_row:
    STA pc_d,X
    RTS
 
-.segment "MFILL"                        ; (HAZEL: the sweep and set-up)
+.segment "MB6C"                         ; (bank 6: the sweep and set-up)
 ; mk_spans: R_MakeSpans over columns pl_k0 .. pl_k1 (+ an empty sentinel):
 ; (t1, b1) the previous column's pair interval, (t2, b2) this one's;
 ; pairs leaving close a span ending at the previous column, pairs
@@ -3096,8 +3097,7 @@ sp_setup:
    LDA mb6_fl_page,X
    STA sp_rd+2
    STA sl_rd+2
-   LDA mb6_fl_bank,X
-   STA $FE30
+   LDA mb6_fl_bank,X                    ; A = its bank: the loop pages it
    RTS
 
 ; pl_part: A = a partial line (unbiased: an odd first or even last line of
@@ -3515,7 +3515,7 @@ divq16:
    PLY
    RTS
 
-.segment "MFILL"
+.segment "MB6C"
 ; ---- clamp_ln: A = clamp(ln_y (s16), X, Y) as u8 ------------------------
 clamp_ln:
    STX m_r                              ; lo
@@ -3694,7 +3694,7 @@ dv_slow:
    PLY
    RTS
 
-.segment "MFILL"
+.segment "MB6C"
 ; d8_byte: (A:d8_by) / d (patched, 8-bit), A < d -> d8_by = quotient,
 ; A = remainder. X used.
 d8_byte:

@@ -217,7 +217,18 @@ def build_banked(flatr, master=False):
             bm[CB + i] = c[i]
         import master_walls as _mw
         _ti = _mw.rig_images()
-        bm.define_bank(BANK_C, _ti['b6'])
+        # the fill's cold code lives in bank 6 above the flats (cfg B6CM)
+        import asmbuild as _ab6
+        from engine_load import _regions as _rg6
+        _ab6.build('engine', banked=VAR, c02=_ab6.env_c02())
+        b6 = bytearray(_ti['b6'])
+        (_c6,) = [a for a, fn in _rg6(banked=VAR) if fn == 'engine_b6c_m.bin']
+        _code6 = open('engine_b6c_m.bin', 'rb').read()
+        assert _ti['b6_tex_end'] <= _c6, 'bank 6 texels reach the fill code'
+        assert not any(b6[_c6 - 0x8000:_c6 - 0x8000 + len(_code6)]), \
+            'bank 6 code overlays seeded data'
+        b6[_c6 - 0x8000:_c6 - 0x8000 + len(_code6)] = _code6
+        bm.define_bank(BANK_C, bytes(b6))
         bm.define_bank(5, _ti['b5'])
         bm.define_andy(_ti['andy'])
         for i, v in enumerate(_ti['ix']):
@@ -333,7 +344,7 @@ def build_banked(flatr, master=False):
     _ab.build('engine', banked=VAR, c02=_ab.env_c02())
     for addr, fn in _regions(banked=VAR):
         if fn.startswith('span_clip') or fn == 'bsp_render_hud_bk.bin' \
-                or fn == 'engine_cbits_m.bin':
+                or fn in ('engine_cbits_m.bin', 'engine_b6c_m.bin'):
             continue    # clipper + HUD -> BANK_C (rc/anim/vrcache/sel are main now)
                         # MASTER: CBITS was placed with the C data above
         if os.path.exists(fn):

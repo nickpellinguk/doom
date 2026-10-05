@@ -246,12 +246,14 @@ class TexturedRef:
             self.cell[r][c] = ('w', int(tb[tr, tc]))
 
     def _draw_masked(self, c, r0, r1, name, u, ztop, ey):
+        if name not in self.tex:
+            return                  # not stored (master_assets.DROP)
         self._wall(c, r0, r1, name, u, ztop, ey, tile=False)
 
     def _plane_byte(self, c, r, h, pic):
         if pic == SKY:
             return self.sky_byte
-        if pic.startswith('NUKAGE'):
+        if pic.startswith('NUKAGE') and f'NUKAGE{self.nukage % 3 + 1}' in self.flat:
             pic = f'NUKAGE{self.nukage % 3 + 1}'
         xs, ys = 4 * (c >> 1) + 2, 2 * r + 1         # the byte column's centre
         d = ys - CY

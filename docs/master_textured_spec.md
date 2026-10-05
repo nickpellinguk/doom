@@ -89,10 +89,9 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 - 16×16, one byte per texel, 256 bytes (one page) per flat:
   byte = row × 16 + column. Two HAZEL byte tables give each flat's bank and
   page (`flat_bank`, `flat_page`).
-- E1M1 needs **23 flats**: 11 floors + 13 ceilings, minus FLAT20 and FLAT5_5
-  (shared) and F_SKY1 (cyan), plus NUKAGE1 and NUKAGE2 so the slime animates
-  through all **three NUKAGE frames** (frame = page swap). The frames are
-  stored on consecutive pages of one bank.
+- E1M1 needs **21 flats**: 11 floors + 13 ceilings, minus FLAT20 and FLAT5_5
+  (shared) and F_SKY1 (cyan). NUKAGE1 is static: its animation frames
+  NUKAGE2 and NUKAGE3 were dropped for memory (step 5f).
 
 ## 6. Memory map
 
@@ -100,8 +99,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; filler + texturers $C800–$DCD3; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K); bank 6 tail $B900–$BDFF: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code (texel and span loops, `mf_frame`, `mf_flip`, sky map) $C800–$CB37, **free $CB38–$DDFF (4.8K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B675: the fill's cold set-up code (step 5f, free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -110,11 +109,12 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
-- Wall column data: 681 stored columns × 32 B = 21,792 B (21.3K), with
-  COMPUTE2 clipped (783 columns, 24.5K, before).
-- Flats: 23 × 256 B = 5,888 B (5.75K).
-- Textures and flats together: all of bank 5 and bank 6 $8000–$ACFF
-  (11,520 B); bank 6 $AD00–$B8FF (3K) is spare below the bank-6 tables.
+- Wall column data: 634 stored columns × 32 B = 20,288 B (19.8K), with
+  COMPUTE2 clipped and the BRNBIG masked middles dropped (783 columns,
+  24.5K, before).
+- Flats: 21 × 256 B = 5,376 B (5.25K).
+- Textures and flats together: all of bank 5 and bank 6 $8000–$A4FF
+  (9,472 B); bank 6 $A500–$B8FF holds the fill's cold code (step 5f).
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
 - **Total in the banks: ~54K of 64K.** Since step 4 ANDY holds the per-seg
@@ -376,7 +376,7 @@ side is `src/master/mfill.s`, byte-exact against it in
 - *6502 structure* (per-seg horizontal spans, DOOM's visplane idea cut
   down to one seg):
   - `mf_frame` runs at `render_frame` entry (MASTER only): the frame
-    epoch, the NUKAGE frame, and copies of the view terms.
+    epoch and copies of the view terms.
   - While a seg's byte columns are walked, `prun` only RECORDS each
     column's whole line-pair interval, ceiling (`pe_ct`/`pe_cb`) and
     floor (`pe_ft`/`pe_fb`), 64 columns each. A partial pair (odd first
@@ -396,9 +396,8 @@ side is `src/master/mfill.s`, byte-exact against it in
     for the frame (`pc_*`, 80 entries).
   - Per-subsector flat ids live in ANDY; flat bank and page and the
     map-centre terms in the bank-6 tail.
-- *NUKAGE*: flats 0–2 are its frames. The frame is (`mf_tick` >> 3) mod
-  3, and `mf_tick` steps once per rendered frame. The gate checks frames
-  1 and 2 at a pose over the pool.
+- *NUKAGE*: animated through flats 0–2 until step 5f; now NUKAGE1 is a
+  static flat.
 - *Sky* ceilings stay solid cyan. A plane the eye is not on the right
   side of keeps its shade.
 - *Accuracy*:
@@ -529,6 +528,32 @@ u and its own v (its own T and B lines, step and fractional v stepping):
 - *Memory*: the span sweep, `sp_setup` and `pl_part` are in HAZEL with
   the loops; the pending-plane logic, the row maths and their tables
   (`pp_all` 256 B, ZC/ZS 360 B) in main $4FB1–$5592.
+
+**5f. Bank 6 holds the fill's cold code. — DONE.** HAZEL is for the hot
+loops; most of the fill's code is set-up that runs while bank 6 (BANK_C)
+is paged for the emit cascade, so it now runs from bank 6:
+- *Room*: NUKAGE2/3 (512 B) and the BRNBIG masked middles (1.5K; never
+  drawn, no wall part uses them) were dropped. The model's frames are
+  unchanged at all 18 poses (checked byte for byte); the float reference
+  skips masked middles with no stored texture. Textures and flats end at
+  $A4FF; `master_assets` packs bank 6 only below $A500.
+- *Bank 6 code* (`MB6C` + `MFILLV`, $A500–$B675, 4.3K; ld65 area `B6CM`,
+  file `engine_b6c_m.bin`, laid into the bank-6 image by the rig and so
+  by the disc): the column walk, steppers, bands, wall and plane set-up,
+  span sweeps and set-up, row maths helpers, `pl_wr1` and `hz_run` (ACCCON
+  X only maps $3000–$7FFF, so they write from bank 6).
+- *The rule*: bank-6 code never pages another sideways bank and keeps
+  running. What does stays in HAZEL and puts bank 6 back before it
+  returns: `trun`'s screen side (`tr_screen`), `pl_cell`'s flat read
+  (`pc_go`), the span loops (`sp_go2`, `sl_go`, which now page the flat
+  themselves; `sp_setup` hands them its bank in A) and `mf_frame`
+  (entered with bank 7 paged). ANDY (`tx_seg`) only overlays $8000–$8FFF.
+  The cascade enters `mf_snap` / `mf_fill` with bank 6 paged (checked
+  over the poses).
+- *HAZEL*: the fill's code is now $C800–$CB37 (824 B); **$CB38–$DDFF,
+  4.8K, is free** for faster loops and their tables.
+- Cycles unchanged (36.1M over the 18 poses; the NUKAGE frame test went
+  with the animation).
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

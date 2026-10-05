@@ -213,8 +213,6 @@ class Walls:
         # ($FF: sky, drawn as the solid shade); the floor byte's top 3 bits
         # carry the sector's light level
         fid = {f['name']: f['id'] for f in man['flats']}
-        assert [fid.get(f'NUKAGE{i}') for i in (1, 2, 3)] == [0, 1, 2], \
-            'the NUKAGE frames must be flats 0-2 (mf_frame cycles them)'
         dw = self.dw
         assert len(dw.fp_ssectors) <= 0xC4
         for ss, (cnt, first) in enumerate(dw.fp_ssectors):
@@ -301,7 +299,8 @@ def rig_images():
         assert len(R.A.banks[6][1]) <= t6, 'bank 6 texels reach the mb6 tail'
         b6[t6:t6 + len(im['b6t'])] = im['b6t']
         _RIG = dict(b5=bytes(b5), b6=bytes(b6), andy=im['andy'], ix=im['ix'],
-                    ix_base=im['ix_base'])
+                    ix_base=im['ix_base'],
+                    b6_tex_end=0x8000 + len(R.A.banks[6][1]))
     return _RIG
 
 
