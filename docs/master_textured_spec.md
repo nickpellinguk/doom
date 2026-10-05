@@ -99,8 +99,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code (texel and span loops, `mf_frame`, `mf_flip`, sky map) $C800–$CB37, **free $CB38–$DDFF (4.8K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B88E: the fill's cold set-up code (steps 5f, 5g; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$CD29, **free $CD2A–$DDFF (4.2K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B867: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -582,6 +582,22 @@ its own u and v:
   start pose.
 - *Memory*: bank-6 code now ends at $B88E (113 B left before the tables);
   the state is 19 B of HAZEL BSS.
+
+**5h. x16 tables, per-piece u base, h63. — DONE.** Three exact 6502
+changes (no model change; byte-exact):
+- *x16 tables* in HAZEL, page-aligned: `lo16[x] = (x << 4) & $FF`,
+  `hi16[x] = x >> 4` (so `x·16 = lo16[x] + 256·hi16[x]`); `mf_flip`
+  moved to the next page so its indexed reads never cross one.
+- *Flat texel index*: `hi16` replaces four LSRs and a store in `sp_lp`,
+  `sl_lp` and `pl_cell`: `LDX u_hi / LDA v_hi / AND #$F0 / ORA hi16,X`,
+  12 cycles less per span byte.
+- *u base per piece*: `set_cur` keeps `ub·16 − start` (via the tables);
+  `tcol` only adds d.
+- *h63*: `63·h = (h << 6) − h` with `h << 6` as `(h << 8) >> 2`, a byte
+  move and two shifts instead of a six-pass loop.
+- *Cycles* (`tools/master_profile.py`, 14 on-map poses): the mean frame
+  2.119M → 2.054M (−3.0%): span loops −26K, wall set-up per run −26K
+  (`tcol`), arithmetic −11K (`h63`). 18 poses: 34.4M → 33.3M.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

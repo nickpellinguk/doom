@@ -218,9 +218,8 @@ pc_ub:   .res 4
 cur_up:  .res 1                         ; the piece holding this byte's left d
 cur_lo:  .res 1
 cur_mid: .res 1
-cur_ub:  .res 1
-cur_sl:  .res 1
-cur_sh:  .res 1
+cur_bl:  .res 1                         ; ub * 16 - start (mod 2^16): u = it
+cur_bh:  .res 1                         ;  + d
 tx_d1:   .res 2                         ; d at the projected ends
 tx_d2:   .res 2
 tx_wa:   .res 3                         ; 1/depth weights (16 bits after norm)
@@ -318,7 +317,6 @@ mk_b2:   .res 1
 mk_k:    .res 1
 sp_u:    .res 2                         ; the span loop's U, V (4.12)
 sp_v:    .res 2
-sp_t:    .res 1
 sp_n:    .res 1
 mq_b:    .res 1                         ; mf_mul8: multiplier, product lo,
 mq_l:    .res 1                         ;  scratch; mul8x32's byte index
@@ -333,18 +331,31 @@ pl_a:    .res 2
 ; ----------------------------------------------------------------------------
 .segment "MFILL"
 
+; x16 tables, page-aligned at the segment's start ($C800): x * 16 =
+; lo16[x] + 256 * hi16[x]; hi16 is also x >> 4, the flat texel index's
+; column nibble (U >> 12 from U's high byte)
+hi16:
+.repeat 256, I
+   .byte I >> 4
+.endrepeat
+lo16:
+.repeat 256, I
+   .byte (I << 4) & $FF
+.endrepeat
+
+; FLIP: swap the two pixels of every pair (0<->1, 2<->3): the cross-hatch
+; second line. Same table as master_assets.FLIP. (Page-aligned: $CA00.)
+mf_flip:
+.repeat 256, I
+   .byte (((I & $AA) >> 1) | ((I & $55) << 1)) & $FF
+.endrepeat
+.assert (hi16 & $FF) = 0 && (lo16 & $FF) = 0 && (mf_flip & $FF) = 0, error, "x16 / FLIP tables must be page-aligned"
+
 ; Sky map: one bit per subsector, set when its ceiling is F_SKY1.
 ; SEEDED BY THE IMAGE BUILDER (banked_bsp / tools/build_master_ssd.py).
 mf_skymap: .res 32
 
 bitmask: .byte 1, 2, 4, 8, 16, 32, 64, 128
-
-; FLIP: swap the two pixels of every pair (0<->1, 2<->3): the cross-hatch
-; second line. Same table as master_assets.FLIP.
-mf_flip:
-.repeat 256, I
-   .byte (((I & $AA) >> 1) | ((I & $55) << 1)) & $FF
-.endrepeat
 
 ; ============================================================================
 ; BANK 6 CODE (MB6C, $A500-): the cold set-up -- everything that runs with
@@ -1257,12 +1268,14 @@ set_cur:
    STA cur_lo
    LDA pc_mid,X
    STA cur_mid
-   LDA pc_ub,X
-   STA cur_ub
-   LDA pc_sl,X
-   STA cur_sl
-   LDA pc_sh,X
-   STA cur_sh
+   LDY pc_ub,X                          ; u base = ub * 16 - start
+   SEC
+   LDA lo16,Y
+   SBC pc_sl,X
+   STA cur_bl
+   LDA hi16,Y
+   SBC pc_sh,X
+   STA cur_bh
    RTS
 
 ; l16t: m_p = L16 * t + 128 (the caller takes bytes 1-2: >> 8)
@@ -1961,26 +1974,11 @@ tv_v0:
 ; ---- tcol: q_d (d) -> t_cl / t_ch, the texel column: u = ub * 16 - start
 ; + d; index = (u & mask) >> shift, as hi((u & mask) << (8 - shift)) ----
 tcol:
-   LDA cur_ub
-   STA m_a
-   STZ m_a+1
-   LDX #4
-:  ASL m_a
-   ROL m_a+1
-   DEX
-   BNE :-
-   SEC
-   LDA m_a
-   SBC cur_sl
-   STA m_a
-   LDA m_a+1
-   SBC cur_sh
-   STA m_a+1
-   CLC
-   LDA m_a
+   CLC                                  ; u = (ub * 16 - start) + d
+   LDA cur_bl
    ADC q_d
    STA m_a
-   LDA m_a+1
+   LDA cur_bh
    ADC q_d+1
    STA m_a+1
    LDX t_tid
@@ -2369,15 +2367,10 @@ pl_cell:
    LDA m_p+1
    ADC pc_v0h,X
    STA pl_v+1
-   LDA pl_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   STA pl_a
+   LDX pl_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
    LDA pl_v+1
    AND #$F0
-   ORA pl_a
+   ORA hi16,X
    TAY
    LDX pl_fl
    LDA mb6_fl_page,X                    ; (bank 6 tail, before paging)
@@ -2476,15 +2469,10 @@ sp_go2:
    LDA #ACC_DXY
    STA $FE34
 sp_lp:
-   LDA sp_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   STA sp_t
+   LDX sp_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
    LDA sp_v+1
    AND #$F0
-   ORA sp_t
+   ORA hi16,X
    TAX
 sp_rd:
    LDA $FF00,X                          ; (patched: the flat's page)
@@ -2532,15 +2520,10 @@ sl_go:
    LDA #ACC_DXY
    STA $FE34
 sl_lp:
-   LDA sp_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   STA sp_t
+   LDX sp_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
    LDA sp_v+1
    AND #$F0
-   ORA sp_t
+   ORA hi16,X
    TAX
 sl_rd:
    LDA $FF00,X                          ; (patched: the flat's page)
@@ -2998,16 +2981,17 @@ q_a_h:
    RTS
 
 ; h63: pl_h = 63 * pl_h = (pl_h << 6) - pl_h (mod 2^16); X preserved
-h63:
-   LDA pl_h
-   STA pl_q
+h63:                                    ; pl_h = 63 * pl_h (mod 2^16) =
+   LDA pl_h                             ;  (h << 6) - h, h << 6 being
+   STA pl_q+1                           ;  (h << 8) >> 2: a byte move and
+   STZ pl_q                             ;  two shifts of [h_hi : h_lo : 0]
    LDA pl_h+1
-   STA pl_q+1
-   LDY #6
-:  ASL pl_q
-   ROL pl_q+1
-   DEY
-   BNE :-
+   LSR A
+   ROR pl_q+1
+   ROR pl_q
+   LSR A
+   ROR pl_q+1
+   ROR pl_q
    SEC
    LDA pl_q
    SBC pl_h
