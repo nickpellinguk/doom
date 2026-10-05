@@ -38,8 +38,14 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 - **Floors and ceilings**: one texel per byte, a full Mode 1 byte with
   pixel #0 = #2 and #1 = #3.
 - **Sky** (F_SKY1): solid cyan, no texture.
-- Drawing code runs from **HAZEL** with ACCCON E set, so it reaches shadow RAM
-  while all other code sees main RAM.
+- Drawing code runs from **HAZEL** and reaches the shadow buffers by setting
+  **ACCCON X** for the duration of a draw. The E bit cannot be used: Master
+  "VDU driver" shadow access only works while HAZEL is paged out (Y = 0);
+  with HAZEL in, E has no effect (measured on jsbeeb's Master 128, step 1).
+  Consequence: **while drawing, nothing may be read from main RAM at
+  &3000–&7FFF.** The drawers read textures from sideways RAM, tables from
+  HAZEL, and their parameters from zero page / low RAM (below &3000).
+  Engine code in main RAM is unaffected because it never runs mid-draw.
 
 ## 4. Wall texture format
 
@@ -116,7 +122,15 @@ packing with no texture crossing a bank, HAZEL tables; flats incl. NUKAGE1–3;
 PNG previews and a memory report. *Done when*: deterministic output, budget
 fits, previews approved.
 
-**1. Master bring-up (no textures).** 65C02 build; new ld65 configs (code in
+**1. Master bring-up (no textures).** *Display half DONE*:
+`tools/build_master_display.py` + `src/master/mdisplay.s` boot a disc that
+sets the 256×160 four-colour window (CRTC R1 64, R2 90, R6 20, R7 28, R8 0),
+the palette, both shadow buffers drawn from HAZEL with X set, and a vsync
+flip; `node tools/master_rig.mjs display build/master/mdisplay.ssd
+build/master/mdisplay_expect.bin build/master/display` checks shadow RAM
+byte for byte, the flip, the window size and the colours on jsbeeb's
+Master 128 (needs a jsbeeb clone at `$JSBEEB`, default `/home/user/jsbeeb`,
+with `npm install` and `sharp`). *Remaining*: 65C02 build; new ld65 configs (code in
 main RAM, drawers in HAZEL, data in banks 4–7); boot sequence (load all, then
 claim HAZEL); 256×160 four-colour CRTC setup and palette; double buffer in
 shadow with ACCCON D/E/Y; vsync timer retuned for the new mode. *Done when*:
