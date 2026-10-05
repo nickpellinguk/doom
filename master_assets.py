@@ -62,6 +62,18 @@ FLAT_N = 16                      # flats are FLAT_N x FLAT_N
 ANIM_FLATS = [['NUKAGE1', 'NUKAGE2', 'NUKAGE3']]          # stored in order
 SKY_FLAT = 'F_SKY1'
 
+# Demo economies: a texture clipped to a power-of-two slice of its source
+# (x0, width), which the engine's u mask then tiles. COMPUTE2 (256x56, 18
+# pages) tiles its first 64-unit panel module instead.
+CLIP = {'COMPUTE2': (0, 64)}
+
+
+def clipped(name, img):
+    """The source image a wall texture is built from (CLIP applied)."""
+    if name in CLIP:
+        x0, cw = CLIP[name]
+        img = img[:, x0:x0 + cw]
+    return img
 DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0xC000)]
 
 
@@ -252,7 +264,7 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
     stacked = {t: (i, half) for i, pair in enumerate(STACKED) for half, t in enumerate(pair)}
     q, meta = {}, {}
     for t in walls:
-        img = tex_src[t]
+        img = clipped(t, tex_src[t])
         h, w = img.shape
         th = SHORT_H if t in stacked else TEX_H
         tw = max(1, round(w * th / h))

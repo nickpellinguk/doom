@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
     wad = M.Wad()
     src = wad.textures()
     for t in man['textures']:
-        q = M.quantise(M.scale_rgb(wad.pal[src[t['name']]], t['height'], t['width']))
+        q = M.quantise(M.scale_rgb(wad.pal[M.clipped(t['name'], src[t['name']])], t['height'], t['width']))
         want = np.vectorize(M.wall_byte)(q)
         got = A.wall_bytes(t['id'])
         check(got.shape == want.shape and (got == want).all(), f"{t['name']} reads back wrong")

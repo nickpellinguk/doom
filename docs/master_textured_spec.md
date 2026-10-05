@@ -62,6 +62,9 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
   rows 16–31 (start row offset Y + 128). Pairing: NUKE24 + STEP6,
   EXITSIGN + STEP1. Valid because nothing in E1M1 shows more than one height
   of these textures; see open items for movers.
+- **Demo clip — COMPUTE2** (256×56): only its first 64-unit panel module
+  is stored and tiled (`master_assets.CLIP`), 37 columns instead of 139:
+  5 pages instead of 18.
 - **Columns**: 32 bytes, one texel per byte. A 256-byte page holds 8 columns,
   **interleaved every 8th byte**: byte = row × 8 + slot. A column's base is
   page + slot; stepping down adds 8 to Y (last row Y = 248), so `LDA (p),Y`
@@ -100,16 +103,17 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; filler + texturers $C800–$DD53; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K); bank 6 tail $B900–$BDFF: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
-| Main $7A00–$7E1F | Texture column index bytes (1,046 B) |
+| Main $7A00–$7E1F | Texture column index bytes (937 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
 | Main $6D38–$6FE9 | Cold per-seg wall and plane set-up |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
-- Wall column data: 783 stored columns × 32 B = 25,056 B (24.5K).
+- Wall column data: 681 stored columns × 32 B = 21,792 B (21.3K), with
+  COMPUTE2 clipped (783 columns, 24.5K, before).
 - Flats: 23 × 256 B = 5,888 B (5.75K).
-- Textures and flats together: all of bank 5 and 14,592 B of bank 6
-  (1.75K of bank 6 spare).
+- Textures and flats together: all of bank 5 and bank 6 $8000–$ACFF
+  (11,520 B); bank 6 $AD00–$B8FF (3K) is spare below the bank-6 tables.
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
 - **Total in the banks: ~54K of 64K.** Since step 4 ANDY holds the per-seg
@@ -297,7 +301,7 @@ textured walls (`test_master_disc.py`).
   - **Bank 6 tail** ($B900–$BDFF, `mb6_*`): the part records and the
     per-texture constants. Bank 6 is BANK_C, paged for the whole emit
     cascade.
-  - **Main RAM** `mtex_ix` ($7A00): the column index bytes, 1,046 B. Read
+  - **Main RAM** `mtex_ix` ($7A00): the column index bytes, 937 B. Read
     with ACCCON X clear.
   - **HAZEL**: the code. MFILL now runs $C800–$D9DA (4.5K); its BSS moved
     to $DC00.
