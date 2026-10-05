@@ -158,6 +158,12 @@ bif_clr2:
 ; inline each arm directly — see rc_node below.)
 
 ; --- seed: rc_node(ROOT) ---
+.if ::MASTER
+.import mf_flush
+   JSR rf_seed                             ; MASTER: the walk returns (or
+   JMP mf_flush                            ;  unwinds) here; then the frame's
+rf_seed:                                   ;  pending plane spans are drawn
+.endif
    TSX
    STX zp_bsp_stack_sp                     ; unwind target
    LDA #<LAY_ROOT                          ; layout.inc constant (u8)

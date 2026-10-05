@@ -299,6 +299,8 @@ pl_v:    .res 2
 pl_k0:   .res 1                         ; the seg's byte columns
 pl_k1:   .res 1
 pl_y:    .res 1
+pl_j:    .res 1
+pl_lv:   .res 1                         ; this seg's light level (0-4)                         ; pl_row: the row index j
 pl_ye0:  .res 1
 mk_t1:   .res 1                         ; MakeSpans: previous / this column's
 mk_b1:   .res 1                         ;  pair interval, the column
@@ -1798,10 +1800,15 @@ mf_frame:
    BNE @ep
    LDX #79                              ; wrapped: no stale epoch may match
 :  STZ pc_ep,X
-   DEX
-   BPL :-
+   CPX #40
+   BCS :+
+   STZ zr_ep,X
+:  DEX
+   BPL :--
    INC mf_ep
 @ep:
+   STZ pd_open                          ; no plane spans pending
+   STZ pd_open+1
    INC mf_tick                          ; NUKAGE frame = (tick >> 3) mod 3
    LDA mf_tick
    LSR A
@@ -1873,6 +1880,7 @@ pl_seg:
    LSR A
    LSR A
    TAX
+   STX pl_lv
    LDA light_even,X
    STA maskEven
    LDA light_odd,X
@@ -1958,28 +1966,6 @@ floor_run:
 ; in one column are drawn on the spot, a byte at a time.
 ; ============================================================================
 
-; pe_init: per seg (end of tx_seg) -- the seg's byte columns' extents empty
-pe_init:
-   LDA mf_x
-   LSR A
-   LSR A
-   STA pl_k0
-   LDA mf_hi
-   DEC A
-   LSR A
-   LSR A
-   STA pl_k1
-   LDX pl_k0
-:  LDA #$FF
-   STA pe_ct,X
-   STA pe_ft,X
-   STZ pe_cb,X
-   STZ pe_fb,X
-   CPX pl_k1
-   INX
-   BCC :-
-   RTS
-
 ; prun: a textured plane run [r_ys, r_ye] (biased), kind pl_kind
 prun:
    LDA r_ye
@@ -2040,7 +2026,7 @@ prun:
    LSR A
    BCC :+
    LDA r_ys
-   JSR pl_line
+   JSR pl_part
    INC r_ys
    LDA r_ye
    CMP r_ys
@@ -2050,7 +2036,7 @@ prun:
    LSR A
    BCS :+
    LDA r_ye
-   JSR pl_line
+   JSR pl_part
    LDA r_ye
    BEQ @rts
    DEC r_ye
@@ -2223,205 +2209,18 @@ pl_wr1:
    STA $FE34
    RTS
 
-; mf_planes: the seg's end -- MakeSpans over its recorded extents, ceiling
-; then floor (only the kinds it textures), then RTS (out of mf_fill)
+; mf_planes: the seg's end. Its plane spans stay pending (pd_*): a later
+; seg on the same plane widens them; another plane, or the frame's end
+; (mf_flush), draws them.
 mf_planes:
-   LDA pl_dc
-   BEQ @fl
-   LDA pl_fc
-   CMP #$FF
-   BEQ @fl
-   STA pl_fl
-   LDA pl_dc
-   STA pl_d
-   STZ pl_kind
-   JSR mk_spans
-@fl:
-   LDA pl_df
-   BEQ @rts
-   STA pl_d
-   LDA pl_ff
-   STA pl_fl
-   LDA #1
-   STA pl_kind
-   JSR mk_spans
-@rts:
    RTS
 
-; mk_spans: R_MakeSpans over columns pl_k0 .. pl_k1 (+ an empty sentinel):
-; (t1, b1) the previous column's pair interval, (t2, b2) this one's;
-; pairs leaving close a span ending at the previous column, pairs
-; arriving open one here (sp_start). Empty = ($FF, 0).
-mk_spans:
-   LDA #$FF
-   STA mk_t1
-   STZ mk_b1
-   LDA pl_k0
-   STA mk_k
-@col:
-   LDA mk_k
-   CMP pl_k1
-   BEQ :+
-   BCS @sent                            ; past the last: the empty sentinel
-:  TAX
-   LDA pl_kind
-   BEQ :+
-   LDA pe_ft,X
-   STA mk_t2
-   LDA pe_fb,X
-   STA mk_b2
-   BRA @go
-:  LDA pe_ct,X
-   STA mk_t2
-   LDA pe_cb,X
-   STA mk_b2
-   BRA @go
-@sent:
-   LDA #$FF
-   STA mk_t2
-   STZ mk_b2
-@go:
-   LDA mk_t2                            ; keep this column's interval for
-   PHA                                  ;  the next step
-   LDA mk_b2
-   PHA
-@l1:                                    ; while t1 < t2 and t1 <= b1: close t1
-   LDA mk_t1
-   CMP mk_t2
-   BCS @l2
-   LDA mk_b1
-   CMP mk_t1
-   BCC @l2
-   LDA mk_t1
-   JSR mk_close
-   INC mk_t1
-   BRA @l1
-@l2:                                    ; while b1 > b2 and b1 >= t1: close b1
-   LDA mk_b2
-   CMP mk_b1
-   BCS @l3
-   LDA mk_b1
-   CMP mk_t1
-   BCC @l3
-   JSR mk_close
-   DEC mk_b1
-   BRA @l2
-@l3:                                    ; while t2 < t1 and t2 <= b2: open t2
-   LDA mk_t2
-   CMP mk_t1
-   BCS @l4
-   LDA mk_b2
-   CMP mk_t2
-   BCC @l4
-   LDX mk_t2
-   LDA mk_k
-   STA sp_start,X
-   INC mk_t2
-   BRA @l3
-@l4:                                    ; while b2 > b1 and b2 >= t2: open b2
-   LDA mk_b1
-   CMP mk_b2
-   BCS @nx
-   LDA mk_b2
-   CMP mk_t2
-   BCC @nx
-   LDX mk_b2
-   LDA mk_k
-   STA sp_start,X
-   DEC mk_b2
-   BRA @l4
-@nx:
-   PLA
-   STA mk_b1
-   PLA
-   STA mk_t1
-   LDA mk_k
-   INC mk_k
-   CMP pl_k1
-   BEQ :+                               ; k <= k1: the next column (k1 + 1
-   BCS @rts                             ;  is the sentinel: all closed)
-:  JMP @col
-@rts:
-   RTS
-
-; mk_close: A = pair: draw its span sp_start[A] .. mk_k - 1
-mk_close:
-   STA pl_p
-   TAX
-   LDA sp_start,X
-   STA pl_kb
-   ; fall into sp_draw
-
-; ---- sp_draw: pair pl_p, byte columns pl_kb .. mk_k - 1 ----------------
-sp_draw:
-   JSR pl_rowc
-   LDX pl_p
-   LDA pc_dul,X                         ; U, V at the span's first column
-   STA m_a
-   STA sp_adul+1                        ; and dU, dV into the loop
-   LDA pc_duh,X
-   STA m_a+1
-   STA sp_aduh+1
-   JSR kbmul
-   LDX pl_p
-   CLC
-   LDA m_p
-   ADC pc_u0l,X
-   STA sp_u
-   LDA m_p+1
-   ADC pc_u0h,X
-   STA sp_u+1
-   LDA pc_dvl,X
-   STA m_a
-   STA sp_advl+1
-   LDA pc_dvh,X
-   STA m_a+1
-   STA sp_advh+1
-   JSR kbmul
-   LDX pl_p
-   CLC
-   LDA m_p
-   ADC pc_v0l,X
-   STA sp_v
-   LDA m_p+1
-   ADC pc_v0h,X
-   STA sp_v+1
-   SEC
-   LDA mk_k
-   SBC pl_kb
-   STA sp_n                             ; bytes
-   ; screen: PTR lo 0, Y = (kb * 8 + line & 7) & $FF, PTR hi = the page
-   LDA pl_kb
-   ASL A
-   ASL A
-   ASL A
-   STA pl_a
-   LDA pl_p
-   ASL A                                ; the even line 2p
-   AND #7
-   ORA pl_a
-   TAY
-   STZ PTR
-   LDA pl_kb
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   STA PTR+1
-   LDA pl_p
-   LSR A
-   LSR A                                ; (2p >> 3) * 2 = (p >> 2) * 2
-   ASL A
-   CLC
-   ADC PTR+1
-   ADC DV_BACKHI
-   STA PTR+1
-   LDX pl_fl
-   LDA mb6_fl_page,X
-   STA sp_rd+2
-   LDA mb6_fl_bank,X
-   STA $FE30
+; ---- sp_go2 / sl_go: the span loops (HAZEL: they run with ACCCON X
+; set). sp_setup (main RAM) has set U, V, PTR, Y, the patched steps and
+; page, and paged the flat's bank. sp_go2 writes a line PAIR per byte
+; (even line lit, odd line FLIP lit); sl_go ONE line (sl_draw patches the
+; FLIP and the mask for its parity).
+sp_go2:
    LDA #ACC_DXY
    STA $FE34
 sp_lp:
@@ -2476,6 +2275,60 @@ sp_advh:
    STA $FE30
    RTS
 
+sl_go:
+   LDA #ACC_DXY
+   STA $FE34
+sl_lp:
+   LDA sp_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   STA sp_t
+   LDA sp_v+1
+   AND #$F0
+   ORA sp_t
+   TAX
+sl_rd:
+   LDA $FF00,X                          ; (patched: the flat's page)
+   TAX
+sl_fl:
+   LDA mf_flip,X                        ; (patched: odd line FLIP, even TXA)
+sl_mk:
+   .byte $25, maskOdd                   ; AND zp (patched: the line's mask)
+   STA (PTR),Y
+   TYA
+   CLC
+   ADC #8                               ; the next byte column
+   TAY
+   BCC :+
+   INC PTR+1
+:  CLC
+   LDA sp_u
+sl_adul:
+   ADC #0                               ; (patched dU)
+   STA sp_u
+   LDA sp_u+1
+sl_aduh:
+   ADC #0
+   STA sp_u+1
+   CLC
+   LDA sp_v
+sl_advl:
+   ADC #0                               ; (patched dV)
+   STA sp_v
+   LDA sp_v+1
+sl_advh:
+   ADC #0
+   STA sp_v+1
+   DEC sp_n
+   BNE sl_lp
+   LDA #ACC_DY
+   STA $FE34
+   LDA #BANK_C
+   STA $FE30
+   RTS
+
 ; kbmul: m_p (16) = m_a * pl_kb (mod 2^16; kb < 64: six shift-add steps)
 kbmul:                                  ; m_p = m_a * pl_kb (mod 2^16)
    LDA pl_kb
@@ -2491,97 +2344,6 @@ kbmul:                                  ; m_p = m_a * pl_kb (mod 2^16)
    STA m_p+1
    LDA mq_l
    STA m_p
-   RTS
-
-; pl_row: the row maths for pair pl_p and D pl_d, into pc_*[pl_p]
-;   k = |2p + 1 - 80| (j = k >> 1 indexes pl_zk = 2^20 // k)
-;   E = D * Zk;  Pc = E * |c|, Ps = E * |s| (unity: E << 8)
-;   A = +-(Pc >> 8), hV = +-(Pc >> 14), Bs = +-(Ps >> 8), hU = +-(Ps >> 14)
-;   U0 = Up + A - 63 hU, dU = 2 hU, V0 = Vp - Bs - 63 hV, dV = 2 hV
-pl_row:
-   LDA pl_p
-   SEC
-   SBC #40
-   BCS :+                               ; floor: j = p - 40
-   EOR #$FF                             ; ceiling: j = 39 - p
-:  TAX
-   LDA pl_zk0,X
-   STA pl_e
-   LDA pl_zk1,X
-   STA pl_e+1
-   LDA pl_zk2,X
-   STA pl_e+2
-   STZ pl_e+3
-   LDA pl_d
-   JSR mul8x32                          ; pl_q = E (D <= 127: fits 4 bytes)
-   LDX #3
-:  LDA pl_q,X
-   STA pl_e,X
-   DEX
-   BPL :-
-   ; cos: A and hV
-   LDA pl_cm
-   LDX pl_c1
-   JSR pl_prod                          ; pl_q = E * |c|
-   JSR q_a_h                            ; pl_a = Pc >> 8, pl_h = Pc >> 14
-   LDA pl_cn
-   JSR neg_ah
-   LDX pl_p
-   ; V0 = Vp - Bs - 63 hV (Bs below), dV = 2 hV; A, hV now
-   LDA pl_h
-   ASL A
-   STA pc_dvl,X
-   LDA pl_h+1
-   ROL A
-   STA pc_dvh,X
-   JSR h63                              ; pl_h = 63 * hV
-   CLC                                  ; U0 starts as Up + A
-   LDA pl_up
-   ADC pl_a
-   STA pc_u0l,X
-   LDA pl_up+1
-   ADC pl_a+1
-   STA pc_u0h,X
-   SEC                                  ; V0 starts as Vp - 63 hV
-   LDA pl_vp
-   SBC pl_h
-   STA pc_v0l,X
-   LDA pl_vp+1
-   SBC pl_h+1
-   STA pc_v0h,X
-   ; sin: Bs and hU
-   LDA pl_sm
-   LDX pl_s1
-   JSR pl_prod
-   JSR q_a_h                            ; pl_a = Ps >> 8, pl_h = Ps >> 14
-   LDA pl_sn
-   JSR neg_ah
-   LDX pl_p
-   LDA pl_h
-   ASL A
-   STA pc_dul,X
-   LDA pl_h+1
-   ROL A
-   STA pc_duh,X
-   JSR h63                              ; pl_h = 63 * hU
-   SEC                                  ; U0 -= 63 hU
-   LDA pc_u0l,X
-   SBC pl_h
-   STA pc_u0l,X
-   LDA pc_u0h,X
-   SBC pl_h+1
-   STA pc_u0h,X
-   SEC                                  ; V0 -= Bs
-   LDA pc_v0l,X
-   SBC pl_a
-   STA pc_v0l,X
-   LDA pc_v0h,X
-   SBC pl_a+1
-   STA pc_v0h,X
-   LDA mf_ep
-   STA pc_ep,X
-   LDA pl_d
-   STA pc_d,X
    RTS
 
 ; pl_prod: pl_q (5) = pl_e * A, or pl_e << 8 when X (unity) is non-zero
@@ -3018,6 +2780,653 @@ pl_zk2:
 
 
 .segment "MFILL"
+.segment "MFMAIN"                       ; main RAM (ACCCON X clear only)
+pp_all:  .res 256                       ; partial lines per column, 4 slots of
+                                        ;  64 (kind * 2 + odd; $FF none)
+pd_open: .res 2                         ; per kind (0 ceiling, 1 floor): the
+pd_d:    .res 2                         ;  pending spans' plane (D, flat,
+pd_fl:   .res 2                         ;  light level) and byte columns
+pd_lv:   .res 2
+pd_k0:   .res 2
+pd_k1:   .res 2
+sk0:     .res 1                         ; pe_init: the seg's byte columns
+sk1:     .res 1
+ck0:     .res 1                         ; pe_clr: the columns to clear
+ck1:     .res 1
+pk_kind: .res 1                         ; pe_kind: the kind and its plane
+pk_d:    .res 1
+pk_fl:   .res 1
+fl_kind: .res 1                         ; pd_flush / pp_slot state
+pp_s:    .res 1
+pp_base: .res 1
+pp_k:    .res 1
+pp_k1:   .res 1
+zr_ep:   .res 40                        ; per row j: the epoch ZC / ZS are for
+zc0:     .res 40                        ; ZC[j] = Zk * |c| (4 bytes)
+zc1:     .res 40
+zc2:     .res 40
+zc3:     .res 40
+zs0:     .res 40                        ; ZS[j] = Zk * |s|
+zs1:     .res 40
+zs2:     .res 40
+zs3:     .res 40
+
+.segment "MFILLC"                       ; main RAM code: runs with ACCCON X
+                                        ;  clear (row maths, span sweeps)
+; pl_row: the row maths for pair pl_p and D pl_d, into pc_*[pl_p]
+;   k = |2p + 1 - 80| (j = k >> 1 indexes pl_zk = 2^20 // k)
+;   Pc = D * ZC[j], Ps = D * ZS[j], ZC = Zk * |c|, ZS = Zk * |s| (unity:
+;   Zk << 8), made once per frame per j (zr_*): the same integers as
+;   (D * Zk) * |c|, one multiply per term
+;   A = +-(Pc >> 8), hV = +-(Pc >> 14), Bs = +-(Ps >> 8), hU = +-(Ps >> 14)
+;   U0 = Up + A - 63 hU, dU = 2 hU, V0 = Vp - Bs - 63 hV, dV = 2 hV
+pl_row:
+   LDA pl_p
+   SEC
+   SBC #40
+   BCS :+                               ; floor: j = p - 40
+   EOR #$FF                             ; ceiling: j = 39 - p
+:  TAX
+   STX pl_j
+   LDA zr_ep,X
+   CMP mf_ep
+   BEQ :+
+   JSR pl_zrow                          ; this frame's ZC[j], ZS[j]
+   LDX pl_j
+:  LDA zc0,X                            ; cos: Pc = D * ZC[j] -> A, hV
+   STA pl_e
+   LDA zc1,X
+   STA pl_e+1
+   LDA zc2,X
+   STA pl_e+2
+   LDA zc3,X
+   STA pl_e+3
+   LDA pl_d
+   JSR mul8x32
+   JSR q_a_h                            ; pl_a = Pc >> 8, pl_h = Pc >> 14
+   LDA pl_cn
+   JSR neg_ah
+   LDX pl_p
+   ; V0 = Vp - Bs - 63 hV (Bs below), dV = 2 hV; A, hV now
+   LDA pl_h
+   ASL A
+   STA pc_dvl,X
+   LDA pl_h+1
+   ROL A
+   STA pc_dvh,X
+   JSR h63                              ; pl_h = 63 * hV
+   CLC                                  ; U0 starts as Up + A
+   LDA pl_up
+   ADC pl_a
+   STA pc_u0l,X
+   LDA pl_up+1
+   ADC pl_a+1
+   STA pc_u0h,X
+   SEC                                  ; V0 starts as Vp - 63 hV
+   LDA pl_vp
+   SBC pl_h
+   STA pc_v0l,X
+   LDA pl_vp+1
+   SBC pl_h+1
+   STA pc_v0h,X
+   ; sin: Ps = D * ZS[j] -> Bs, hU
+   LDX pl_j
+   LDA zs0,X
+   STA pl_e
+   LDA zs1,X
+   STA pl_e+1
+   LDA zs2,X
+   STA pl_e+2
+   LDA zs3,X
+   STA pl_e+3
+   LDA pl_d
+   JSR mul8x32
+   JSR q_a_h                            ; pl_a = Ps >> 8, pl_h = Ps >> 14
+   LDA pl_sn
+   JSR neg_ah
+   LDX pl_p
+   LDA pl_h
+   ASL A
+   STA pc_dul,X
+   LDA pl_h+1
+   ROL A
+   STA pc_duh,X
+   JSR h63                              ; pl_h = 63 * hU
+   SEC                                  ; U0 -= 63 hU
+   LDA pc_u0l,X
+   SBC pl_h
+   STA pc_u0l,X
+   LDA pc_u0h,X
+   SBC pl_h+1
+   STA pc_u0h,X
+   SEC                                  ; V0 -= Bs
+   LDA pc_v0l,X
+   SBC pl_a
+   STA pc_v0l,X
+   LDA pc_v0h,X
+   SBC pl_a+1
+   STA pc_v0h,X
+   LDA mf_ep
+   STA pc_ep,X
+   LDA pl_d
+   STA pc_d,X
+   RTS
+
+.segment "MFILL"                        ; (HAZEL: the sweep and set-up)
+; mk_spans: R_MakeSpans over columns pl_k0 .. pl_k1 (+ an empty sentinel):
+; (t1, b1) the previous column's pair interval, (t2, b2) this one's;
+; pairs leaving close a span ending at the previous column, pairs
+; arriving open one here (sp_start). Empty = ($FF, 0).
+mk_spans:
+   LDA #$FF
+   STA mk_t1
+   STZ mk_b1
+   LDA pl_k0
+   STA mk_k
+@col:
+   LDA mk_k
+   CMP pl_k1
+   BEQ :+
+   BCS @sent                            ; past the last: the empty sentinel
+:  TAX
+   LDA pl_kind
+   BEQ :+
+   LDA pe_ft,X
+   STA mk_t2
+   LDA pe_fb,X
+   STA mk_b2
+   BRA @go
+:  LDA pe_ct,X
+   STA mk_t2
+   LDA pe_cb,X
+   STA mk_b2
+   BRA @go
+@sent:
+   LDA #$FF
+   STA mk_t2
+   STZ mk_b2
+@go:
+   LDA mk_t2                            ; keep this column's interval for
+   PHA                                  ;  the next step
+   LDA mk_b2
+   PHA
+@l1:                                    ; while t1 < t2 and t1 <= b1: close t1
+   LDA mk_t1
+   CMP mk_t2
+   BCS @l2
+   LDA mk_b1
+   CMP mk_t1
+   BCC @l2
+   LDA mk_t1
+   JSR mk_close
+   INC mk_t1
+   BRA @l1
+@l2:                                    ; while b1 > b2 and b1 >= t1: close b1
+   LDA mk_b2
+   CMP mk_b1
+   BCS @l3
+   LDA mk_b1
+   CMP mk_t1
+   BCC @l3
+   JSR mk_close
+   DEC mk_b1
+   BRA @l2
+@l3:                                    ; while t2 < t1 and t2 <= b2: open t2
+   LDA mk_t2
+   CMP mk_t1
+   BCS @l4
+   LDA mk_b2
+   CMP mk_t2
+   BCC @l4
+   LDX mk_t2
+   LDA mk_k
+   STA sp_start,X
+   INC mk_t2
+   BRA @l3
+@l4:                                    ; while b2 > b1 and b2 >= t2: open b2
+   LDA mk_b1
+   CMP mk_b2
+   BCS @nx
+   LDA mk_b2
+   CMP mk_t2
+   BCC @nx
+   LDX mk_b2
+   LDA mk_k
+   STA sp_start,X
+   DEC mk_b2
+   BRA @l4
+@nx:
+   PLA
+   STA mk_b1
+   PLA
+   STA mk_t1
+   LDA mk_k
+   INC mk_k
+   CMP pl_k1
+   BEQ :+                               ; k <= k1: the next column (k1 + 1
+   BCS @rts                             ;  is the sentinel: all closed)
+:  JMP @col
+@rts:
+   RTS
+
+; mk_close: A = pair: draw its span sp_start[A] .. mk_k - 1
+mk_close:
+   STA pl_p
+   TAX
+   LDA sp_start,X
+   STA pl_kb
+   SEC
+   LDA mk_k
+   SBC pl_kb
+   STA sp_n                             ; bytes
+   LDA pl_p
+   ASL A
+   STA pl_y                             ; its even line
+   JSR sp_setup
+   JMP sp_go2
+
+; sp_setup: pair / line pl_p, line pl_y, byte columns from pl_kb, flat
+; pl_fl: U, V at the first column, the steps patched into both loops,
+; PTR / Y for line pl_y, the flat's page patched and its bank paged
+sp_setup:
+   JSR pl_rowc
+   LDX pl_p
+   LDA pc_dul,X                         ; U, V at the span's first column
+   STA m_a
+   STA sp_adul+1                        ; and dU, dV into the loops
+   STA sl_adul+1
+   LDA pc_duh,X
+   STA m_a+1
+   STA sp_aduh+1
+   STA sl_aduh+1
+   JSR kbmul
+   LDX pl_p
+   CLC
+   LDA m_p
+   ADC pc_u0l,X
+   STA sp_u
+   LDA m_p+1
+   ADC pc_u0h,X
+   STA sp_u+1
+   LDA pc_dvl,X
+   STA m_a
+   STA sp_advl+1
+   STA sl_advl+1
+   LDA pc_dvh,X
+   STA m_a+1
+   STA sp_advh+1
+   STA sl_advh+1
+   JSR kbmul
+   LDX pl_p
+   CLC
+   LDA m_p
+   ADC pc_v0l,X
+   STA sp_v
+   LDA m_p+1
+   ADC pc_v0h,X
+   STA sp_v+1
+   ; screen: PTR lo 0, Y = (kb * 8 + line & 7) & $FF, PTR hi = the page
+   LDA pl_kb
+   ASL A
+   ASL A
+   ASL A
+   STA pl_a
+   LDA pl_y
+   AND #7
+   ORA pl_a
+   TAY
+   STZ PTR
+   LDA pl_kb
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   STA PTR+1
+   LDA pl_y
+   LSR A
+   LSR A
+   LSR A                                ; (line >> 3) * 2
+   ASL A
+   CLC
+   ADC PTR+1
+   ADC DV_BACKHI
+   STA PTR+1
+   LDX pl_fl
+   LDA mb6_fl_page,X
+   STA sp_rd+2
+   STA sl_rd+2
+   LDA mb6_fl_bank,X
+   STA $FE30
+   RTS
+
+; pl_part: A = a partial line (unbiased: an odd first or even last line of
+; a run) of column pl_kb: recorded for a line span at the flush (slot
+; kind * 2 + odd, one line per column), or, if the slot is taken, drawn
+; on the spot
+pl_part:
+   STA pl_y
+   LSR A                                ; C = odd
+   LDA pl_kind
+   ROL A                                ; slot = kind * 2 + odd
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   ORA pl_kb
+   TAX
+   LDA pp_all,X
+   CMP #$FF
+   BNE @now
+   LDA pl_y
+   STA pp_all,X
+   RTS
+@now:
+   LDA pl_y
+   JMP pl_line
+
+.segment "MFILLC"                       ; (main RAM: the pending planes)
+; pe_init: per seg (end of tx_seg): for each plane kind it textures, keep
+; the pending spans if they are the same plane (D, flat, light), widened
+; to this seg's byte columns; else draw them (pd_flush) and start anew
+pe_init:
+   LDA mf_x
+   LSR A
+   LSR A
+   STA sk0
+   LDA mf_hi
+   DEC A
+   LSR A
+   LSR A
+   STA sk1
+   LDA pl_dc                            ; ceiling: textured?
+   BEQ @fl
+   LDA pl_fc
+   CMP #$FF
+   BEQ @fl
+   STA pk_fl
+   LDA pl_dc
+   STA pk_d
+   LDX #0
+   JSR pe_kind
+@fl:
+   LDA pl_df                            ; floor
+   BEQ @rts
+   STA pk_d
+   LDA pl_ff
+   STA pk_fl
+   LDX #1
+   JMP pe_kind
+@rts:
+   RTS
+
+; pe_kind: X = kind; the plane (pk_d, pk_fl, pl_lv) over columns sk0..sk1
+pe_kind:
+   STX pk_kind
+   LDA pd_open,X
+   BEQ @new
+   LDA pd_d,X
+   CMP pk_d
+   BNE @fl
+   LDA pd_fl,X
+   CMP pk_fl
+   BNE @fl
+   LDA pd_lv,X
+   CMP pl_lv
+   BNE @fl
+   LDA sk0                              ; the same plane: widen, clearing
+   CMP pd_k0,X                          ;  only the new columns
+   BCS @rt
+   STA ck0
+   LDA pd_k0,X
+   DEC A
+   STA ck1
+   JSR pe_clr
+   LDX pk_kind
+   LDA sk0
+   STA pd_k0,X
+@rt:
+   LDA pd_k1,X
+   CMP sk1
+   BCS @rts
+   INC A
+   STA ck0
+   LDA sk1
+   STA ck1
+   JSR pe_clr
+   LDX pk_kind
+   LDA sk1
+   STA pd_k1,X
+@rts:
+   RTS
+@fl:
+   JSR pd_flush                         ; another plane: draw the pending
+   LDX pk_kind
+@new:
+   LDA pk_d
+   STA pd_d,X
+   LDA pk_fl
+   STA pd_fl,X
+   LDA pl_lv
+   STA pd_lv,X
+   LDA sk0
+   STA pd_k0,X
+   STA ck0
+   LDA sk1
+   STA pd_k1,X
+   STA ck1
+   LDA #1
+   STA pd_open,X
+   ; fall into pe_clr
+
+; pe_clr: columns ck0..ck1 of kind pk_kind: no pair interval ($FF, 0),
+; no partial lines ($FF)
+pe_clr:
+   LDA pk_kind
+   LSR A
+   ROR A                                ; kind << 7: its two slots' base
+   STA pp_base
+   LDX ck0
+@lp:
+   LDA pk_kind
+   BNE @f
+   LDA #$FF
+   STA pe_ct,X
+   STZ pe_cb,X
+   BRA @pp
+@f:
+   LDA #$FF
+   STA pe_ft,X
+   STZ pe_fb,X
+@pp:
+   TXA
+   ORA pp_base
+   TAY
+   LDA #$FF
+   STA pp_all,Y
+   STA pp_all+64,Y
+   CPX ck1
+   INX
+   BCC @lp
+   RTS
+
+; pd_flush: X = kind: draw its pending spans -- MakeSpans over the pairs,
+; then the partial lines' line spans -- in the plane's own light; the
+; current seg's masks are kept
+pd_flush:
+   STX fl_kind
+   LDA maskEven
+   PHA
+   LDA maskOdd
+   PHA
+   LDA pd_lv,X
+   TAY
+   LDA light_even,Y
+   STA maskEven
+   LDA light_odd,Y
+   STA maskOdd
+   LDA pd_d,X
+   STA pl_d
+   LDA pd_fl,X
+   STA pl_fl
+   STX pl_kind
+   LDA pd_k0,X
+   STA pl_k0
+   LDA pd_k1,X
+   STA pl_k1
+   JSR mk_spans
+   LDA fl_kind
+   ASL A
+   STA pp_s                             ; slot kind * 2: even lines,
+   JSR pp_slot
+   INC pp_s                             ;  then kind * 2 + 1: odd lines
+   JSR pp_slot
+   LDX fl_kind
+   STZ pd_open,X
+   PLA
+   STA maskOdd
+   PLA
+   STA maskEven
+   RTS
+
+; pp_slot: slot pp_s over the pending columns: each run of one line drawn
+; as a line span (sl_draw)
+pp_slot:
+   LDA pp_s
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   STA pp_base
+   LDX fl_kind
+   LDA pd_k0,X
+   STA pp_k
+   LDA pd_k1,X
+   STA pp_k1
+@lp:
+   LDA pp_k
+   CMP pp_k1
+   BEQ :+
+   BCS @rts
+:  ORA pp_base
+   TAX
+   LDA pp_all,X
+   CMP #$FF
+   BNE @run
+   INC pp_k
+   BRA @lp
+@run:
+   STA pl_y                             ; a run of line pl_y from column k
+   LDA pp_k
+   STA pl_kb
+@ext:
+   INC pp_k
+   LDA pp_k
+   CMP pp_k1
+   BEQ :+
+   BCS @end
+:  ORA pp_base
+   TAX
+   LDA pp_all,X
+   CMP pl_y
+   BEQ @ext
+@end:
+   SEC
+   LDA pp_k
+   SBC pl_kb
+   STA sp_n
+   JSR sl_draw
+   BRA @lp
+@rts:
+   RTS
+
+; sl_draw: line pl_y, columns pl_kb .. + sp_n - 1, flat pl_fl
+sl_draw:
+   LDA pl_y
+   LSR A
+   STA pl_p
+   BCC @even
+   LDA #$BD                             ; odd: LDA mf_flip,X; AND maskOdd
+   STA sl_fl
+   LDA #<mf_flip
+   STA sl_fl+1
+   LDA #>mf_flip
+   STA sl_fl+2
+   LDA #<maskOdd
+   STA sl_mk+1
+   BRA @go
+@even:
+   LDA #$8A                             ; even: TXA; NOP; NOP; AND maskEven
+   STA sl_fl
+   LDA #$EA
+   STA sl_fl+1
+   STA sl_fl+2
+   LDA #<maskEven
+   STA sl_mk+1
+@go:
+   JSR sp_setup
+   JMP sl_go
+
+; mf_flush: the frame's end (render_frame, MASTER): draw every pending
+; plane
+.export mf_flush
+mf_flush:
+   LDA #BANK_C                          ; (the bank-6 tail: flat pages)
+   STA $FE30
+   LDA pd_open
+   BEQ :+
+   LDX #0
+   JSR pd_flush
+:  LDA pd_open+1
+   BEQ :+
+   LDX #1
+   JSR pd_flush
+:  LDA #BANK_WALK
+   STA $FE30
+   RTS
+
+; pl_zrow: X = j -> ZC[j] = Zk * |c|, ZS[j] = Zk * |s| (unity: Zk << 8;
+; < 2^29), stamped with this frame's epoch
+pl_zrow:
+   LDA pl_zk0,X
+   STA pl_e
+   LDA pl_zk1,X
+   STA pl_e+1
+   LDA pl_zk2,X
+   STA pl_e+2
+   STZ pl_e+3
+   LDA pl_cm
+   LDX pl_c1
+   JSR pl_prod
+   LDX pl_j
+   LDA pl_q
+   STA zc0,X
+   LDA pl_q+1
+   STA zc1,X
+   LDA pl_q+2
+   STA zc2,X
+   LDA pl_q+3
+   STA zc3,X
+   LDA pl_sm
+   LDX pl_s1
+   JSR pl_prod
+   LDX pl_j
+   LDA pl_q
+   STA zs0,X
+   LDA pl_q+1
+   STA zs1,X
+   LDA pl_q+2
+   STA zs2,X
+   LDA pl_q+3
+   STA zs3,X
+   LDA mf_ep
+   STA zr_ep,X
+   RTS
+
 .segment "MARITH"                       ; main $7E20: the arithmetic (only ever
                                         ;  called with ACCCON X clear)
 ; ---- mf_mul8: A * mq_b -> A (hi), mq_l (lo). Quarter squares:

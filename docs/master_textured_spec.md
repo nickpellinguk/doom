@@ -100,12 +100,13 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; filler + texturers $C800–$DD53; BSS $DE00–$DFFF |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; filler + texturers $C800–$DCD3; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K); bank 6 tail $B900–$BDFF: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
-| Main $7A00–$7E1F | Texture column index bytes (937 B) |
+| Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
 | Main $6D38–$6FE9 | Cold per-seg wall and plane set-up |
+| Main $4FB1–$5592 | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
@@ -500,6 +501,34 @@ u and its own v (its own T and B lines, step and fractional v stepping):
 - *Rejected*: one shared v per byte (2.41M at the reference pose, 33.7M
   over the poses). It loses the strips' independent texture stepping.
 - *Cycles*: 38.1M over the 18 poses, down from 42.3M.
+
+**5e. Plane spans: merged, partial lines, row terms. — DONE.** Three
+6502-only changes; the model is untouched and the output byte-exact:
+- *P1, pending planes*: a seg's floor and ceiling spans are no longer
+  drawn at its end. Per kind, the pending spans (`pd_*`: D, flat, light
+  level, byte columns) stay open while later segs are the same plane:
+  `pe_init` widens them, clearing only the new columns. Another plane
+  draws them first (`pd_flush`, in their own light, the current seg's
+  masks kept), and `render_frame` (MASTER) ends with `mf_flush`: its
+  seed is now `JSR rf_seed` so the walk's normal end and its unwind
+  both return there. At (1056, −3616, 32): 332 spans → 202.
+- *P2, partial lines as line spans*: an odd first or even last line of
+  a run is recorded per column (`pp_all`, a slot per kind and line
+  parity; a taken slot still draws on the spot) and drawn at the flush
+  as runs along the line (`sl_go`: one texel and one write a byte, its
+  FLIP and mask patched for the parity). 143 single cells → 78 line
+  spans.
+- *P3, row terms per frame*: ZC[j] = Zk·|c| and ZS[j] = Zk·|s| once per
+  frame per row (`pl_zrow`), so a (row, D) needs two multiplies, not
+  three; the same integers.
+- *Cycles*: 36.1M over the 18 poses, down from 38.1M (−5.3%). Less than
+  estimated: a span's set-up is dominated by building its (row, D)
+  terms (112 builds at ~1.9K, 213K, at the pose above), which merging
+  does not reduce; the U/V multiplies at span starts went from 950 to
+  560.
+- *Memory*: the span sweep, `sp_setup` and `pl_part` are in HAZEL with
+  the loops; the pending-plane logic, the row maths and their tables
+  (`pp_all` 256 B, ZC/ZS 360 B) in main $4FB1–$5592.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on
