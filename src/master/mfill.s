@@ -95,6 +95,20 @@ ln_y1:   .res 2
 ln_dm:   .res 2
 ln_neg:  .res 1
 ln_y:    .res 2
+; steppers (see STEPPERS below)
+st_f:    .res 84
+mf_oi:   .res 1                         ; snapshot index the OT/OB steppers hold
+mf_ns:   .res 1                         ; live slot the NT/NB steppers hold
+mf_lc:   .res 1                         ; live-list cursor
+si_x:    .res 1
+si_y0:   .res 2
+si_d:    .res 2
+si_neg:  .res 1
+si_w:    .res 2
+si_k:    .res 2
+si_xlo:  .res 1
+si_a0:   .res 1
+si_a1:   .res 1
 ; maths
 m_p:     .res 4                         ; product / dividend
 m_a:     .res 2                         ; multiplicand
@@ -295,109 +309,158 @@ mf_fill:
    AND #$FE
    STA mf_x
    STZ mf_i
+   LDA #$FF
+   STA mf_oi                            ; no old-edge steppers yet
+   STA mf_ns                            ; no new-edge steppers yet
+   LDA zp_head
+   STA mf_lc                            ; live-list cursor
+   ; --- T and B steppers from x0: k = x0 - sx1 ---
+   SEC
+   LDA mf_x
+   SBC l_sx1
+   STA si_k
+   LDA #0
+   SBC l_sx1+1
+   STA si_k+1
+   LDA l_w
+   STA si_w
+   LDA l_w+1
+   STA si_w+1
+   LDA lt_y1
+   STA si_y0
+   LDA lt_y1+1
+   STA si_y0+1
+   LDA lt_dm
+   STA si_d
+   LDA lt_dm+1
+   STA si_d+1
+   LDA lt_neg
+   STA si_neg
+   LDX #ST_T
+   JSR st_init
+   LDA lb_y1
+   STA si_y0
+   LDA lb_y1+1
+   STA si_y0+1
+   LDA lb_dm
+   STA si_d
+   LDA lb_dm+1
+   STA si_d+1
+   LDA lb_neg
+   STA si_neg
+   LDX #ST_B
+   JSR st_init
 
 col:
    LDA mf_x
    CMP mf_hi
-   BCC :+
+   BCC adv
    RTS                                  ; x >= hi: done
-:
    ; --- old span at x: advance while xe <= x ---
 adv:
    LDY mf_i
    CPY sn_n
-   BCC :+
+   BCC @have
    RTS                                  ; no snapshot span left
-:  LDA mf_x
+@have:
+   LDA mf_x
    CMP sn_xe,Y
-   BCC :+                               ; x < xe: this span or a gap
+   BCC @in
    INC mf_i
    BRA adv
-:  CMP sn_xs,Y
-   BCS :+
-   JMP next_col                         ; x < xs: in a gap before it
-:
-   ; ot / ob
+@in:
+   CMP sn_xs,Y
+   BCS @old
+   JMP next_col                         ; x < xs: a gap before it
+@old:
+   CPY mf_oi
+   BEQ @oval
+   STY mf_oi                            ; a new old-span: set up OT / OB here
    LDA sn_xlo,Y
-   STA ev_xlo
+   STA si_xlo
    LDA sn_den,Y
-   STA ev_den
+   STA si_w
+   STZ si_w+1
    LDA sn_tl,Y
-   STA ev_a0
+   STA si_a0
    LDA sn_tr,Y
-   STA ev_a1
-   JSR ev_span
-   STA c_ot
-   LDY mf_i
+   STA si_a1
+   LDX #ST_OT
+   JSR st_init8
+   LDY mf_oi
    LDA sn_bl,Y
-   STA ev_a0
+   STA si_a0
    LDA sn_br,Y
-   STA ev_a1
-   JSR ev_span
+   STA si_a1
+   LDX #ST_OB
+   JSR st_init8
+@oval:
+   LDX #ST_OT
+   JSR st_val
+   LDA ln_y
+   STA c_ot
+   LDX #ST_OB
+   JSR st_val
+   LDA ln_y
    STA c_ob
-   ; --- live span at x (first with xs <= x < xe) ---
-   STZ c_new
-   LDX zp_head
-@nl:
-   CPX #0
-   BEQ @nd
+   ; --- live span at x: the cursor only moves right ---
+@lc:
+   LDX mf_lc
+   BEQ @none
    LDA mf_x
    CMP POOL_XEND,X
-   BCS @nn                              ; x >= xe: not this one
-   CMP POOL_XSTART,X
-   BCC @nd                              ; x < xs: sorted, none covers x
-   LDA POOL_TXLO,X
-   STA ev_xlo
-   LDA POOL_TDEN,X
-   STA ev_den
-   LDA POOL_TL,X
-   STA ev_a0
-   LDA POOL_TR,X
-   STA ev_a1
-   PHX
-   JSR ev_span
-   STA c_nt
-   PLX
-   LDA POOL_BL,X
-   STA ev_a0
-   LDA POOL_BR,X
-   STA ev_a1
-   JSR ev_span
-   STA c_nb
-   INC c_new
-   BRA @nd
-@nn:
+   BCC @inx
    LDA POOL_NEXT,X
-   TAX
-   BRA @nl
-@nd:
+   STA mf_lc
+   BRA @lc
+@inx:
+   CMP POOL_XSTART,X
+   BCC @none                            ; x < xs: no live span covers x
+   CPX mf_ns
+   BEQ @nval
+   STX mf_ns                            ; a new live span: set up NT / NB
+   LDA POOL_TXLO,X
+   STA si_xlo
+   LDA POOL_TDEN,X
+   STA si_w
+   STZ si_w+1
+   LDA POOL_TL,X
+   STA si_a0
+   LDA POOL_TR,X
+   STA si_a1
+   LDX #ST_NT
+   JSR st_init8
+   LDX mf_ns
+   LDA POOL_BL,X
+   STA si_a0
+   LDA POOL_BR,X
+   STA si_a1
+   LDX #ST_NB
+   JSR st_init8
+@nval:
+   LDX #ST_NT
+   JSR st_val
+   LDA ln_y
+   STA c_nt
+   LDX #ST_NB
+   JSR st_val
+   LDA ln_y
+   STA c_nb
+   LDA #1
+   STA c_new
+   BRA @lines
+@none:
+   STZ c_new
+@lines:
    ; --- T and B at x, clamped for comparison against the visible band ---
-   LDA lt_y1
-   STA ln_y1
-   LDA lt_y1+1
-   STA ln_y1+1
-   LDA lt_dm
-   STA ln_dm
-   LDA lt_dm+1
-   STA ln_dm+1
-   LDA lt_neg
-   STA ln_neg
-   JSR ev_line
+   LDX #ST_T
+   JSR st_val
    LDX #Y_BIAS                          ; clamp(T, 48, 208)
    LDY #Y_BIAS + 160
    JSR clamp_ln
    STA c_tc
-   LDA lb_y1
-   STA ln_y1
-   LDA lb_y1+1
-   STA ln_y1+1
-   LDA lb_dm
-   STA ln_dm
-   LDA lb_dm+1
-   STA ln_dm+1
-   LDA lb_neg
-   STA ln_neg
-   JSR ev_line
+   LDX #ST_B
+   JSR st_val
    LDX #Y_BIAS - 1                      ; clamp(B, 47, 207)
    LDY #VIS_YMAX
    JSR clamp_ln
@@ -432,10 +495,218 @@ next_col:
    LDA mf_x
    CLC
    ADC #2
-   BCC :+
+   BCC @step
    RTS
-:  STA mf_x
+@step:
+   STA mf_x
+   LDX #ST_T
+   JSR st_step
+   LDX #ST_B
+   JSR st_step
+   LDA mf_oi
+   BMI @no_o
+   LDX #ST_OT
+   JSR st_step
+   LDX #ST_OB
+   JSR st_step
+@no_o:
+   LDA mf_ns
+   BMI @no_n
+   LDX #ST_NT
+   JSR st_step
+   LDX #ST_NB
+   JSR st_step
+@no_n:
    JMP col
+
+; ============================================================================
+; STEPPERS. Each tracks y(x) = y0 +/- floor(|D| * k / W) for k = x - x0
+; exactly as x steps by 2: |D| * k = q * W + r with 0 <= r < W, and
+; 2|D| = Q * W + R, so a step is r += R, q += Q, then one conditional
+; r -= W, q += 1. A negative slope reads y0 - (q + (r != 0)) (floor of a
+; negative quotient). W = 0 is a constant y0 (a zero-width line). The
+; set-up pays one multiply and two divides; each step a few adds.
+; Field offsets in st_* (X = stepper base): y0 0/1, q 2/3, r 4/5, W 6/7,
+; Q 8/9, R 10/11, neg 12, const 13.
+; ============================================================================
+ST_T  = 0
+ST_B  = 14
+ST_OT = 28
+ST_OB = 42
+ST_NT = 56
+ST_NB = 70
+
+; st_init8: a span edge -- y0 = si_a0, D = si_a1 - si_a0, W = si_w (den),
+; k = x - si_xlo (u8 values; the clipper's floor interpolation)
+st_init8:
+   STX si_x
+   LDA si_a0
+   STA si_y0
+   STZ si_y0+1
+   STZ si_neg
+   LDA si_a1
+   SEC
+   SBC si_a0
+   BCS @pos
+   DEC si_neg
+   LDA si_a0
+   SEC
+   SBC si_a1
+@pos:
+   STA si_d
+   STZ si_d+1
+   SEC
+   LDA mf_x
+   SBC si_xlo
+   STA si_k
+   STZ si_k+1
+   LDX si_x
+   ; fall into st_init
+
+; st_init: si_y0, si_d (|D|), si_neg, si_w, si_k  -> stepper X
+st_init:
+   STX si_x
+   LDA si_y0
+   STA st_f+0,X
+   LDA si_y0+1
+   STA st_f+1,X
+   LDA si_neg
+   STA st_f+12,X
+   LDA si_w
+   STA st_f+6,X
+   LDA si_w+1
+   STA st_f+7,X
+   ORA si_w
+   BNE @var
+   LDA #1
+   STA st_f+13,X                        ; W = 0: constant y0
+   RTS
+@var:
+   STZ st_f+13,X
+   LDA si_d                             ; q, r = |D| * k / W
+   STA m_a
+   LDA si_d+1
+   STA m_a+1
+   LDA si_k
+   STA m_b
+   LDA si_k+1
+   STA m_b+1
+   JSR mul16
+   LDA si_w
+   STA m_b
+   LDA si_w+1
+   STA m_b+1
+   JSR div32
+   LDX si_x
+   LDA m_p
+   STA st_f+2,X
+   LDA m_p+1
+   STA st_f+3,X
+   LDA m_r
+   STA st_f+4,X
+   LDA m_r+1
+   STA st_f+5,X
+   LDA si_d                             ; Q, R = 2|D| / W
+   ASL A
+   STA m_p
+   LDA si_d+1
+   ROL A
+   STA m_p+1
+   LDA #0
+   ROL A
+   STA m_p+2
+   STZ m_p+3
+   LDA si_w
+   STA m_b
+   LDA si_w+1
+   STA m_b+1
+   JSR div32
+   LDX si_x
+   LDA m_p
+   STA st_f+8,X
+   LDA m_p+1
+   STA st_f+9,X
+   LDA m_r
+   STA st_f+10,X
+   LDA m_r+1
+   STA st_f+11,X
+   RTS
+
+; st_step: advance stepper X by two pixels
+st_step:
+   LDA st_f+13,X
+   BNE @rts
+   CLC
+   LDA st_f+4,X
+   ADC st_f+10,X
+   STA st_f+4,X
+   LDA st_f+5,X
+   ADC st_f+11,X
+   STA st_f+5,X
+   CLC
+   LDA st_f+2,X
+   ADC st_f+8,X
+   STA st_f+2,X
+   LDA st_f+3,X
+   ADC st_f+9,X
+   STA st_f+3,X
+   LDA st_f+4,X                         ; r >= W ?
+   CMP st_f+6,X
+   LDA st_f+5,X
+   SBC st_f+7,X
+   BCC @rts
+   LDA st_f+4,X
+   SBC st_f+6,X                         ; (C = 1 from the compare)
+   STA st_f+4,X
+   LDA st_f+5,X
+   SBC st_f+7,X
+   STA st_f+5,X
+   INC st_f+2,X
+   BNE @rts
+   INC st_f+3,X
+@rts:
+   RTS
+
+; st_val: ln_y = stepper X's current y (s16)
+st_val:
+   LDA st_f+13,X
+   BEQ @var
+   LDA st_f+0,X
+   STA ln_y
+   LDA st_f+1,X
+   STA ln_y+1
+   RTS
+@var:
+   LDA st_f+2,X
+   STA m_p
+   LDA st_f+3,X
+   STA m_p+1
+   LDA st_f+12,X
+   BEQ @pos
+   LDA st_f+4,X                         ; negative: y0 - (q + (r != 0))
+   ORA st_f+5,X
+   BEQ @sub
+   INC m_p
+   BNE @sub
+   INC m_p+1
+@sub:
+   SEC
+   LDA st_f+0,X
+   SBC m_p
+   STA ln_y
+   LDA st_f+1,X
+   SBC m_p+1
+   STA ln_y+1
+   RTS
+@pos:
+   CLC
+   LDA st_f+0,X
+   ADC m_p
+   STA ln_y
+   LDA st_f+1,X
+   ADC m_p+1
+   STA ln_y+1
+   RTS
 
 ; ---- band: [b_y0, b_y1] (biased, inclusive) -> ceiling / wall / floor runs
 band:
@@ -596,110 +867,6 @@ hz_run:
 @done:
    LDA #ACC_DY
    STA $FE34                            ; back to main RAM
-   RTS
-
-; ============================================================================
-; ev_span: A = ev_a0 + floor((ev_a1 - ev_a0) * (x - ev_xlo) / ev_den)
-; (endpoint_spans._interp on the span's top anchor; den 0 -> a0)
-; ============================================================================
-ev_span:
-   LDA ev_den
-   BNE :+
-   LDA ev_a0
-   RTS
-:  SEC
-   LDA mf_x
-   SBC ev_xlo
-   STA m_b                              ; k
-   STZ m_b+1
-   LDA ev_a1
-   SEC
-   SBC ev_a0
-   BCC @neg
-   STA m_a                              ; dy >= 0
-   STZ m_a+1
-   JSR mul16                            ; m_p = dy * k
-   LDA ev_den
-   STA m_b
-   STZ m_b+1
-   JSR div32                            ; m_p = q, m_r = r
-   LDA ev_a0
-   CLC
-   ADC m_p
-   RTS
-@neg:
-   LDA ev_a0
-   SEC
-   SBC ev_a1
-   STA m_a                              ; |dy|
-   STZ m_a+1
-   JSR mul16
-   LDA ev_den
-   STA m_b
-   STZ m_b+1
-   JSR div32
-   LDA m_r                              ; floor of a negative quotient:
-   ORA m_r+1                            ; a0 - (q + (r != 0)); q + 1 still
-   BEQ :+                               ; fits a byte (r != 0 => q < |dy|)
-   INC m_p
-:  LDA ev_a0
-   SEC
-   SBC m_p
-   RTS
-
-; ============================================================================
-; ev_line: ln_y = ln_y1 +/- floor(ln_dm * (x - l_sx1) / l_w)   (s16 result)
-; ============================================================================
-ev_line:
-   LDA l_w
-   ORA l_w+1
-   BNE :+
-   LDA ln_y1
-   STA ln_y
-   LDA ln_y1+1
-   STA ln_y+1
-   RTS
-:  SEC                                  ; k = x - sx1 (0 <= k < W)
-   LDA mf_x
-   SBC l_sx1
-   STA m_b
-   LDA #0
-   SBC l_sx1+1
-   STA m_b+1
-   LDA ln_dm
-   STA m_a
-   LDA ln_dm+1
-   STA m_a+1
-   JSR mul16                            ; m_p = |D| * k (32 bits)
-   LDA l_w
-   STA m_b
-   LDA l_w+1
-   STA m_b+1
-   JSR div32                            ; m_p = q (16 bits), m_r = r
-   LDA ln_neg
-   BNE @neg
-   CLC
-   LDA ln_y1
-   ADC m_p
-   STA ln_y
-   LDA ln_y1+1
-   ADC m_p+1
-   STA ln_y+1
-   RTS
-@neg:
-   LDA m_r                              ; q' = q + (r != 0)
-   ORA m_r+1
-   BEQ :+
-   INC m_p
-   BNE :+
-   INC m_p+1
-:  SEC
-   LDA ln_y1
-   SBC m_p
-   STA ln_y
-   LDA ln_y1+1
-   SBC m_p+1
-   STA ln_y+1
    RTS
 
 ; ---- clamp_ln: A = clamp(ln_y (s16), X, Y) as u8 ------------------------
