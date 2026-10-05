@@ -19,7 +19,7 @@ Outputs (all deterministic):
   report.txt        memory report
 
 Byte formats (Mode 1: pixel k of a byte uses bits 7-k (colour bit 1) and
-3-k (colour bit 0); logical colours 0 black, 1 magenta, 2 cyan, 3 white):
+3-k (colour bit 0); logical colours 0 black, 1 red, 2 cyan, 3 white):
   shade         one of 10 pixel pairs (a, b), a <= b: 4 solid + 6 mixes.
                 Textures hold only the TOP row of the cross-hatch; the
                 second screen line is FLIP[byte] (each pair swapped).
@@ -47,8 +47,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 WAD = os.path.join(ROOT, 'DOOM1.WAD')
 
 # ── palette and shades ────────────────────────────────────────────────
-PALETTE = [(0, 0, 0), (255, 0, 255), (0, 255, 255), (255, 255, 255)]
-PHYSICAL = [0, 5, 6, 7]          # VDU 19 physical colours for logical 0-3
+PALETTE = [(0, 0, 0), (255, 0, 0), (0, 255, 255), (255, 255, 255)]
+PHYSICAL = [0, 1, 6, 7]          # VDU 19 physical colours for logical 0-3
 SHADES = [(a, a) for a in range(4)] + [(a, b) for a in range(4)
                                        for b in range(a + 1, 4)]
 GAIN = 2.0                       # source brightness boost before matching

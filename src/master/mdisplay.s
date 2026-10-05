@@ -2,7 +2,7 @@
 ;
 ; Proves the display half of the Master memory map on its own:
 ;   - shadow MODE 1, re-cut by the CRTC to a centred 256x160 window
-;   - palette black / magenta / cyan / white
+;   - palette black / red / cyan / white
 ;   - two 10K buffers in SHADOW RAM, &3000 and &5800, flipped at vsync
 ;     through R12/R13 while D (display shadow) stays set
 ;   - drawing code and its tables live in HAZEL (&C000) and reach the
@@ -113,7 +113,7 @@ loop:   lda #19                         ; wait for vsync
 
 vdu_init:
         .byte 22, 129                   ; MODE 129: Mode 1 in shadow (D set)
-        .byte 19, 1, 5, 0, 0, 0         ; logical 1 -> magenta
+        .byte 19, 1, 1, 0, 0, 0         ; logical 1 -> red
         .byte 19, 2, 6, 0, 0, 0         ; logical 2 -> cyan
         .byte 19, 3, 7, 0, 0, 0         ; logical 3 -> white
 vdu_init_end:

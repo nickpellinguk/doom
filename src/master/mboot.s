@@ -8,7 +8,7 @@
 ;   - bank C's content is NOT a bank: MCBITS loads straight to $5800 in
 ;     main RAM (free: the screens are in shadow RAM);
 ;   - only banks 4 and 7 are loaded (5 and 6 are for textures);
-;   - the screen is MODE 129 (shadow Mode 1) with the black/magenta/cyan/
+;   - the screen is MODE 129 (shadow Mode 1) with the black/red/cyan/
 ;     white palette; the driver then cuts it to 256x160;
 ;   - the HAZEL block is copied to $C000 LAST, after the final disc
 ;     access, because the filing system keeps its workspace in HAZEL.
@@ -133,7 +133,7 @@ s_cbits: .byte "LOAD MCBITS", 13
 s_hazel: .byte "LOAD MHAZEL 3000", 13
 vdu_init:
         .byte 22, 129                   ; MODE 129: Mode 1 in shadow RAM
-        .byte 19, 1, 5, 0, 0, 0         ; logical 1 -> magenta
+        .byte 19, 1, 1, 0, 0, 0         ; logical 1 -> red
         .byte 19, 2, 6, 0, 0, 0         ; logical 2 -> cyan
         .byte 19, 3, 7, 0, 0, 0         ; logical 3 -> white
 vdu_end:

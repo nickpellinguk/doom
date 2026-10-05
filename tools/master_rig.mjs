@@ -38,7 +38,7 @@ if (mode !== "display") {
 }
 fs.mkdirSync(outdir, { recursive: true });
 
-const PALETTE = { "0,0,0": "black", "255,0,255": "magenta", "0,255,255": "cyan", "255,255,255": "white" };
+const PALETTE = { "0,0,0": "black", "255,0,0": "red", "0,255,255": "cyan", "255,255,255": "white" };
 const W = 1024, H = 625;
 
 const s = new MachineSession("Master");
@@ -179,7 +179,7 @@ async function engineMode() {
         if (c !== "0,0,0") { cols.add(c);
             minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
     }
-    const pal = ["255,0,255", "0,255,255", "255,255,255"];
+    const pal = ["255,0,0", "0,255,255", "255,255,255"];
     const odd = [...cols].filter((c) => !pal.includes(c));
     if (odd.length) fails.push(`unexpected colours ${odd.join(" ")}`);
     out.lit_box = [minx, miny, maxx, maxy];

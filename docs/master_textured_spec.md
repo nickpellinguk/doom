@@ -9,7 +9,8 @@ Model B memory map are replaced. The Model B build is not maintained.
 ## 1. Display
 
 - 256×160, 4 colours, Mode 1 byte format (4 interleaved 2-bit pixels per byte).
-- Palette: **black, magenta, cyan, white**.
+- Palette: **black, red, cyan, white** (logical 0–3 = physical 0, 1, 6, 7;
+  red replaced magenta for a more even brightness spread).
 - 64 bytes per line × 160 lines = 10K per buffer. **Both buffers live in the
   20K shadow RAM**, at &3000 and &5800. The display always shows shadow; a
   flip rewrites the CRTC start address (R12/R13).
@@ -25,7 +26,10 @@ Model B memory map are replaced. The Model B build is not maintained.
   the two pixels of every pair (a, b → b, a). One table serves walls and floors.
 - **Conversion**: match mainly on brightness. Source RGB × 2.0 gain, then
   nearest shade by luminance (Rec. 601 weights), chroma weight 0 by default
-  (kept as a tunable). On E1M1 this uses all 10 shades at 5–23% each.
+  (kept as a tunable). Red + cyan averages to exactly mid-grey, the same
+  colour as black + white, so brightness matching only ever picks one of
+  the two: textures use **9 distinct shades**. On E1M1 solid red is the
+  most used shade (24%): Doom's dark greys and browns land there.
 
 ## 3. Drawing
 
@@ -98,10 +102,10 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
-- Wall column data: 762 stored columns × 32 B = 24,384 B (23.8K).
+- Wall column data: 783 stored columns × 32 B = 25,056 B (24.5K).
 - Flats: 23 × 256 B = 5,888 B (5.75K).
-- Textures and flats together: all of bank 5 and 14,080 B of bank 6
-  (2.25K of bank 6 spare).
+- Textures and flats together: all of bank 5 and 14,592 B of bank 6
+  (1.75K of bank 6 spare).
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
 - **Total in the banks: ~54K of 64K.** ANDY (4K) is spare.
