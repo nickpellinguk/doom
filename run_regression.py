@@ -180,6 +180,9 @@ run('master_engine', ['test_master_engine.py'],
 # obey the byte rules (FLIP pairs, valid shades) and draw every on-map cell.
 run('textured_ref', ['test_textured_ref.py'],
     lambda o: 'TEXTUREDREF: PASS' in o)
+# Master textured port, step 3: the span-diff fill model covers every
+# on-map pixel and agrees with the textured reference's surfaces.
+run('fill_ref', ['test_fill_ref.py'], lambda o: 'FILLREF: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):

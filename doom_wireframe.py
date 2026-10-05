@@ -542,6 +542,10 @@ fp_sectors = [
 # side => back=None (one-sided), so the packer bakes SF_SOLID, occlusion
 # mark_solids the full columns, and every world (float arbiter, fp,
 # packed, 6502) inherits identically.
+# Master textured port (fill_ref.py): called by packed_render_seg with each
+# drawn seg's column range and front ceiling/floor lines, before its clip ops.
+_seg_fill_hook = None
+
 _ONEWAY_WALLED_SIDE = {26: 14, 29: 15, 275: 46}   # linedef -> blind-side sector
 
 def seg_sectors(seg):
@@ -3353,6 +3357,8 @@ def packed_render_seg(si, clips, ctx, vz, surface, ram, deferred=None):
         _novt_annotations.append((sx2, ft2, fb2,
             f"s{si} v{s[1]}", _vt_rule(no_vt2, r1_v2), solid, no_vt2))
 
+    if _seg_fill_hook is not None:      # Master textured port (fill_ref.py)
+        _seg_fill_hook(si, x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid)
     fp_module.mul_cat("clip")
     if solid:
         lines = []
