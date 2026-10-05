@@ -43,10 +43,10 @@ arithmetic chosen so the 6502 can reproduce it exactly:
                 dr = d + ((d - d_prev) >> 1)
             else it is exact too; past xh it is the left strip's d.
   bytes     the unit is the BYTE COLUMN (fill_ref): every write is a whole
-            byte, a 4x2 fat pixel. A wall byte is two strips, (left texel
-            << 2) | right texel: each strip has its own u (at its centre,
-            x + 1 and x + 3); v, the run extents, part and piece are the
-            byte's (its T and B lines at x).
+            byte, a 4x2 fat pixel. A wall byte is two independent strips,
+            (left texel << 2) | right texel: each strip has its own u (at its
+            centre, x + 1 and x + 3) and its own v (its own T and B lines,
+            at x and x + 2); the run extents, part and piece are the byte's.
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines: the byte,
             then FLIP of it; a pair moves 2 * step):
@@ -160,6 +160,10 @@ class TexRef(Fm.FillRef):
                                                           (self.bot(n, x) + 1, ob, 'lo')]
             T = Fm._floor_interp(x, sx1, ft1, sx2, ft2) + Bz
             B_ = Fm._floor_interp(x, sx1, fb1, sx2, fb2) + Bz
+            # the right strip's own lines, for its own v (the extents of
+            # every run are the byte's: T and B at x)
+            Tr = Fm._floor_interp(x + 2, sx1, ft1, sx2, ft2) + Bz
+            Br = Fm._floor_interp(x + 2, sx1, fb1, sx2, fb2) + Bz
             # perspective-correct d at the left strip's centre x + 1:
             # projective between the visible ends (8-bit weights; numerator
             # and denominator step by constants, one division per byte).
@@ -202,7 +206,7 @@ class TexRef(Fm.FillRef):
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
                         self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
-                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, T, B_)
+                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br)
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 

@@ -178,7 +178,7 @@ ln_dm:   .res 2
 ln_neg:  .res 1
 ln_y:    .res 2
 ; steppers (see STEPPERS below)
-st_f:    .res 84
+st_f:    .res 112
 mf_oi:   .res 1                         ; snapshot index the OT/OB steppers hold
 mf_ns:   .res 1                         ; live slot the NT/NB steppers hold
 mf_lc:   .res 1                         ; live-list cursor
@@ -259,10 +259,14 @@ t_ev:    .res 1
 t_od:    .res 1
 t_cl:    .res 1                         ; texel column base lo / hi
 t_ch:    .res 1
+c_tr:    .res 2                         ; the right strip's own T, B (x + 2;
+c_br:    .res 2                         ;  c_t..c_b and c_tr..c_br are pairs)
 q_t:     .res 2                         ; tstrip's T, B (same layout) and d
 q_b:     .res 2
 q_d:     .res 2
 tx_dr:   .res 2                         ; the right strip's d (x + 3)
+l_v:     .res 2                         ; the left strip's v and pair step
+l_step:  .res 2                         ;  (t_v / t_step: the right strip's)
 tx_lx:   .res 1                         ; the last byte column with an exact d
 tx_dp:   .res 2                         ;  (its x, and that d)
 t_kk:    .res 3                         ; the part's K
@@ -545,6 +549,27 @@ mf_fill:
    STA si_neg
    LDX #ST_B
    JSR st_init
+   ; the right strip's own T and B: the same lines from x0 + 2
+   CLC
+   LDA si_k
+   ADC #2
+   STA si_k
+   BCC :+
+   INC si_k+1
+:  LDX #ST_BR
+   JSR st_init
+   LDA lt_y1
+   STA si_y0
+   LDA lt_y1+1
+   STA si_y0+1
+   LDA lt_dm
+   STA si_d
+   LDA lt_dm+1
+   STA si_d+1
+   LDA lt_neg
+   STA si_neg
+   LDX #ST_TR
+   JSR st_init
    LDA #$FF
    STA tx_lx                            ; no exact d yet in this seg
    LDA mf_x
@@ -676,6 +701,18 @@ adv:
    LDY #VIS_YMAX
    JSR clamp_ln
    STA c_bc
+   LDX #ST_TR                           ; the right strip's own T, B (x + 2):
+   JSR st_val                           ;  its v only -- every extent is the
+   LDA ln_y                             ;  byte's
+   STA c_tr
+   LDA ln_y+1
+   STA c_tr+1
+   LDX #ST_BR
+   JSR st_val
+   LDA ln_y
+   STA c_br
+   LDA ln_y+1
+   STA c_br+1
    ; --- the bands ---
    LDA c_new
    BNE @two
@@ -739,6 +776,10 @@ next_col:
    JSR st_step
    LDX #ST_B
    JSR st_step
+   LDX #ST_TR
+   JSR st_step
+   LDX #ST_BR
+   JSR st_step
    LDA mf_oi
    BMI @no_o
    LDX #ST_OT
@@ -772,6 +813,8 @@ ST_OT = 28
 ST_OB = 42
 ST_NT = 56
 ST_NB = 70
+ST_TR = 84                              ; the right strip's T / B (x + 2)
+ST_BR = 98
 
 ; st_init8: a span edge -- y0 = si_a0, D = si_a1 - si_a0, W = si_w (den),
 ; k = x - si_xlo (u8 values; the clipper's floor interpolation)
@@ -1430,8 +1473,8 @@ wall_run:
    JMP run
 
 ; ---- trun: A = part id; textured run over [r_ys, r_ye] (biased) ---------
-; One part, one bank, the byte's extents and v; two strips, each with its
-; own column (u at its centre).
+; One part, one bank, the byte's extents; two independent strips: each has
+; its own column (u at its centre) and its own v (its own T and B lines).
 ; Every line is written WHOLE: (left texel << 2) | right texel, FLIP of it
 ; on odd lines -- a 4x2 fat pixel, nothing read back.
 trun:
@@ -1448,13 +1491,21 @@ trun:
    STA t_kk+1
    LDA mb6_pt_k2,X
    STA t_kk+2
-   ; the byte's v (T, B at x), then each strip's column (d at x + 1, x + 3)
+   ; the left strip: its v from T, B at x; its column from d at x + 1
    LDX #3
 :  LDA c_t,X                            ; c_t, c_b (4 bytes) -> q_t, q_b
    STA q_t,X
    DEX
    BPL :-
    JSR tvstep
+   LDA t_v
+   STA l_v
+   LDA t_v+1
+   STA l_v+1
+   LDA t_step
+   STA l_step
+   LDA t_step+1
+   STA l_step+1
    LDA tx_d
    STA q_d
    LDA tx_d+1
@@ -1464,6 +1515,13 @@ trun:
    STA trl_rd+1
    LDA t_ch
    STA trl_rd+2
+   ; the right strip: its own v from T, B at x + 2; its column from d at x + 3
+   LDX #3
+:  LDA c_tr,X                           ; c_tr, c_br -> q_t, q_b
+   STA q_t,X
+   DEX
+   BPL :-
+   JSR tvstep
    LDA tx_dr
    STA q_d
    LDA tx_dr+1
@@ -1495,7 +1553,7 @@ trun:
    LDA #ACC_DXY
    STA $FE34                            ; -> shadow (no main reads >= $3000)
 pb_tex:
-   LDA t_v+1                            ; row = (v >> 11) & (th - 1), * 8
+   LDA l_v+1                            ; row = (v >> 11) & (th - 1), * 8
    AND t_rowm
    TAX
 trl_rd:
@@ -1503,6 +1561,9 @@ trl_rd:
    ASL A
    ASL A
    STA t_ev
+   LDA t_v+1
+   AND t_rowm
+   TAX
 trr_rd:
    LDA $FFFF,X                          ; (patched: right texel column)
    ORA t_ev
@@ -1530,7 +1591,14 @@ trr_rd:
 :  TYA
    LSR A
    BCS @line                            ; odd line: same texel pair
-   CLC                                  ; even line: the next texel row
+   CLC                                  ; even line: both strips' next pair
+   LDA l_v
+   ADC l_step
+   STA l_v
+   LDA l_v+1
+   ADC l_step+1
+   STA l_v+1
+   CLC
    LDA t_v
    ADC t_step
    STA t_v

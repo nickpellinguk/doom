@@ -6,13 +6,11 @@ On the engine's own span pool, as fill_ref:
     completely, the off-map poses are the known four
   - every wall texel the model draws, where the float textured reference
     also draws a wall at that strip and texel row, is the SAME texture
-    texel within one row and one column on at least 94.5% of cells, and
+    texel within one row and one column on at least 95% of cells, and
     exactly the same byte on at least 75%, over the on-map poses (the
     model works from the engine's integer screen x, line ends and 8-bit
     reciprocals, the reference in floats: +-1 texel is quantisation,
-    and close-up walls inherit the engine's 1-2 pixel edge differences;
-    a byte's two strips share one v, from the byte's own T and B, which
-    costs ~0.4% here: 95.2% with a v per strip)
+    and close-up walls inherit the engine's 1-2 pixel edge differences)
 Writes build/master/tex/*.png. Prints TEXREF: PASS.
 """
 import math, os, sys
@@ -76,8 +74,8 @@ for pose in C.POSITIONS:
           f'within 1 texel {100 * ne / max(n, 1):.1f}%, exact {100 * ex / max(n, 1):.1f}%')
 pn, pe = 100 * NEAR / N, 100 * EXACT / N
 print(f'overall (on-map poses): {N} wall cells, within one texel {pn:.2f}%, exact {pe:.2f}%')
-if pn < 94.5:
-    fails.append(f'within-one-texel agreement {pn:.2f}% < 94.5%')
+if pn < 95.0:
+    fails.append(f'within-one-texel agreement {pn:.2f}% < 95%')
 if pe < 75.0:
     fails.append(f'exact texel agreement {pe:.2f}% < 75%')
 for f in fails[:20]:
