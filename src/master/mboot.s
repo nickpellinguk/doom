@@ -22,7 +22,7 @@
         .include "abi.inc"
 
 ROMSEL_COPY = $F4
-BOUNCE  = $0A00                         ; one free OS buffer page
+; the bounce page is $0A00, one free OS buffer page (written inline)
 
         .segment "CODE"
 ldr:
@@ -51,13 +51,13 @@ ldr:
         ldx #HAZEL_PAGES
 @park:  ldy #0
 @pk1:   lda ($80),y                     ; main page -> bounce
-        sta BOUNCE,y
+        sta $0A00,y
         iny
         bne @pk1
         lda $FE34
         ora #$04                        ; X: CPU on shadow
         sta $FE34
-@pk2:   lda BOUNCE,y                    ; bounce -> shadow page
+@pk2:   lda $0A00,y                    ; bounce -> shadow page
         sta ($80),y
         iny
         bne @pk2
@@ -137,14 +137,14 @@ stub:
         sta $FE34
         ldy #0
 @h1:    lda ($80),y
-        sta BOUNCE,y
+        sta $0A00,y
         iny
         bne @h1
         lda $FE34
         and #$FB
         ora #$08                        ; X off, Y on: write HAZEL
         sta $FE34
-@h2:    lda BOUNCE,y
+@h2:    lda $0A00,y
         sta ($82),y
         iny
         bne @h2
