@@ -15,22 +15,18 @@
 
         .include "abi.inc"
 
-OSWRCH  = $FFEE
-OSCLI   = $FFF7
-ACCCON  = $FE34
-ROMSEL  = $FE30
 ROMSEL_COPY = $F4
 
         .segment "CODE"
 ldr:
         ldx #<c_b4
         ldy #>c_b4
-        jsr OSCLI                       ; *LOAD MBANK4 3000 (bank A)
+        jsr $FFF7                       ; *LOAD MBANK4 3000 (bank A)
         lda #4
         jsr copy
         ldx #<c_b7
         ldy #>c_b7
-        jsr OSCLI                       ; *LOAD MBANK7 3000 (bank B)
+        jsr $FFF7                       ; *LOAD MBANK7 3000 (bank B)
         lda #7
         jsr copy
         ldx #stub_len
@@ -44,7 +40,7 @@ copy:                                   ; A = bank: $3000-$6FFF -> $8000
         ldx ROMSEL_COPY
         stx oldrom
         sei
-        sta ROMSEL
+        sta $FE30
         sta ROMSEL_COPY
         lda #$00
         sta $80
@@ -64,7 +60,7 @@ copy:                                   ; A = bank: $3000-$6FFF -> $8000
         dex
         bne @pg
         lda oldrom
-        sta ROMSEL
+        sta $FE30
         sta ROMSEL_COPY
         cli
         rts
@@ -77,7 +73,7 @@ stub_image:
 stub:
         ldx #<s_main
         ldy #>s_main
-        jsr OSCLI                       ; *LOAD MMAIN 3000 (staged)
+        jsr $FFF7                       ; *LOAD MMAIN 3000 (staged)
         lda #$00
         sta $80
         sta $82
@@ -97,21 +93,21 @@ stub:
         bne @cp
         ldx #<s_cbits
         ldy #>s_cbits
-        jsr OSCLI                       ; *LOAD MCBITS (to its own $5800)
+        jsr $FFF7                       ; *LOAD MCBITS (to its own $5800)
         ldx #<s_hazel
         ldy #>s_hazel
-        jsr OSCLI                       ; *LOAD MHAZEL 3000 -- LAST disc access
+        jsr $FFF7                       ; *LOAD MHAZEL 3000 -- LAST disc access
         ldx #0
 @vdu:   lda vdu_init,x                  ; MODE 129 + palette (last OS output)
-        jsr OSWRCH
+        jsr $FFEE
         inx
         cpx #vdu_end - vdu_init
         bne @vdu
         sei
-        lda ACCCON
+        lda $FE34
         pha
         ora #$08                        ; Y: HAZEL in at $C000
-        sta ACCCON
+        sta $FE34
         lda #$00
         sta $80
         sta $82
@@ -130,7 +126,7 @@ stub:
         dex
         bne @hz
         pla
-        sta ACCCON                      ; HAZEL out again (the driver pages it)
+        sta $FE34                      ; HAZEL out again (the driver pages it)
         jmp DRV_ORG                     ; -> driver (its SEI kills the OS)
 s_main:  .byte "LOAD MMAIN 3000", 13
 s_cbits: .byte "LOAD MCBITS", 13

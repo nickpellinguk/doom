@@ -81,7 +81,8 @@ def build():
     os.makedirs(OUT, exist_ok=True)
     tables()
     obj, binp, lab = (os.path.join(OUT, n) for n in ('mdisplay.o', 'mdisplay.bin', 'mdisplay.lab'))
-    subprocess.run(['ca65', '--cpu', '65C02', '-I', OUT, '-I', SRC,
+    subprocess.run(['ca65', '--cpu', '65C02', '-D', 'BANKED=1', '-D', 'MASTER=1',
+                    '-I', OUT, '-I', SRC, '-I', os.path.join(ROOT, 'src'),
                     os.path.join(SRC, 'mdisplay.s'), '-o', obj], check=True)
     subprocess.run(['ld65', '-C', os.path.join(SRC, 'mdisplay.cfg'), obj, '-o', binp,
                     '-Ln', lab], check=True)

@@ -6,7 +6,7 @@
 ;   - two 10K buffers in SHADOW RAM, &3000 and &5800, flipped at vsync
 ;     through R12/R13 while D (display shadow) stays set
 ;   - drawing code and its tables live in HAZEL (&C000) and reach the
-;     buffers by setting ACCCON X for the duration of the draw: the E bit
+;     buffers by setting $FE34 X for the duration of the draw: the E bit
 ;     does nothing while HAZEL is paged in (measured in jsbeeb; matches
 ;     the hardware rule that Master opcode access needs Y = 0)
 ;   - every texel row is drawn as a byte then FLIP[byte] on the line below
@@ -15,21 +15,18 @@
 ; strips per byte ((TEX1 << 2) OR TEX2). Buffer B (&5800): floor format,
 ; 10 horizontal bands. The main loop flips A/B every vsync and counts
 ; frames at FRAMES so a harness can see it running. Uses the OS (MODE,
-; VDU 19, OSBYTE 19) for set-up and vsync only; drawing runs with SEI.
+; VDU 19, $FFF4 19) for set-up and vsync only; drawing runs with SEI.
 
+        .include "abi.inc"
         .include "mdisplay_tab.inc"     ; generated: table sizes
 
-OSWRCH  = $FFEE
-OSBYTE  = $FFF4
-CRTC_A  = $FE00
-CRTC_D  = $FE01
-ACCCON  = $FE34
+; (hardware and OS addresses are written inline, as in walk_drv.s)
 ACC_D   = $01                           ; display shadow
 ACC_X   = $04                           ; CPU accesses shadow at &3000-&7FFF
 ACC_Y   = $08                           ; HAZEL at &C000-&DFFF
 
-BUF_A   = $3000
-BUF_B   = $5800
+BUF_A   = MSCREEN0                      ; abi.inc
+BUF_B   = MSCREEN1
 
 ptr     = $70                           ; zp: screen pointer
 cnt     = $72
@@ -44,7 +41,7 @@ dst     = $78                           ; zp: HAZEL copy destination
 start:
         ldx #0                          ; MODE 129 (shadow 1), palette, cursor off
 :       lda vdu_init,x
-        jsr OSWRCH
+        jsr $FFEE
         inx
         cpx #vdu_init_end - vdu_init
         bne :-
@@ -52,17 +49,17 @@ start:
         sei
         ldx #crtc_tab_end - crtc_tab - 2
 :       lda crtc_tab,x                  ; (register, value) pairs
-        sta CRTC_A
+        sta $FE00
         lda crtc_tab+1,x
-        sta CRTC_D
+        sta $FE01
         dex
         dex
         bpl :-
 
-        lda ACCCON                      ; page HAZEL in and copy its image up
+        lda $FE34                      ; page HAZEL in and copy its image up
         sta acc_os
         ora #ACC_Y
-        sta ACCCON
+        sta $FE34
         lda #<__HAZEL_LOAD__
         sta ptr
         lda #>__HAZEL_LOAD__
@@ -84,30 +81,30 @@ copy:   lda (ptr),y
 
         lda acc_os                      ; draw both buffers: HAZEL + shadow writes
         ora #ACC_Y | ACC_X | ACC_D
-        sta ACCCON
+        sta $FE34
         jsr draw_walls
         jsr draw_floors
         lda acc_os
-        sta ACCCON
+        sta $FE34
         cli
 
         stz FRAMES
         stz FRAMES+1
         stz SHOWING
 loop:   lda #19                         ; wait for vsync
-        jsr OSBYTE
+        jsr $FFF4
         lda SHOWING
         eor #1
         sta SHOWING
         tax
         sei
         lda #12
-        sta CRTC_A
+        sta $FE00
         lda r12_tab,x
-        sta CRTC_D
+        sta $FE01
         lda #13
-        sta CRTC_A
-        stz CRTC_D
+        sta $FE00
+        stz $FE01
         cli
         inc FRAMES
         bne loop
