@@ -171,6 +171,7 @@ drv:
     ; by the house rule nothing calls the OS after boot.
     ; OSBYTE 129 with Y=$FF is "read OS version" -- with any other Y it
     ; is INKEY and would WAIT for a key.
+.if .not ::MASTER
     LDA #$81
     LDX #0
     LDY #$FF
@@ -192,6 +193,10 @@ drv:
 drv_fontset:
     STA DV_HUD_FONT
     STY DV_HUD_FONT+1
+.endif                          ; MASTER: no font probe -- the HUD is HAZEL's,
+                                ; with its own font, and the loader has
+                                ; already overwritten HAZEL, where MOS 3.20
+                                ; keeps workspace: NO OS calls from here on
     SEI
     LDX #$DF
     TXS   ; stack tops out at $01DF:

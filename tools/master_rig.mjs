@@ -150,20 +150,20 @@ async function engineMode() {
     out.flips_after_boot = flips;
     if (flips < 3) fails.push(`engine not flipping (${flips} flips after boot)`);
     const f0 = flips, s0 = st();
-    await s.runFrames(100);
-    out.flips_per_100_fields = flips - f0;
-    if (flips - f0 < 2) fails.push(`only ${flips - f0} frames in 100 fields`);
+    await s.runFrames(400);                  // step 3's filler is slow: measure
+    out.flips_per_400_fields = flips - f0;   // over 8 seconds of fields
+    if (flips - f0 < 2) fails.push(`only ${flips - f0} frames in 400 fields`);
     const s1 = st();
     if (JSON.stringify(s0) !== JSON.stringify(s1)) fails.push("pose moved with no key held");
     s.keyDownRaw([9, 1]);                    // LEFT ($19): turn
-    await s.runFrames(60);
+    await s.runFrames(200);                  // held across several frames
     s.keyUpRaw([9, 1]);
     await s.runFrames(10);
     const s2 = st();
     out.turn = [s1.ang, s2.ang];
     if (s2.ang === s1.ang) fails.push("LEFT did not turn");
     s.keyDownRaw([9, 3]);                    // UP ($39): walk
-    await s.runFrames(60);
+    await s.runFrames(200);
     s.keyUpRaw([9, 3]);
     await s.runFrames(10);
     const s3 = st();

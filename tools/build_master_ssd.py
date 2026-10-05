@@ -5,16 +5,17 @@
 
 The MASTER engine link (asmbuild variant 2) running the Model B walk driver
 with its MASTER arms: 256x160 shadow Mode 1, both buffers in shadow RAM,
-HAZEL test pattern + frame-time HUD. No renderer output yet -- the engine
-walks the BSP every frame into RTS emit stubs (step 3 draws).
+frame-time HUD, and since step 3 the span-diff filler drawing every frame
+in solid shades (src/master/mfill.s).
 
 Files on the disc (DFS, boot option *RUN):
   !BOOT   loader, $1900 (src/master/mboot.s)
   MBANK4  bank A image (seg headers, verts, recips, ...)  staged $3000
   MBANK7  bank B image (nodes, bbox, collision, anim)     staged $3000
-  MMAIN   engine MAIN $0F00-$57FF (driver + code)         staged $3000
+  MMAIN   engine MAIN $0F00-$57FF (driver + code)         loads in place
   MCBITS  bank-C content laid linear, $5800-$79FF         loads in place
-  MHAZEL  HAZEL block (pattern, HUD, FLIP, font)          staged $3000
+  MHAZEL  HAZEL: pattern, HUD, FLIP, font at $C000; the step-3 filler
+          and its sky map at $C800                        staged $3000
 """
 import os, subprocess, sys
 
@@ -83,21 +84,23 @@ def engine_images():
     b7 = bytes(bm._banks[abi.BANK_WALK])
     main = bytes(bm[abi.LOW_BASE:abi.CBITS_M])
     cbits = bytes(bm[abi.CBITS_M:0x7A00])           # code + C data + VPTAB
-    return b4, b7, main, cbits
+    hzeng = bytes(bm[0xC800:0xD000])                # the filler + its sky map
+    return b4, b7, main, cbits, hzeng
 
 
 def build():
     os.makedirs(OUT, exist_ok=True)
     hazel_tables()
+    b4, b7, main, cbits, hzeng = engine_images()
     hz = asm('mhazel')
-    assert len(hz) <= 0x2000
+    assert len(hz) <= 0x800, 'boot HAZEL block runs into the filler at $C800'
+    hz = hz.ljust(0x800, b'\0') + hzeng            # $C000 pattern/HUD | $C800 filler
     boot = asm('mboot', (f'HAZEL_PAGES={(len(hz) + 255) // 256}',))
-    b4, b7, main, cbits = engine_images()
     assert len(main) == 0x4900 and len(cbits) == 0x2200
     files = [('!BOOT', HOST | 0x1900, HOST | 0x1900, boot),
              ('MBANK4', HOST | 0x3000, HOST | 0x3000, b4),
              ('MBANK7', HOST | 0x3000, HOST | 0x3000, b7),
-             ('MMAIN', HOST | 0x3000, HOST | 0x3000, main),
+             ('MMAIN', HOST | abi.LOW_BASE, HOST | abi.LOW_BASE, main),
              ('MCBITS', HOST | abi.CBITS_M, HOST | abi.CBITS_M, cbits),
              ('MHAZEL', HOST | 0x3000, HOST | 0x3000, hz)]
     path = os.path.join(OUT, 'doom_master.ssd')

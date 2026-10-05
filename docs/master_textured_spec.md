@@ -182,10 +182,30 @@ side; the reference shows **sky** there. The 6502 port adds its own
 bit-exact mirror in steps 3–5; this renderer is what those are judged
 against.
 
-**3. Column emission + solid shades on the 6502.** Replace line-fragment
-emission with per-seg, per-span column ranges (start/end column + linear
-top/bottom edges). Fill walls with a solid shade, sky cyan, floors flat.
-*Done when*: framebuffer identical to Python at all 18 positions; boots.
+**3. Filled walls, floors and ceilings on the 6502. — DONE (solid shades).**
+The rule (`fill_ref.py`, the executable spec): the clip spans are the
+unfilled screen, so whatever a seg's span updates remove (`span_mark_solid`
+for a solid wall; the fused top/bottom walk for a portal) is what that seg
+fills. Diff the pool before and after the seg; per strip (owned by its even
+pixel) fill the removed bands, split at the seg's own front ceiling and
+floor lines: ceiling above, floor below, wall between. Every on-screen
+pixel is filled once, front to back, with no gaps and no overdraw — no
+screen clear is needed. Fills are per screen line (even lines the byte,
+odd lines its FLIP), so band edges may fall on any line.
+`src/master/mfill.s` (HAZEL, $C800) implements it: `mf_snap` at the
+cascade head, `mf_fill` after the seg's updates, exact steppers for the six
+interpolated edges, `hz_run` writing strip runs with ACCCON X set only for
+the run. Sky ceilings come from a per-subsector bitmap. The driver holds
+ACCCON Y on for the whole render and turns billboard objects **off** (they
+apply span lines outside any seg's fill window; sprites are not in the
+spec yet). Gates: `test_fill_ref.py` (full coverage, 96.4% surface
+agreement with the float `textured_ref`), `test_master_fill.py` (the 6502
+back buffer equals `fill_ref` byte for byte at the 18 poses), both in
+`run_regression.py`; `test_master_disc.py` boots the disc on jsbeeb.
+*Not yet fast*: 1.0–2.7M cycles a frame in py65 (about 1.4 s a frame on
+the emulated Master): stepper set-up uses generic 32-bit maths and every
+strip is written separately with read-modify-write. Step 7 territory, but
+step 4's two-strips-per-byte writer replaces most of the write cost.
 
 **4. Textured walls.** Unrolled two-strip loop in HAZEL; per-column u (one
 reciprocal per column, or exact every N columns with linear interpolation);
