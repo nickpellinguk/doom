@@ -3197,6 +3197,7 @@ def packed_render_seg(si, clips, ctx, vz, surface, ram, deferred=None):
         tvx2, tvy2 = _totals(wx2, wy2, ctx)
         c1 = tvy1 < _nearv
         c2 = tvy2 < _nearv
+        _fill_near = (c1, c2, tvx1, tvy1, tvx2, tvy2)   # Master texture model
         if c1 and c2:
             return
         if not (c1 or c2):
@@ -3224,6 +3225,7 @@ def packed_render_seg(si, clips, ctx, vz, surface, ram, deferred=None):
         idx2 = vy_idx2 if ey2 == evy2 else 2
         rxh1, rxl1 = fp_recip(idx1)
         rxh2, rxl2 = fp_recip(idx2)
+        _fill_near += (rxh1, rxl1, rxh2, rxl2)   # 1/depth (M8, S) per end
 
         fp_module.mul_cat("proj")
 
@@ -3358,7 +3360,8 @@ def packed_render_seg(si, clips, ctx, vz, surface, ram, deferred=None):
             f"s{si} v{s[1]}", _vt_rule(no_vt2, r1_v2), solid, no_vt2))
 
     if _seg_fill_hook is not None:      # Master textured port (fill_ref.py)
-        _seg_fill_hook(si, x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid)
+        _seg_fill_hook(si, x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid,
+                       near=locals().get('_fill_near'))
     fp_module.mul_cat("clip")
     if solid:
         lines = []

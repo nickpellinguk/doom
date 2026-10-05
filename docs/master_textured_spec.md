@@ -207,10 +207,51 @@ the emulated Master): stepper set-up uses generic 32-bit maths and every
 strip is written separately with read-modify-write. Step 7 territory, but
 step 4's two-strips-per-byte writer replaces most of the write cost.
 
-**4. Textured walls.** Unrolled two-strip loop in HAZEL; per-column u (one
-reciprocal per column, or exact every N columns with linear interpolation);
-texture/index/bank lookup; stacked-texture row offset. *Done when*:
-framebuffer identical to Python; cycle baseline recorded.
+**4. Textured walls.** *4a, the bit-exact model — DONE*: `tex_ref.py`
+(`TexRef`, on top of `fill_ref`) textures the wall runs of step 3's fill
+in integer arithmetic the 6502 can reproduce; gated by `test_tex_ref.py`
+(in `run_regression.py`). The rules:
+
+- *v*: 5.11 fixed point, as asked: the 5 integer bits are the texel row
+  (wrap at 32 for free), stepped once per line pair (a texel is the byte
+  line and its FLIP line). `step = floor(2048·th·(fc−fh) / (src_h·(B−T)))`,
+  `v = Vtop + (y_even − T)·step`, `Vtop = floor(2048·th·(ztop − fc +
+  yoff) / src_h)`, with T, B the filler's own floored line ends and ztop
+  from DOOM's pegging rules.
+- *u*: perspective-correct at each strip's centre, as an exact rational in
+  the engine's own endpoint reciprocals ((256+M8)/2^S, the nearer end
+  shifted left by the S difference, both kept to 16 bits):
+  `d = (d1·a·dj + d2·b·dk) / (a·dj + b·dk)`, where dj and dk are the
+  strip's distances to the projected ends. Both sums step by a constant
+  per strip, so the 6502 needs adds and one division per strip, no
+  multiply. A near-clipped end takes d from the engine's own crossing
+  fraction (`fp_cross_t16`).
+- *Pieces*: the engine merges colinear neighbour segs with the same
+  sectors. All 20 merges in E1M1 join **different linedefs** (pillars,
+  switches, light strips), so the texture and its u restart at the
+  joint. Rather than change the engine's seg set (and so layout.inc),
+  each merged seg's texture record carries its pieces: start distance, u
+  base, textures, pegging. The strip picks the piece holding d. Only the
+  20 merged segs pay for the check.
+- *Parts*: solid seg → middle texture (else lower, else upper); portal →
+  the top band's wall rows take the upper texture, the bottom band's the
+  lower. A sky-to-sky upper draws sky.
+
+Agreement with the float `textured_ref` over the on-map poses: 96.8% of
+wall cells within one texel on both axes, 79.4% the exact byte. The rest
+is quantisation, plus close-up walls inheriting the engine's 1–2 pixel
+edge differences; the texture follows the engine's drawn edges, as it
+must. Two-sided masked middles are not drawn yet.
+Rejected: perspective weights from the projected wall heights (integer
+line ends: 6-column errors on far walls), and shifting k/W to 8 bits (a
+near-clipped end projects far off-screen, leaving ~16 u steps across the
+screen).
+
+*4b, the 6502 side* (next): per-seg texture records and their memory home;
+the per-strip u division and v stepper in HAZEL; the two-strip byte writer
+`(TEX1<<2) OR TEX2` with a single-strip fallback at run edges; the stacked
+16-high textures' row offset. *Done when*: back buffer identical to
+`tex_ref` at the 18 poses; cycle baseline recorded.
 
 **5. Floors and ceilings.** Row spans from the clip spans' edges; per-row
 distance table and step; 16×16 lookup; NUKAGE frame cycling. *Done when*:
@@ -231,8 +272,8 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
 - **Dark sources go black**: FLAT14 (blue carpet) is entirely black and
   FLOOR1_1 nearly so; COMPTILE's blue panel too. Brightness matching with one
   global gain does this; a per-texture gain is the fix if it matters.
-- **Per-seg texture data** (texture ids, x/y offsets, pegging) is not yet in
-  the budget.
+- **Per-seg texture data** (texture ids, u base, y offset, pegging, and the
+  pieces of the 20 merged segs) is not yet in the budget (step 4b).
 - **Frame rate**: filling 10,240 screen bytes at roughly 25–30 cycles per byte
   on top of ~156K cycles of BSP work suggests a few frames per second;
   step 7 decides whether lower-detail options are needed.

@@ -82,9 +82,11 @@ class FillRef:
         from wad_packed import spans_init_full
         dw = self.dw
         self.grid = [[None] * STRIPS for _ in range(LINES)]
+        self.near = {}
         ctx_box = {}
-        def hook(si, x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid):
+        def hook(si, x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid, near=None):
             ctx_box[si] = (x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid)
+            self.near[si] = near
         orig_seg = dw.packed_render_seg
         def seg(si, clips, *a, **k):
             before = list(clips.spans)

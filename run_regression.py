@@ -185,6 +185,8 @@ run('textured_ref', ['test_textured_ref.py'],
 run('fill_ref', ['test_fill_ref.py'], lambda o: 'FILLREF: PASS' in o)
 # ...and the 6502 filler (src/master/mfill.s) draws exactly what it draws.
 run('master_fill', ['test_master_fill.py'], lambda o: 'MASTERFILL: PASS' in o)
+# Step 4a: the integer textured-wall model agrees with the float reference.
+run('tex_ref', ['test_tex_ref.py'], lambda o: 'TEXREF: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):
