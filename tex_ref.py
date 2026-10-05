@@ -37,16 +37,25 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             column index of n entries (n = next power of two >= tw,
             shift = log2(16*src_w / n): every E1M1 source width is a power
             of two), logical column = index * tw // n: no multiply.
-            ONE DIVISION PER BYTE: d is exact at the left strip's centre
-            x + 1. The right strip's (x + 3) extrapolates from the previous
-            byte's exact d when that byte computed one (it had wall rows):
+            ABOUT ONE DIVISION PER TWO BYTES (steps 5d, 5g): the left
+            strip's d (x + 1) is exact on the seg's even bytes; on its odd
+            bytes (counted from its first) it is the midpoint of the exact
+            d either side, (d(x - 3) + d(x + 5)) >> 1, while x + 5 <= xh.
+            The right strip's (x + 3) extrapolates from the previous byte's
+            d when that byte computed one (it had wall rows):
                 dr = d + ((d - d_prev) >> 1)
-            else it is exact too; past xh it is the left strip's d.
+            else it is exact; past xh it is the left strip's d.
   bytes     the unit is the BYTE COLUMN (fill_ref): every write is a whole
             byte, a 4x2 fat pixel. A wall byte is two independent strips,
             (left texel << 2) | right texel: each strip has its own u (at its
             centre, x + 1 and x + 3) and its own v (its own T and B lines,
             at x and x + 2); the run extents, part and piece are the byte's.
+            Step 5g: the right strip's lines are the midpoints of the
+            byte's and the next byte's, Tr = T + ((T(x + 4) - T) >> 1), and
+            its step extrapolates from the left strip's steps (the same
+            band kind and part on the previous byte):
+                stepR = stepL + ((stepL - stepL_prev) >> 1)   (s16)
+            else it is exact, K // (Br - Tr).
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines: the byte,
             then FLIP of it; a pair moves 2 * step):
@@ -150,6 +159,7 @@ class TexRef(Fm.FillRef):
         self.dbg[si] = dict(slot=si, l16=L16, d1=d1, d2=d2, wa=wa, wb=wb, xl=xl, xh=xh,
                             dl=dL, dh=dH, A=A, B=B)   # (the 6502 debug view)
         d_prev = None                       # (x, d) of the last byte with d
+        sslot = {}                          # band kind -> (x, part, stepL)
         for x in xs:
             o = self._span_at(before, x)
             if o is None:
@@ -161,9 +171,11 @@ class TexRef(Fm.FillRef):
             T = Fm._floor_interp(x, sx1, ft1, sx2, ft2) + Bz
             B_ = Fm._floor_interp(x, sx1, fb1, sx2, fb2) + Bz
             # the right strip's own lines, for its own v (the extents of
-            # every run are the byte's: T and B at x)
-            Tr = Fm._floor_interp(x + 2, sx1, ft1, sx2, ft2) + Bz
-            Br = Fm._floor_interp(x + 2, sx1, fb1, sx2, fb2) + Bz
+            # every run are the byte's: T and B at x): midpoints with the
+            # next byte's
+            Tn = Fm._floor_interp(x + 4, sx1, ft1, sx2, ft2) + Bz
+            Bn = Fm._floor_interp(x + 4, sx1, fb1, sx2, fb2) + Bz
+            Tr, Br = T + ((Tn - T) >> 1), B_ + ((Bn - B_) >> 1)
             # perspective-correct d at the left strip's centre x + 1:
             # projective between the visible ends (8-bit weights; numerator
             # and denominator step by constants, one division per byte).
@@ -175,7 +187,10 @@ class TexRef(Fm.FillRef):
             d = dr = 0                          # (no wall rows: d unused)
             if any(max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_)
                    for y0, y1, _ in bands):
-                d = dat(x + 1)
+                if ((x - xs[0]) >> 2) & 1 and x + 5 <= xh:
+                    d = (dat(x - 3) + dat(x + 5)) >> 1  # an odd byte
+                else:
+                    d = dat(x + 1)
                 if x + 3 > xh:
                     dr = d
                 elif d_prev is not None and d_prev[0] == x - 4:
@@ -192,6 +207,18 @@ class TexRef(Fm.FillRef):
             for y0, y1, which in bands:
                 part = p_mid if solid else (p_up if which == 'up' else
                                             p_lo if which == 'lo' else MW.NONE)
+                sr = None                       # the right strip's step
+                if part != MW.NONE and max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_):
+                    K = W.parts[part]['K']
+                    sl = (K // (B_ - T)) & 0xFFFF if B_ > T else 0
+                    pv = sslot.get(which)
+                    if pv is not None and pv[0] == x - 4 and pv[1] == part:
+                        df = (sl - pv[2]) & 0xFFFF
+                        df -= 0x10000 if df & 0x8000 else 0
+                        sr = (sl + (df >> 1)) & 0xFFFF
+                    else:
+                        sr = (K // (Br - Tr)) & 0xFFFF if Br > Tr else 0
+                    sslot[which] = (x, part, sl)
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
                     self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
                     if yb < T:
@@ -206,7 +233,7 @@ class TexRef(Fm.FillRef):
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
                         self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
-                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br)
+                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br, sr)
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 
@@ -215,11 +242,12 @@ class TexRef(Fm.FillRef):
         ('c') or floor ('f') run: step 4 draws the solid shade."""
         return ('b', shade)
 
-    def _texel(self, pi, u, yb, T, B):
+    def _texel(self, pi, u, yb, T, B, step=None):
         p = self.W.parts[pi]
         tp = self.W.tparams[p['tid']]
         h = B - T
-        step = (p['K'] // h) & 0xFFFF if h > 0 else 0
+        if step is None:
+            step = (p['K'] // h) & 0xFFFF if h > 0 else 0
         v = (p['vtop'] + ((yb & ~1) - T) * step) & 0xFFFF
         row = (v >> 11) & (tp['th'] - 1)
         col = ((u & tp['mask']) >> tp['shift']) * tp['tw'] // tp['n']

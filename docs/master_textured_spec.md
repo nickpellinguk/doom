@@ -100,7 +100,7 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code (texel and span loops, `mf_frame`, `mf_flip`, sky map) $C800–$CB37, **free $CB38–$DDFF (4.8K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B675: the fill's cold set-up code (step 5f, free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B88E: the fill's cold set-up code (steps 5f, 5g; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -247,10 +247,12 @@ in integer arithmetic the 6502 can reproduce; gated by `test_tex_ref.py`
   - Per strip: a projective map between those two ends, with their raw
     weights normalised to 8 bits (A, B):
     `d = (dL·A·dj + dH·B·dk) / (A·dj + B·dk)`. Numerator and denominator
-    step by constants. Since step 5d, d is exact (one 32/16 division) only
-    at a byte's LEFT strip; the right strip extrapolates from the previous
-    byte's exact d, `dr = d + ((d − d_prev) >> 1)`, when that byte computed
-    one, and is exact otherwise.
+    step by constants. Since step 5d the right strip's d extrapolates from
+    the previous byte's, `dr = d + ((d − d_prev) >> 1)`, when that byte
+    computed one, and is exact otherwise. Since step 5g the left strip's d
+    is exact (one 32/16 division) on the seg's even bytes only; on its odd
+    bytes it is the midpoint of the exact d either side,
+    `(d(x − 3) + d(x + 5)) >> 1` (the look-ahead is the next byte's d).
   - Column: index = `(u & (16·src_w − 1)) >> shift` into a power-of-two
     column index of n entries (n = the next power of two ≥ tw, shift =
     log2(16·src_w / n)), logical column = index·tw // n. Every E1M1 source
@@ -271,10 +273,15 @@ in integer arithmetic the 6502 can reproduce; gated by `test_tex_ref.py`
   The run extents, part and piece are sampled at the byte's first pixel.
   Its two strips keep their own u (at x+1 and x+3) and their own v (from
   their own T and B, at x and x+2). A merged seg's joint therefore lands
-  on a byte boundary.
+  on a byte boundary. Since step 5g the right strip's T and B are the
+  midpoints of the byte's and the next byte's (`T + ((T(x+4) − T) >> 1)`)
+  and its step extrapolates from the left strip's steps,
+  `stepR = stepL + ((stepL − stepL_prev) >> 1)` (the same band kind and
+  part on the previous byte), else K / (Br − Tr).
 
-Agreement with the float `textured_ref` over the on-map poses: 95.2% of
-wall cells within one texel on both axes, 77.9% the exact byte (96.8% and
+Agreement with the float `textured_ref` over the on-map poses: 95.0% of
+wall cells within one texel on both axes, 77.6% the exact byte since step
+5g (95.2% and 77.9% before it; 96.8% and
 79.4% with 2-pixel strips; the 4-pixel edges cost the difference). The rest
 is quantisation, plus close-up walls inheriting the engine's 1–2 pixel
 edge differences; the texture follows the engine's drawn edges, as it
@@ -554,6 +561,27 @@ is paged for the emit cascade, so it now runs from bank 6:
   4.8K, is free** for faster loops and their tables.
 - Cycles unchanged (36.1M over the 18 poses; the NUKAGE frame test went
   with the animation).
+
+**5g. Wall set-up: fewer divides and steppers. — DONE.** Three model
+changes (`tex_ref`), the 6502 byte-exact against them; each strip keeps
+its own u and v:
+- *W1*: the right strip's v step extrapolates from the left strip's
+  steps (per band kind: its byte, part and step, `ss_*`), else it is
+  exact. One K / h division per run instead of two.
+- *W2*: the right strip's T and B are midpoints with the next byte's
+  lines, read by `st_peek` (a stepper's value one step on, its state
+  kept) once per byte with a wall (`tr_lines`). The right strip's two
+  steppers, their per-seg set-up and their per-byte steps and reads go.
+- *W3*: the left strip's d is exact on even bytes only; odd bytes take
+  the midpoint of the previous byte's d and a look-ahead exact d
+  (`tx_dat`), which the next byte reuses: about one division per two
+  bytes.
+- *Accuracy*: 95.04% within one texel (gate 95%), 77.6% exact.
+- *Cycles*: 34.4M over the 18 poses, down from 36.0M (−4.5%);
+  (1056, −3616, 32) 2.62M → 2.49M. jsbeeb: 6 frames in 400 fields at the
+  start pose.
+- *Memory*: bank-6 code now ends at $B88E (113 B left before the tables);
+  the state is 19 B of HAZEL BSS.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

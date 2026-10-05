@@ -178,7 +178,7 @@ ln_dm:   .res 2
 ln_neg:  .res 1
 ln_y:    .res 2
 ; steppers (see STEPPERS below)
-st_f:    .res 112
+st_f:    .res 84
 mf_oi:   .res 1                         ; snapshot index the OT/OB steppers hold
 mf_ns:   .res 1                         ; live slot the NT/NB steppers hold
 mf_lc:   .res 1                         ; live-list cursor
@@ -267,6 +267,17 @@ q_d:     .res 2
 tx_dr:   .res 2                         ; the right strip's d (x + 3)
 l_v:     .res 2                         ; the left strip's v and pair step
 l_step:  .res 2                         ;  (t_v / t_step: the right strip's)
+c_trok:  .res 1                         ; c_tr / c_br made for this byte
+t_part:  .res 1                         ; trun: the part, its left strip's
+t_sl:    .res 2                         ;  (undoubled) step
+ss_x:    .res 3                         ; per band kind (b_kind): the byte,
+ss_pt:   .res 3                         ;  part and left step of its last run
+ss_sl:   .res 3                         ;  ($FF: none) -- the right strip's
+ss_sh:   .res 3                         ;  step extrapolates from them
+tx_x0:   .res 1                         ; the seg's first byte column
+tx_ax:   .res 1                         ; a look-ahead exact d: its byte
+tx_ad:   .res 2                         ;  and value
+tx_kk:   .res 1                         ; tx_dat's step (-1, 0, 1)
 tx_lx:   .res 1                         ; the last byte column with an exact d
 tx_dp:   .res 2                         ;  (its x, and that d)
 t_kk:    .res 3                         ; the part's K
@@ -559,29 +570,14 @@ mf_fill:
    STA si_neg
    LDX #ST_B
    JSR st_init
-   ; the right strip's own T and B: the same lines from x0 + 2
-   CLC
-   LDA si_k
-   ADC #2
-   STA si_k
-   BCC :+
-   INC si_k+1
-:  LDX #ST_BR
-   JSR st_init
-   LDA lt_y1
-   STA si_y0
-   LDA lt_y1+1
-   STA si_y0+1
-   LDA lt_dm
-   STA si_d
-   LDA lt_dm+1
-   STA si_d+1
-   LDA lt_neg
-   STA si_neg
-   LDX #ST_TR
-   JSR st_init
    LDA #$FF
    STA tx_lx                            ; no exact d yet in this seg
+   STA tx_ax                            ; no look-ahead d
+   STA ss_x                             ; no previous run steps
+   STA ss_x+1
+   STA ss_x+2
+   LDA mf_x
+   STA tx_x0
    LDA mf_x
    CMP mf_hi
    BCC :+
@@ -590,6 +586,7 @@ mf_fill:
 
 col:
    STZ c_dok                            ; d not yet computed for this byte
+   STZ c_trok                           ; nor the right strip's lines
    LDA mf_x
    CMP mf_hi
    BCC adv
@@ -711,18 +708,6 @@ adv:
    LDY #VIS_YMAX
    JSR clamp_ln
    STA c_bc
-   LDX #ST_TR                           ; the right strip's own T, B (x + 2):
-   JSR st_val                           ;  its v only -- every extent is the
-   LDA ln_y                             ;  byte's
-   STA c_tr
-   LDA ln_y+1
-   STA c_tr+1
-   LDX #ST_BR
-   JSR st_val
-   LDA ln_y
-   STA c_br
-   LDA ln_y+1
-   STA c_br+1
    ; --- the bands ---
    LDA c_new
    BNE @two
@@ -786,10 +771,6 @@ next_col:
    JSR st_step
    LDX #ST_B
    JSR st_step
-   LDX #ST_TR
-   JSR st_step
-   LDX #ST_BR
-   JSR st_step
    LDA mf_oi
    BMI @no_o
    LDX #ST_OT
@@ -823,8 +804,6 @@ ST_OT = 28
 ST_OB = 42
 ST_NT = 56
 ST_NB = 70
-ST_TR = 84                              ; the right strip's T / B (x + 2)
-ST_BR = 98
 
 ; st_init8: a span edge -- y0 = si_a0, D = si_a1 - si_a0, W = si_w (den),
 ; k = x - si_xlo (u8 values; the clipper's floor interpolation)
@@ -999,6 +978,120 @@ st_val:
    LDA st_f+1,X
    ADC m_p+1
    STA ln_y+1
+   RTS
+
+; st_peek: ln_y = stepper X's y one step on (4 pixels), its state kept --
+; exactly st_step then st_val
+st_peek:
+   LDA st_f+13,X
+   BEQ @var
+   LDA st_f+0,X
+   STA ln_y
+   LDA st_f+1,X
+   STA ln_y+1
+   RTS
+@var:
+   CLC                                  ; r' = r + R, q' = q + Q
+   LDA st_f+4,X
+   ADC st_f+10,X
+   STA m_r
+   LDA st_f+5,X
+   ADC st_f+11,X
+   STA m_r+1
+   CLC
+   LDA st_f+2,X
+   ADC st_f+8,X
+   STA m_p
+   LDA st_f+3,X
+   ADC st_f+9,X
+   STA m_p+1
+   LDA m_r                              ; r' >= W: r' -= W, q' += 1
+   CMP st_f+6,X
+   LDA m_r+1
+   SBC st_f+7,X
+   BCC @val
+   LDA m_r
+   SBC st_f+6,X
+   STA m_r
+   LDA m_r+1
+   SBC st_f+7,X
+   STA m_r+1
+   INC m_p
+   BNE @val
+   INC m_p+1
+@val:
+   LDA st_f+12,X
+   BEQ @pos
+   LDA m_r                              ; negative: y0 - (q' + (r' != 0))
+   ORA m_r+1
+   BEQ @sub
+   INC m_p
+   BNE @sub
+   INC m_p+1
+@sub:
+   SEC
+   LDA st_f+0,X
+   SBC m_p
+   STA ln_y
+   LDA st_f+1,X
+   SBC m_p+1
+   STA ln_y+1
+   RTS
+@pos:
+   CLC
+   LDA st_f+0,X
+   ADC m_p
+   STA ln_y
+   LDA st_f+1,X
+   ADC m_p+1
+   STA ln_y+1
+   RTS
+
+; tr_lines: the right strip's lines (once per byte): the midpoints of the
+; byte's T, B and the next byte's, Tr = T + ((T(x + 4) - T) >> 1)
+tr_lines:
+   LDA c_trok
+   BNE @rts
+   INC c_trok
+   LDX #ST_T
+   JSR st_peek
+   SEC
+   LDA ln_y
+   SBC c_t
+   STA m_a
+   LDA ln_y+1
+   SBC c_t+1
+   CMP #$80
+   ROR A
+   STA m_a+1
+   ROR m_a
+   CLC
+   LDA c_t
+   ADC m_a
+   STA c_tr
+   LDA c_t+1
+   ADC m_a+1
+   STA c_tr+1
+   LDX #ST_B
+   JSR st_peek
+   SEC
+   LDA ln_y
+   SBC c_b
+   STA m_a
+   LDA ln_y+1
+   SBC c_b+1
+   CMP #$80
+   ROR A
+   STA m_a+1
+   ROR m_a
+   CLC
+   LDA c_b
+   ADC m_a
+   STA c_br
+   LDA c_b+1
+   ADC m_a+1
+   STA c_br+1
+@rts:
    RTS
 
 ; ---- band: [b_y0, b_y1] (biased, inclusive) -> ceiling / wall / floor runs
@@ -1323,25 +1416,71 @@ tx_getd:
    BEQ :+
    RTS
 :  INC c_dok
-   LDA tx_den
-   ORA tx_den+1
-   BNE @div
-   LDA tx_dl
+   ; the left strip's d: on the seg's odd bytes (x + 5 <= xh) the midpoint
+   ; of the exact d either side (the previous byte's, and a look-ahead the
+   ; next byte reuses); on its even bytes exact
+   LDA mf_x
+   SEC
+   SBC tx_x0
+   AND #4
+   BEQ @even
+   LDA mf_x
+   CLC
+   ADC #5
+   BCS @even
+   CMP tx_xh
+   BEQ :+
+   BCS @even
+:  LDA mf_x                             ; d(x - 3): the previous byte's, or
+   SEC                                  ;  exact
+   SBC #4
+   CMP tx_lx
+   BNE @da
+   LDA tx_dp
    STA tx_d
-   LDA tx_dl+1
+   LDA tx_dp+1
+   STA tx_d+1
+   BRA @db
+@da:
+   LDA #$FF
+   JSR tx_dat
+   LDA m_p
+   STA tx_d
+   LDA m_p+1
+   STA tx_d+1
+@db:
+   LDA #1                               ; d(x + 5), kept for the next byte
+   JSR tx_dat
+   LDA m_p
+   STA tx_ad
+   LDA m_p+1
+   STA tx_ad+1
+   LDA mf_x
+   CLC
+   ADC #4
+   STA tx_ax
+   CLC                                  ; d = (d(x - 3) + d(x + 5)) >> 1
+   LDA tx_d
+   ADC tx_ad
+   STA tx_d
+   LDA tx_d+1
+   ADC tx_ad+1
+   ROR A
+   STA tx_d+1
+   ROR tx_d
+   BRA @piece
+@even:
+   LDA tx_ax
+   CMP mf_x
+   BNE @ex
+   LDA tx_ad                            ; the look-ahead made last byte
+   STA tx_d
+   LDA tx_ad+1
    STA tx_d+1
    BRA @piece
-@div:
-   LDX #3
-:  LDA tx_n,X
-   STA m_p,X
-   DEX
-   BPL :-
-   LDA tx_den
-   STA m_b
-   LDA tx_den+1
-   STA m_b+1
-   JSR divq16
+@ex:
+   LDA #0
+   JSR tx_dat
    LDA m_p
    STA tx_d
    LDA m_p+1
@@ -1458,6 +1597,67 @@ tx_getd:
 @rts:
    RTS
 
+; tx_dat: A = k (-1, 0, 1) -> m_p = the exact d at the left strip centre
+; + 4k pixels: (n + k dn) / (den + k dden); dL when that den is 0
+tx_dat:
+   STA tx_kk
+   LDX #3
+:  LDA tx_n,X
+   STA m_p,X
+   DEX
+   BPL :-
+   LDA tx_den
+   STA m_b
+   LDA tx_den+1
+   STA m_b+1
+   LDA tx_kk
+   BEQ @div
+   BMI @back
+   CLC                                  ; k = 1
+   LDX #0
+   LDY #4
+:  LDA m_p,X
+   ADC tx_dn,X
+   STA m_p,X
+   INX
+   DEY
+   BNE :-
+   CLC
+   LDA m_b
+   ADC tx_dden
+   STA m_b
+   LDA m_b+1
+   ADC tx_dden+1
+   STA m_b+1
+   BRA @div
+@back:
+   SEC                                  ; k = -1
+   LDX #0
+   LDY #4
+:  LDA m_p,X
+   SBC tx_dn,X
+   STA m_p,X
+   INX
+   DEY
+   BNE :-
+   SEC
+   LDA m_b
+   SBC tx_dden
+   STA m_b
+   LDA m_b+1
+   SBC tx_dden+1
+   STA m_b+1
+@div:
+   LDA m_b
+   ORA m_b+1
+   BNE :+
+   LDA tx_dl                            ; den 0: dL
+   STA m_p
+   LDA tx_dl+1
+   STA m_p+1
+   RTS
+:  JMP divq16
+
 ; ---- wall_run: the wall rows [r_ys, r_ye] (biased) of the current band ----
 wall_run:
    LDA r_ye
@@ -1488,6 +1688,7 @@ wall_run:
 ; Every line is written WHOLE: (left texel << 2) | right texel, FLIP of it
 ; on odd lines -- a 4x2 fat pixel, nothing read back.
 trun:
+   STA t_part
    TAX
    LDA mb6_pt_tid,X
    STA t_tid
@@ -1507,7 +1708,12 @@ trun:
    STA q_t,X
    DEX
    BPL :-
-   JSR tvstep
+   JSR tv_div
+   LDA t_step                           ; (the left step, for the next byte)
+   STA t_sl
+   LDA t_step+1
+   STA t_sl+1
+   JSR tv_v0
    LDA t_v
    STA l_v
    LDA t_v+1
@@ -1525,13 +1731,56 @@ trun:
    STA trl_rd+1
    LDA t_ch
    STA trl_rd+2
-   ; the right strip: its own v from T, B at x + 2; its column from d at x + 3
+   ; the right strip: its own v from its own T, B (the midpoints with the
+   ; next byte's); its step extrapolated from the left strip's steps (the
+   ; same band kind and part on the previous byte), else exact; its column
+   ; from d at x + 3
+   JSR tr_lines
    LDX #3
 :  LDA c_tr,X                           ; c_tr, c_br -> q_t, q_b
    STA q_t,X
    DEX
    BPL :-
-   JSR tvstep
+   LDY b_kind
+   LDA mf_x
+   SEC
+   SBC #4
+   CMP ss_x,Y
+   BNE @rx
+   LDA t_part
+   CMP ss_pt,Y
+   BNE @rx
+   SEC                                  ; stepR = sl + ((sl - prev) >> 1)
+   LDA t_sl
+   SBC ss_sl,Y
+   STA m_a
+   LDA t_sl+1
+   SBC ss_sh,Y
+   CMP #$80
+   ROR A
+   STA m_a+1
+   ROR m_a
+   CLC
+   LDA t_sl
+   ADC m_a
+   STA t_step
+   LDA t_sl+1
+   ADC m_a+1
+   STA t_step+1
+   BRA @rr
+@rx:
+   JSR tv_div                           ; exact: K / (Br - Tr)
+@rr:
+   LDY b_kind
+   LDA mf_x
+   STA ss_x,Y
+   LDA t_part
+   STA ss_pt,Y
+   LDA t_sl
+   STA ss_sl,Y
+   LDA t_sl+1
+   STA ss_sh,Y
+   JSR tv_v0
    LDA tx_dr
    STA q_d
    LDA tx_dr+1
@@ -1632,7 +1881,7 @@ trr_rd:
 ; ---- tvstep: the run's v. In: q_t, q_b (s16 T, B), t_kk (K), t_vt (Vtop),
 ; r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
 ; B <= T), t_v = Vtop + ((ys & ~1) - T) * step (mod 2^16) ----------------
-tvstep:
+tv_div:
    LDA t_kk
    STA m_p
    LDA t_kk+1
@@ -1655,11 +1904,14 @@ tvstep:
    STA t_step
    LDA m_p+1
    STA t_step+1
-   BRA @v0
+   RTS
 @z:
    STZ t_step
    STZ t_step+1
-@v0:
+   RTS
+
+; tv_v0: t_v from t_step (the line step), then t_step doubled (the pair's)
+tv_v0:
    LDA r_ys                             ; m_a = (ys & ~1) - T (s16)
    AND #$FE
    SEC
