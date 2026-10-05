@@ -97,10 +97,11 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot + plane row cache $C280–$C6EF; filler + texturers $C800–$DD25; BSS $DD80–$DFFF |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; filler + texturers $C800–$DD53; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K); bank 6 tail $B900–$BDFF: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
-| Main $7A00–$7FFF | Texture column index bytes (1,046 B); per-seg plane pair state (480 B) |
+| Main $7A00–$7E1F | Texture column index bytes (1,046 B); $7E20–$7FFF free |
+| Main $6D38–$6FE9 | Cold per-seg wall and plane set-up |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
@@ -361,16 +362,27 @@ side is `src/master/mfill.s`, byte-exact against it in
 
   Up and Vp are 1024 × the eye's world x and −y (DOOM flats run −y down).
   The texel is `flat[(V>>12)·16 + (U>>12)]`.
-- *6502 structure*:
+- *6502 structure* (per-seg horizontal spans, DOOM's visplane idea cut
+  down to one seg):
   - `mf_frame` runs at `render_frame` entry (MASTER only): the frame
     epoch, the NUKAGE frame, and copies of the view terms.
+  - While a seg's byte columns are walked, `prun` only RECORDS each
+    column's whole line-pair interval, ceiling (`pe_ct`/`pe_cb`) and
+    floor (`pe_ft`/`pe_fb`), 64 columns each. A partial pair (odd first
+    or even last line) is drawn on the spot (`pl_line`); so is a second
+    run in the same column (`pl_pair`). A plane the eye is on the wrong
+    side of keeps its shade (`pl_shade`).
+  - At the seg's end (`mf_planes`), `mk_spans` turns the column
+    intervals into horizontal spans (DOOM's `R_MakeSpans` on pairs,
+    empty = ($FF, 0), with a sentinel column). `sp_start` keeps each
+    pair's open span's first column.
+  - `sp_draw` draws one span: U and V at its first byte (U0 + kb·dU, a
+    short multiply) and the per-byte steps patched into the ADC
+    immediates. Then a single loop along the pair: one texel read, the
+    even line `AND maskEven`, the odd line `FLIP AND maskOdd`, Y += 8
+    (page step on carry). Every write is a whole byte (4×2).
   - `pl_row` computes U0/dU/V0/dV per line pair and plane height, cached
-    for the frame (`pc_*`, 80 entries, HAZEL $C280+).
-  - Per seg and pair, U and V are kept by byte column (`ps_*`, main
-    $7E20+). The next column is two adds; a fresh one is U0 + kb·dU, a
-    six-step multiply.
-  - `prun`: pass 1 (ACCCON X clear, the flat's bank paged) reads one
-    texel per pair; pass 2 (X set) writes every line whole.
+    for the frame (`pc_*`, 80 entries).
   - Per-subsector flat ids live in ANDY; flat bank and page and the
     map-centre terms in the bank-6 tail.
 - *NUKAGE*: flats 0–2 are its frames. The frame is (`mf_tick` >> 3) mod
@@ -386,17 +398,22 @@ side is `src/master/mfill.s`, byte-exact against it in
     plane heights (quantum ~6.7 world units) scale depth by a few
     percent, which grows to whole texels in the distance. Visually the
     two match closely.
-- *Cycles* (py65, 18 poses): 68.5M in total, against 50.4M with solid
-  planes. At (1056, −3616, 32) there are 3,643 plane bytes for about
-  1.3M cycles, roughly 360 a byte: pair bookkeeping, a 2-pass run and
-  per-line writes, all step 7 material. The disc boots and walks on
-  jsbeeb with textured floors and ceilings.
+- *Cycles* (py65, 18 poses): 63.3M in total (68.5M with the earlier
+  per-column passes, 50.4M with solid planes). At (1056, −3616, 32) there
+  are 332 spans of 10.5 bytes on average and 143 partial cells. The span
+  loop is about 122 cycles per 4×2 on absolute variables; zero page and a
+  nibble table should bring it to about 100, which is step 7 work. Wall
+  set-up (mul16 and div32) now costs more than the planes. On jsbeeb the
+  disc boots and walks: 3 frames in 400 fields at the start pose, up from
+  2.
 - *Memory*:
-  - HAZEL: the code is now $C800–$DD25; the span snapshot, run buffer and
-    row cache are at $C280–$C6EF (mhazel must stay under $280); BSS is at
-    $DD80.
+  - HAZEL: span-time code $C8CD–$DD53, plane constants $C800–$C8CC; the
+    span snapshot, column intervals, `sp_start` and row cache are at
+    $C280–$C7EF (mhazel must stay under $280); BSS is at $DE00–$DF7A.
+  - Main $6D38–$6FE9 (the tail of the clipper area): the cold per-seg
+    set-up. The $79xx VPTAB tail is treated as taken: with the plane
+    constants there, the jsbeeb disc stopped turning.
   - ANDY: plus 392 B of per-subsector flats.
-  - Main $7E20–$7FFF: the per-seg pair state.
 
 **5b. Sector light. — DONE.** Each sector's light darkens everything a seg
 draws: its walls, floor and ceiling, all from its front sector. Two

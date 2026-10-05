@@ -116,14 +116,6 @@ mb6_mcy:      .res 2                    ; -map centre y * 1024 (mod 2^16)
 .segment "MTEXIX"                       ; main RAM: read with ACCCON X clear
 mtex_ix:      .res $420                 ; column index bytes, every texture
 
-.segment "MPSEG"                        ; main RAM: the per-seg plane state,
-ps_key:       .res 80                   ; per line pair p: the seg key whose
-ps_k:         .res 80                   ;  U, V these are, their byte column,
-ps_ul:        .res 80                   ;  and U, V (4.12)
-ps_uh:        .res 80
-ps_vl:        .res 80
-ps_vh:        .res 80
-
 .segment "MPLANE"                       ; HAZEL $C280: the span snapshot, the
 sn_xs:   .res 32                        ;  run buffer and the per-frame row cache
 sn_xe:   .res 32
@@ -133,7 +125,11 @@ sn_tl:   .res 32
 sn_tr:   .res 32
 sn_bl:   .res 32
 sn_br:   .res 32
-pl_buf:  .res 80                        ; the run's texel bytes, per pair
+pe_ct:   .res 64                        ; per byte column, this seg's textured
+pe_cb:   .res 64                        ;  ceiling / floor whole-pair interval
+pe_ft:   .res 64                        ;  (top, bottom pair; empty: $FF, 0)
+pe_fb:   .res 64
+sp_start: .res 80                       ; MakeSpans: per pair, its span's start
 pc_ep:        .res 80                   ; per line pair p: the frame epoch and
 pc_d:         .res 80                   ;  plane height D it was computed for,
 pc_u0l:       .res 80                   ;  U0 / dU / V0 / dV (4.12, mod 2^16)
@@ -276,7 +272,6 @@ l_step:  .res 2                         ;  (t_v / t_step: the right strip's)
 mf_ep:   .res 1                         ; frame epoch (pc_ep; 0 never valid)
 mf_tick: .res 1                         ; frames (NUKAGE frame = tick/8 mod 3)
 mf_nuk:  .res 1
-ps_seg:  .res 1                         ; seg key (ps_key; 0 never valid)
 pl_up:   .res 2                         ; the frame's view terms: Up, Vp (4.12)
 pl_vp:   .res 2
 pl_sm:   .res 1                         ;  |sin|, unity, negative
@@ -299,6 +294,19 @@ pl_p1:   .res 1
 pl_kb:   .res 1
 pl_u:    .res 2
 pl_v:    .res 2
+pl_k0:   .res 1                         ; the seg's byte columns
+pl_k1:   .res 1
+pl_y:    .res 1
+pl_ye0:  .res 1
+mk_t1:   .res 1                         ; MakeSpans: previous / this column's
+mk_b1:   .res 1                         ;  pair interval, the column
+mk_t2:   .res 1
+mk_b2:   .res 1
+mk_k:    .res 1
+sp_u:    .res 2                         ; the span loop's U, V (4.12)
+sp_v:    .res 2
+sp_t:    .res 1
+sp_n:    .res 1
 pl_e:    .res 4                         ; pl_row: E, and an 8x32 product
 pl_q:    .res 5
 pl_h:    .res 2
@@ -550,13 +558,13 @@ col:
    LDA mf_x
    CMP mf_hi
    BCC adv
-   RTS                                  ; x >= hi: done
+   JMP mf_planes                        ; x >= hi: the seg's planes, done
    ; --- old span at x: advance while xe <= x ---
 adv:
    LDY mf_i
    CPY sn_n
    BCC @have
-   RTS                                  ; no snapshot span left
+   JMP mf_planes                        ; no snapshot span left
 @have:
    LDA mf_x
    CMP sn_xe,Y
@@ -716,7 +724,7 @@ next_col:
    CLC
    ADC #4                               ; the next byte column
    BCC @step
-   RTS
+   JMP mf_planes
 @step:
    STA mf_x
    LDX #1                               ; every stepper moves 2 pixels a
@@ -1118,306 +1126,6 @@ hz_run:
 ;            column -> texel column pointer; v (5.11) = Vtop + (y_even - T)
 ;            * step, step = K / (B - T), stepped per line pair
 ; ============================================================================
-
-; ---- tx_seg ----------------------------------------------------------------
-tx_seg:
-   ; slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo / LAY_HDR_STRIDE
-   STZ tx_slot
-   STZ tx_slot+1
-   SEC
-   LDA zp_seg_hdr_p+1
-   SBC #>ROM_SEG_HDR_C
-   TAX
-   BEQ @lo
-@pg:
-   CLC
-   LDA tx_slot
-   ADC #HDR_PER_PAGE
-   STA tx_slot
-   BCC :+
-   INC tx_slot+1
-:  DEX
-   BNE @pg
-@lo:
-   LDA zp_seg_hdr_p
-@l9:
-   CMP #LAY_HDR_STRIDE
-   BCC @slot
-   SBC #LAY_HDR_STRIDE                  ; (C = 1)
-   INC tx_slot
-   BNE @l9
-   INC tx_slot+1
-   BRA @l9
-@slot:
-   ; ---- ANDY: the slot's dressing and length ----
-   LDA #BANK_C | $80                    ; ANDY over $8000-$8FFF
-   STA $FE30
-   CLC
-   LDA #<man_slot_d
-   ADC tx_slot
-   STA TP
-   LDA #>man_slot_d
-   ADC tx_slot+1
-   STA TP+1
-   LDA (TP)
-   STA t_k                              ; slot byte
-   CLC
-   LDA TP+1
-   ADC #>(man_slot_ll - man_slot_d)
-   STA TP+1
-   LDA (TP)
-   STA tx_l16
-   CLC
-   LDA TP+1
-   ADC #>(man_slot_lh - man_slot_ll)
-   STA TP+1
-   LDA (TP)
-   STA tx_l16+1
-   LDA t_k
-   CMP man_ndress
-   BCS @merged
-   TAX                                  ; one piece
-   LDY #0
-   JSR ld_dress
-   STZ pc_sl
-   STZ pc_sh
-   LDA #1
-   STA pc_n
-   BRA @andy_out
-@merged:
-   SBC man_ndress                       ; (C = 1) merged-list id
-   TAX
-   LDA man_pl_n,X
-   STA pc_n
-   LDA man_pl_first,X
-   STA t_k
-   LDY #0
-@pl:
-   LDX t_k
-   LDA man_pc_sl,X
-   STA pc_sl,Y
-   LDA man_pc_sh,X
-   STA pc_sh,Y
-   LDA man_pc_dr,X
-   TAX
-   JSR ld_dress
-   INC t_k
-   INY
-   CPY pc_n
-   BCC @pl
-@andy_out:
-   LDX zp_node_ch_l                     ; step 5: the subsector's flats
-   LDA man_ss_ff,X                      ; (top 3 bits: the light level)
-   STA pl_ff
-   LDA man_ss_fc,X
-   STA pl_fc
-   LDA #BANK_C                          ; back to the cascade's bank
-   STA $FE30
-   JSR pl_seg
-   LDX #0
-   JSR set_cur                          ; piece 0 until a strip says otherwise
-   ; ---- d at the projected ends: 0 and L16, or from the crossing t ----
-   STZ tx_d1
-   STZ tx_d1+1
-   LDA tx_l16
-   STA tx_d2
-   LDA tx_l16+1
-   STA tx_d2+1
-   LDA zp_seg_v1_clipped
-   BEQ @c2
-   JSR l16t                             ; d1 = (L16 * t + 128) >> 8
-   LDA m_p+1
-   STA tx_d1
-   LDA m_p+2
-   STA tx_d1+1
-   BRA @w
-@c2:
-   LDA zp_seg_v2_clipped
-   BEQ @w
-   JSR l16t                             ; d2 = L16 - ((L16 * t + 128) >> 8)
-   SEC
-   LDA tx_l16
-   SBC m_p+1
-   STA tx_d2
-   LDA tx_l16+1
-   SBC m_p+2
-   STA tx_d2+1
-@w:
-   ; ---- weights: (256 + M8) << (Smax - S), both to 16 bits ----
-   LDA zp_seg_v1_r_s
-   CMP zp_seg_v2_r_s
-   BCS :+
-   LDA zp_seg_v2_r_s
-:  STA t_sx
-   LDA zp_seg_v1_r_m8
-   STA tx_wa
-   LDA #1
-   STA tx_wa+1
-   STZ tx_wa+2
-   SEC
-   LDA t_sx
-   SBC zp_seg_v1_r_s
-   TAX
-   BEQ @wb
-:  ASL tx_wa
-   ROL tx_wa+1
-   ROL tx_wa+2
-   DEX
-   BNE :-
-@wb:
-   LDA zp_seg_v2_r_m8
-   STA tx_wb
-   LDA #1
-   STA tx_wb+1
-   STZ tx_wb+2
-   SEC
-   LDA t_sx
-   SBC zp_seg_v2_r_s
-   TAX
-   BEQ @wn
-:  ASL tx_wb
-   ROL tx_wb+1
-   ROL tx_wb+2
-   DEX
-   BNE :-
-@wn:
-   LDA tx_wa+2
-   ORA tx_wb+2
-   BEQ @ends
-   LSR tx_wa+2
-   ROR tx_wa+1
-   ROR tx_wa
-   LSR tx_wb+2
-   ROR tx_wb+1
-   ROR tx_wb
-   BRA @wn
-@ends:
-   ; ---- first / last strip centres ----
-   LDA mf_x
-   INC A
-   STA tx_xl
-   LDA mf_hi
-   DEC A
-   AND #$FE                             ; last even pixel < hi
-   INC A
-   STA tx_xh
-   LDA tx_xl
-   JSR at                               ; -> m_p: exact d, at_n: raw weight
-   LDA m_p
-   STA tx_dl
-   LDA m_p+1
-   STA tx_dl+1
-   LDX #4
-:  LDA at_n,X
-   STA tx_ra,X
-   DEX
-   BPL :-
-   LDA tx_xh
-   JSR at
-   LDA m_p
-   STA tx_dh
-   LDA m_p+1
-   STA tx_dh+1
-   LDX #4
-:  LDA at_n,X
-   STA tx_rb,X
-   DEX
-   BPL :-
-   ; A, B: the raw weights shifted together until both fit a byte
-@ab:
-   LDA tx_ra+1
-   ORA tx_ra+2
-   ORA tx_ra+3
-   ORA tx_ra+4
-   ORA tx_rb+1
-   ORA tx_rb+2
-   ORA tx_rb+3
-   ORA tx_rb+4
-   BEQ @abok
-   LSR tx_ra+4
-   ROR tx_ra+3
-   ROR tx_ra+2
-   ROR tx_ra+1
-   ROR tx_ra
-   LSR tx_rb+4
-   ROR tx_rb+3
-   ROR tx_rb+2
-   ROR tx_rb+1
-   ROR tx_rb
-   BRA @ab
-@abok:
-   ; den0 = A * (xh - xl); n0 = dL * den0
-   LDA tx_ra
-   STA m_a
-   STZ m_a+1
-   SEC
-   LDA tx_xh
-   SBC tx_xl
-   STA m_b
-   STZ m_b+1
-   JSR mul16
-   LDA m_p
-   STA tx_den
-   STA m_b
-   LDA m_p+1
-   STA tx_den+1
-   STA m_b+1
-   LDA tx_dl
-   STA m_a
-   LDA tx_dl+1
-   STA m_a+1
-   JSR mul16
-   LDX #3
-:  LDA m_p,X
-   STA tx_n,X
-   DEX
-   BPL :-
-   ; dden = 2 * (B - A)  (s16)
-   SEC
-   LDA tx_rb
-   SBC tx_ra
-   STA tx_dden
-   LDA #0
-   SBC #0
-   STA tx_dden+1
-   ASL tx_dden
-   ROL tx_dden+1
-   ; dn = 2 * (dH * B - dL * A)  (s32)
-   LDA tx_dh
-   STA m_a
-   LDA tx_dh+1
-   STA m_a+1
-   LDA tx_rb
-   STA m_b
-   STZ m_b+1
-   JSR mul16
-   LDX #3
-:  LDA m_p,X
-   STA t_tmp,X
-   DEX
-   BPL :-
-   LDA tx_dl
-   STA m_a
-   LDA tx_dl+1
-   STA m_a+1
-   LDA tx_ra
-   STA m_b
-   STZ m_b+1
-   JSR mul16
-   SEC
-   LDX #0
-:  LDA t_tmp,X
-   SBC m_p,X
-   STA tx_dn,X
-   INX
-   TXA                                  ; (keeps C)
-   EOR #4
-   BNE :-
-   ASL tx_dn
-   ROL tx_dn+1
-   ROL tx_dn+2
-   ROL tx_dn+3
-   RTS
 
 ; ld_dress: X = dressing id -> piece slot Y (ANDY paged)
 ld_dress:
@@ -1961,6 +1669,7 @@ ln_ptr:
    LDA mf_x
    LSR A
    LSR A                                ; byte column k 0..63
+ln_ptrk:                                ; (A = byte column k)
    PHA
    ASL A
    ASL A
@@ -1993,8 +1702,8 @@ ln_ptr:
 ; the byte column's centre and the line PAIR's centre, written whole (FLIP
 ; on the pair's odd line). 4.12 fixed point: along a line pair a plane is
 ; affine, so per pair the row maths gives U0, dU, V0, dV (pl_row, cached
-; per frame in pc_*), and per byte column U += dU, V += dV (the per-seg
-; state ps_*: a seg's next column is two adds, a fresh one U0 + kb*dU).
+; per frame in pc_*), and along a HORIZONTAL SPAN U += dU, V += dV per byte
+; column (see PLANES AS HORIZONTAL SPANS below).
 ; ============================================================================
 
 ; mf_frame: render_frame entry (bsp/walk.s, MASTER) -- new epoch, NUKAGE
@@ -2071,7 +1780,7 @@ mf_frame:
    RTS
 
 ; pl_seg: per seg (tx_seg, pl_ff / pl_fc read from ANDY) -- the NUKAGE frame,
-; D = vz - fh / ch - vz (0 if the eye is not on the plane's side), a new seg key
+; D = vz - fh / ch - vz (0 if the eye is not on the plane's side)
 pl_seg:
    LDA pl_ff                            ; light: level = top 3 bits
    LSR A
@@ -2102,14 +1811,6 @@ pl_seg:
    BPL :+
    LDA #0
 :  STA pl_dc
-   INC ps_seg
-   BNE @rts
-   LDX #79                              ; wrapped: clear every pair's key
-:  STZ ps_key,X
-   DEX
-   BPL :-
-   INC ps_seg
-@rts:
    RTS
 
 ; the five light levels' masks (master_walls.LIGHT_MASKS): FF.FF, AA.FF,
@@ -2161,9 +1862,41 @@ floor_run:
    LDA #WB_FLOOR
    JMP run
 
-; prun: textured plane run [r_ys, r_ye] (biased): pass 1 (X clear, the
-; flat's bank paged) one texel per line pair into pl_buf; pass 2 (X set)
-; every line written whole
+; ============================================================================
+; PLANES AS HORIZONTAL SPANS. During the seg's column pass a textured plane
+; run is only RECORDED: per byte column, the whole line PAIRS it covers
+; (pe_*: one interval per kind per column). After the seg's last column
+; (mf_planes) a MakeSpans sweep (DOOM's R_MakeSpans, on pairs) turns them
+; into horizontal pair spans, drawn by sp_draw: per byte U += dU, V += dV
+; (4.12), one texel read, two whole-byte writes (even line lit, odd line
+; FLIP lit). Lines that are not a whole pair at a run's ends, a run on the
+; wrong side of the horizon (its shade) and the rare second run of a kind
+; in one column are drawn on the spot, a byte at a time.
+; ============================================================================
+
+; pe_init: per seg (end of tx_seg) -- the seg's byte columns' extents empty
+pe_init:
+   LDA mf_x
+   LSR A
+   LSR A
+   STA pl_k0
+   LDA mf_hi
+   DEC A
+   LSR A
+   LSR A
+   STA pl_k1
+   LDX pl_k0
+:  LDA #$FF
+   STA pe_ct,X
+   STA pe_ft,X
+   STZ pe_cb,X
+   STZ pe_fb,X
+   CPX pl_k1
+   INX
+   BCC :-
+   RTS
+
+; prun: a textured plane run [r_ys, r_ye] (biased), kind pl_kind
 prun:
    LDA r_ye
    CMP r_ys
@@ -2177,154 +1910,126 @@ prun:
    LDA r_ye
    SBC #Y_BIAS
    STA r_ye
-   LSR A
-   STA pl_p1
-   LDA r_ys
-   LSR A
-   STA pl_p0
    LDA mf_x
    LSR A
    LSR A
    STA pl_kb
-   LDX pl_fl
-   LDA mb6_fl_page,X                    ; (bank 6 tail: read before paging)
-   STA pr_rd+2
-   LDA mb6_fl_bank,X
-   STA $FE30                            ; the flat's bank
+   ; the wrong side of the horizon keeps the shade (floor: lines < 80;
+   ; ceiling: lines >= 80)
+   LDA pl_kind
+   BEQ @ceil
+   LDA r_ys                             ; floor
+   CMP #80
+   BCS @parts
+   LDA r_ye
+   CMP #80
+   BCC :+
+   LDA #79
+:  JSR pl_shade                         ; lines r_ys .. min(ye, 79)
+   LDA #80
+   STA r_ys
+   BRA @chk
+@ceil:
+   LDA r_ye
+   CMP #80
+   BCC @parts
+   LDA r_ys
+   PHA
+   CMP #80
+   BCS :+
+   LDA #80
+   STA r_ys
+:  LDA r_ye
+   JSR pl_shade                         ; lines max(ys, 80) .. ye
+   PLA
+   STA r_ys
+   LDA #79
+   STA r_ye
+@chk:
+   LDA r_ye
+   CMP r_ys
+   BCS @parts
+   RTS
+@parts:
+   ; an odd first line / even last line: a single line on the spot
+   LDA r_ys
+   LSR A
+   BCC :+
+   LDA r_ys
+   JSR pl_line
+   INC r_ys
+   LDA r_ye
+   CMP r_ys
+   BCS :+
+   RTS
+:  LDA r_ye
+   LSR A
+   BCS :+
+   LDA r_ye
+   JSR pl_line
+   LDA r_ye
+   BEQ @rts
+   DEC r_ye
+   CMP r_ys                             ; (old ye vs ys: ye-1 < ys?)
+   BEQ @rts
+   BCC @rts
+:  ; whole pairs ys >> 1 .. ye >> 1: record them, or draw them now if this
+   ; column already has a run of this kind
+   LDA r_ys
+   LSR A
+   STA pl_p0
+   LDA r_ye
+   LSR A
+   STA pl_p1
+   LDX pl_kb
+   LDA pl_kind
+   BEQ @rc
+   LDA pe_ft,X
+   CMP #$FF
+   BNE @now
+   LDA pl_p0
+   STA pe_ft,X
+   LDA pl_p1
+   STA pe_fb,X
+@rts:
+   RTS
+@rc:
+   LDA pe_ct,X
+   CMP #$FF
+   BNE @now
+   LDA pl_p0
+   STA pe_ct,X
+   LDA pl_p1
+   STA pe_cb,X
+   RTS
+@now:
    LDA pl_p0
    STA pl_p
-pr_pair:
-   LDA pl_p                             ; the pair on the plane's side of the
-   CMP #40                              ;  horizon? (floor: p >= 40)
-   LDA #0
-   ROL A
-   CMP pl_kind
-   BNE pr_sh
-   JSR pl_uv
-   LDA pl_v+1                           ; texel (V >> 12) * 16 + (U >> 12)
-   AND #$F0
-   STA pl_a
-   LDA pl_u+1
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   ORA pl_a
-   TAX
-pr_rd:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   BRA pr_put
-pr_sh:
-   LDA pl_sh                            ; the other side: the solid shade
-   ASL A
-   ASL A
-   ORA pl_sh
-pr_put:
-   PHA
-   SEC
-   LDA pl_p
-   SBC pl_p0
-   TAX
-   PLA
-   STA pl_buf,X
+:  JSR pl_pair
    LDA pl_p
    CMP pl_p1
    INC pl_p
-   BCC pr_pair
-   LDA #BANK_C
-   STA $FE30                            ; the cascade's bank again
-   ; pass 2: the lines, whole bytes
-   JSR ln_ptr                           ; PTR, Y for line r_ys
-   SEC
-   LDA r_ye
-   SBC r_ys
-   INC A
-   STA t_n
-   LDA r_ys
-   STA pl_p                             ; the line
-   LDA #ACC_DXY
-   STA $FE34
-pr_line:
-   LDA pl_p
-   LSR A                                ; the pair; C = the line is odd
-   PHP
-   SEC
-   SBC pl_p0
-   TAX
-   LDA pl_buf,X
-   PLP
-   BCS :+
-   AND maskEven                         ; even line: lit
-   BRA :++
-:  TAX
-   LDA mf_flip,X                        ; odd line: FLIP, lit
-   AND maskOdd
-:  STA (PTR),Y
-   DEC t_n
-   BEQ pr_done
-   INC pl_p
-   INY
-   CPY #8
-   BNE pr_line
-   LDY #0
-   INC PTR+1
-   INC PTR+1
-   BRA pr_line
-pr_done:
-   LDA #ACC_DY
-   STA $FE34
+   BCC :-
    RTS
 
-; pl_uv: pl_u, pl_v = U, V at line pair pl_p, byte column pl_kb, for D pl_d
-pl_uv:
-   LDX pl_p
-   LDA pc_ep,X                          ; this frame's row for this D?
-   CMP mf_ep
-   BNE @calc
-   LDA pc_d,X
-   CMP pl_d
-   BEQ @have
-@calc:
-   JSR pl_row
-@have:
-   LDX pl_p
-   LDA ps_key,X                         ; this seg's state for the pair?
-   CMP ps_seg
-   BNE @fresh
-   LDA ps_k,X
-   CMP pl_kb
-   BEQ @same                            ; the same column (a split pair)
-   INC A
-   CMP pl_kb
-   BNE @fresh
-   CLC                                  ; the next column: + dU, + dV
-   LDA ps_ul,X
-   ADC pc_dul,X
-   STA ps_ul,X
-   LDA ps_uh,X
-   ADC pc_duh,X
-   STA ps_uh,X
-   CLC
-   LDA ps_vl,X
-   ADC pc_dvl,X
-   STA ps_vl,X
-   LDA ps_vh,X
-   ADC pc_dvh,X
-   STA ps_vh,X
-   LDA pl_kb
-   STA ps_k,X
-@same:
-   LDA ps_ul,X
-   STA pl_u
-   LDA ps_uh,X
-   STA pl_u+1
-   LDA ps_vl,X
-   STA pl_v
-   LDA ps_vh,X
-   STA pl_v+1
+; pl_shade: lines r_ys .. A (unbiased) in the plane's solid shade (r_ys,
+; r_ye kept)
+pl_shade:
+   LDX r_ye
+   STX pl_ye0
+   STA r_ye
+   LDA pl_sh
+   STA r_part
+   JSR hz_run
+   LDA pl_ye0
+   STA r_ye
    RTS
-@fresh:                                 ; U = U0 + kb * dU, V = V0 + kb * dV
-   LDA pc_dul,X
+
+; pl_cell: A = the texel byte at pair pl_p, byte column pl_kb (X clear)
+pl_cell:
+   JSR pl_rowc
+   LDX pl_p
+   LDA pc_dul,X                         ; U = U0 + kb * dU
    STA m_a
    LDA pc_duh,X
    STA m_a+1
@@ -2333,11 +2038,11 @@ pl_uv:
    CLC
    LDA m_p
    ADC pc_u0l,X
-   STA ps_ul,X
+   STA pl_u
    LDA m_p+1
    ADC pc_u0h,X
-   STA ps_uh,X
-   LDA pc_dvl,X
+   STA pl_u+1
+   LDA pc_dvl,X                         ; V = V0 + kb * dV
    STA m_a
    LDA pc_dvh,X
    STA m_a+1
@@ -2346,15 +2051,346 @@ pl_uv:
    CLC
    LDA m_p
    ADC pc_v0l,X
-   STA ps_vl,X
+   STA pl_v
    LDA m_p+1
    ADC pc_v0h,X
-   STA ps_vh,X
-   LDA ps_seg
-   STA ps_key,X
+   STA pl_v+1
+   LDA pl_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   STA pl_a
+   LDA pl_v+1
+   AND #$F0
+   ORA pl_a
+   TAY
+   LDX pl_fl
+   LDA mb6_fl_page,X                    ; (bank 6 tail, before paging)
+   STA pc_rd+2
+   LDA mb6_fl_bank,X
+   STA $FE30
+pc_rd:
+   LDA $FF00,Y                          ; (patched: the flat's page)
+   LDX #BANK_C
+   STX $FE30
+   RTS
+
+; pl_rowc: make sure pc_*[pl_p] holds this frame's row for pl_d
+pl_rowc:
+   LDX pl_p
+   LDA pc_ep,X
+   CMP mf_ep
+   BNE :+
+   LDA pc_d,X
+   CMP pl_d
+   BEQ @rts
+:  JMP pl_row
+@rts:
+   RTS
+
+; pl_line: A = one line (unbiased) of column pl_kb: its pair's texel, lit
+pl_line:
+   STA pl_y
+   LSR A
+   STA pl_p
+   JSR pl_cell
+   STA t_ev
+   LDA pl_y
+   JSR pl_wr1
+   RTS
+
+; pl_pair: pair pl_p of column pl_kb, both lines (one texel read)
+pl_pair:
+   JSR pl_cell
+   STA t_ev
+   LDA pl_p
+   ASL A
+   JSR pl_wr1
+   LDA pl_p
+   SEC
+   ROL A
+   ; fall into pl_wr1
+
+; pl_wr1: A = line; t_ev = the texel byte: write it (even: & maskEven;
+; odd: FLIP & maskOdd) at column pl_kb
+pl_wr1:
+   STA pl_y
+   LDX r_ys                             ; (ln_ptrk reads r_ys: lend it)
+   PHX
+   STA r_ys
    LDA pl_kb
-   STA ps_k,X
-   JMP @same
+   JSR ln_ptrk
+   PLX
+   STX r_ys
+   LDA #ACC_DXY
+   STA $FE34
+   LDA pl_y
+   LSR A
+   LDA t_ev
+   BCS :+
+   AND maskEven
+   BRA :++
+:  TAX
+   LDA mf_flip,X
+   AND maskOdd
+:  STA (PTR),Y
+   LDA #ACC_DY
+   STA $FE34
+   RTS
+
+; mf_planes: the seg's end -- MakeSpans over its recorded extents, ceiling
+; then floor (only the kinds it textures), then RTS (out of mf_fill)
+mf_planes:
+   LDA pl_dc
+   BEQ @fl
+   LDA pl_fc
+   CMP #$FF
+   BEQ @fl
+   STA pl_fl
+   LDA pl_dc
+   STA pl_d
+   STZ pl_kind
+   JSR mk_spans
+@fl:
+   LDA pl_df
+   BEQ @rts
+   STA pl_d
+   LDA pl_ff
+   STA pl_fl
+   LDA #1
+   STA pl_kind
+   JSR mk_spans
+@rts:
+   RTS
+
+; mk_spans: R_MakeSpans over columns pl_k0 .. pl_k1 (+ an empty sentinel):
+; (t1, b1) the previous column's pair interval, (t2, b2) this one's;
+; pairs leaving close a span ending at the previous column, pairs
+; arriving open one here (sp_start). Empty = ($FF, 0).
+mk_spans:
+   LDA #$FF
+   STA mk_t1
+   STZ mk_b1
+   LDA pl_k0
+   STA mk_k
+@col:
+   LDA mk_k
+   CMP pl_k1
+   BEQ :+
+   BCS @sent                            ; past the last: the empty sentinel
+:  TAX
+   LDA pl_kind
+   BEQ :+
+   LDA pe_ft,X
+   STA mk_t2
+   LDA pe_fb,X
+   STA mk_b2
+   BRA @go
+:  LDA pe_ct,X
+   STA mk_t2
+   LDA pe_cb,X
+   STA mk_b2
+   BRA @go
+@sent:
+   LDA #$FF
+   STA mk_t2
+   STZ mk_b2
+@go:
+   LDA mk_t2                            ; keep this column's interval for
+   PHA                                  ;  the next step
+   LDA mk_b2
+   PHA
+@l1:                                    ; while t1 < t2 and t1 <= b1: close t1
+   LDA mk_t1
+   CMP mk_t2
+   BCS @l2
+   LDA mk_b1
+   CMP mk_t1
+   BCC @l2
+   LDA mk_t1
+   JSR mk_close
+   INC mk_t1
+   BRA @l1
+@l2:                                    ; while b1 > b2 and b1 >= t1: close b1
+   LDA mk_b2
+   CMP mk_b1
+   BCS @l3
+   LDA mk_b1
+   CMP mk_t1
+   BCC @l3
+   JSR mk_close
+   DEC mk_b1
+   BRA @l2
+@l3:                                    ; while t2 < t1 and t2 <= b2: open t2
+   LDA mk_t2
+   CMP mk_t1
+   BCS @l4
+   LDA mk_b2
+   CMP mk_t2
+   BCC @l4
+   LDX mk_t2
+   LDA mk_k
+   STA sp_start,X
+   INC mk_t2
+   BRA @l3
+@l4:                                    ; while b2 > b1 and b2 >= t2: open b2
+   LDA mk_b1
+   CMP mk_b2
+   BCS @nx
+   LDA mk_b2
+   CMP mk_t2
+   BCC @nx
+   LDX mk_b2
+   LDA mk_k
+   STA sp_start,X
+   DEC mk_b2
+   BRA @l4
+@nx:
+   PLA
+   STA mk_b1
+   PLA
+   STA mk_t1
+   LDA mk_k
+   INC mk_k
+   CMP pl_k1
+   BEQ :+                               ; k <= k1: the next column (k1 + 1
+   BCS @rts                             ;  is the sentinel: all closed)
+:  JMP @col
+@rts:
+   RTS
+
+; mk_close: A = pair: draw its span sp_start[A] .. mk_k - 1
+mk_close:
+   STA pl_p
+   TAX
+   LDA sp_start,X
+   STA pl_kb
+   ; fall into sp_draw
+
+; ---- sp_draw: pair pl_p, byte columns pl_kb .. mk_k - 1 ----------------
+sp_draw:
+   JSR pl_rowc
+   LDX pl_p
+   LDA pc_dul,X                         ; U, V at the span's first column
+   STA m_a
+   STA sp_adul+1                        ; and dU, dV into the loop
+   LDA pc_duh,X
+   STA m_a+1
+   STA sp_aduh+1
+   JSR kbmul
+   LDX pl_p
+   CLC
+   LDA m_p
+   ADC pc_u0l,X
+   STA sp_u
+   LDA m_p+1
+   ADC pc_u0h,X
+   STA sp_u+1
+   LDA pc_dvl,X
+   STA m_a
+   STA sp_advl+1
+   LDA pc_dvh,X
+   STA m_a+1
+   STA sp_advh+1
+   JSR kbmul
+   LDX pl_p
+   CLC
+   LDA m_p
+   ADC pc_v0l,X
+   STA sp_v
+   LDA m_p+1
+   ADC pc_v0h,X
+   STA sp_v+1
+   SEC
+   LDA mk_k
+   SBC pl_kb
+   STA sp_n                             ; bytes
+   ; screen: PTR lo 0, Y = (kb * 8 + line & 7) & $FF, PTR hi = the page
+   LDA pl_kb
+   ASL A
+   ASL A
+   ASL A
+   STA pl_a
+   LDA pl_p
+   ASL A                                ; the even line 2p
+   AND #7
+   ORA pl_a
+   TAY
+   STZ PTR
+   LDA pl_kb
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   STA PTR+1
+   LDA pl_p
+   LSR A
+   LSR A                                ; (2p >> 3) * 2 = (p >> 2) * 2
+   ASL A
+   CLC
+   ADC PTR+1
+   ADC DV_BACKHI
+   STA PTR+1
+   LDX pl_fl
+   LDA mb6_fl_page,X
+   STA sp_rd+2
+   LDA mb6_fl_bank,X
+   STA $FE30
+   LDA #ACC_DXY
+   STA $FE34
+sp_lp:
+   LDA sp_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   STA sp_t
+   LDA sp_v+1
+   AND #$F0
+   ORA sp_t
+   TAX
+sp_rd:
+   LDA $FF00,X                          ; (patched: the flat's page)
+   TAX
+   AND maskEven
+   STA (PTR),Y                          ; even line: whole byte
+   INY
+   LDA mf_flip,X
+   AND maskOdd
+   STA (PTR),Y                          ; odd line: FLIP
+   TYA
+   CLC
+   ADC #7                               ; the next byte column
+   TAY
+   BCC :+
+   INC PTR+1
+:  CLC
+   LDA sp_u
+sp_adul:
+   ADC #0                               ; (patched dU)
+   STA sp_u
+   LDA sp_u+1
+sp_aduh:
+   ADC #0
+   STA sp_u+1
+   CLC
+   LDA sp_v
+sp_advl:
+   ADC #0                               ; (patched dV)
+   STA sp_v
+   LDA sp_v+1
+sp_advh:
+   ADC #0
+   STA sp_v+1
+   DEC sp_n
+   BNE sp_lp
+   LDA #ACC_DY
+   STA $FE34
+   LDA #BANK_C
+   STA $FE30
+   RTS
 
 ; kbmul: m_p (16) = m_a * pl_kb (mod 2^16; kb < 64: six shift-add steps)
 kbmul:
@@ -2518,25 +2554,6 @@ mul8x32:
    BNE @lp
    RTS
 
-; q_a_h: pl_a = (pl_q >> 8) mod 2^16, pl_h = (pl_q >> 14) mod 2^16
-q_a_h:
-   LDA pl_q+1
-   STA pl_a
-   LDA pl_q+2
-   STA pl_a+1
-   LDA pl_q+2                           ; (q >> 16) << 2 | q bits 14-15
-   STA pl_h
-   LDA pl_q+3
-   STA pl_h+1
-   LDA pl_q+1
-   ASL A
-   ROL pl_h
-   ROL pl_h+1
-   ASL A
-   ROL pl_h
-   ROL pl_h+1
-   RTS
-
 ; neg_ah: A non-zero -> pl_a, pl_h negated (mod 2^16)
 neg_ah:
    CMP #0
@@ -2556,6 +2573,334 @@ neg_ah:
    SBC pl_h+1
    STA pl_h+1
 @rts:
+   RTS
+
+; ============================================================================
+; Cold set-up code in MAIN RAM (the HAZEL code area is full): routines that
+; only ever run with ACCCON X clear -- never inside a screen-write loop --
+; may live below $8000. MFILLM: the slack after the clipper code (CBITS);
+; MFILLV: the tail of the object dispatch page (VPTABM; objects are off).
+; ============================================================================
+.segment "MFILLM"
+; ---- tx_seg ----------------------------------------------------------------
+tx_seg:
+   ; slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo / LAY_HDR_STRIDE
+   STZ tx_slot
+   STZ tx_slot+1
+   SEC
+   LDA zp_seg_hdr_p+1
+   SBC #>ROM_SEG_HDR_C
+   TAX
+   BEQ @lo
+@pg:
+   CLC
+   LDA tx_slot
+   ADC #HDR_PER_PAGE
+   STA tx_slot
+   BCC :+
+   INC tx_slot+1
+:  DEX
+   BNE @pg
+@lo:
+   LDA zp_seg_hdr_p
+@l9:
+   CMP #LAY_HDR_STRIDE
+   BCC @slot
+   SBC #LAY_HDR_STRIDE                  ; (C = 1)
+   INC tx_slot
+   BNE @l9
+   INC tx_slot+1
+   BRA @l9
+@slot:
+   ; ---- ANDY: the slot's dressing and length ----
+   LDA #BANK_C | $80                    ; ANDY over $8000-$8FFF
+   STA $FE30
+   CLC
+   LDA #<man_slot_d
+   ADC tx_slot
+   STA TP
+   LDA #>man_slot_d
+   ADC tx_slot+1
+   STA TP+1
+   LDA (TP)
+   STA t_k                              ; slot byte
+   CLC
+   LDA TP+1
+   ADC #>(man_slot_ll - man_slot_d)
+   STA TP+1
+   LDA (TP)
+   STA tx_l16
+   CLC
+   LDA TP+1
+   ADC #>(man_slot_lh - man_slot_ll)
+   STA TP+1
+   LDA (TP)
+   STA tx_l16+1
+   LDA t_k
+   CMP man_ndress
+   BCS @merged
+   TAX                                  ; one piece
+   LDY #0
+   JSR ld_dress
+   STZ pc_sl
+   STZ pc_sh
+   LDA #1
+   STA pc_n
+   BRA @andy_out
+@merged:
+   SBC man_ndress                       ; (C = 1) merged-list id
+   TAX
+   LDA man_pl_n,X
+   STA pc_n
+   LDA man_pl_first,X
+   STA t_k
+   LDY #0
+@pl:
+   LDX t_k
+   LDA man_pc_sl,X
+   STA pc_sl,Y
+   LDA man_pc_sh,X
+   STA pc_sh,Y
+   LDA man_pc_dr,X
+   TAX
+   JSR ld_dress
+   INC t_k
+   INY
+   CPY pc_n
+   BCC @pl
+@andy_out:
+   LDX zp_node_ch_l                     ; step 5: the subsector's flats
+   LDA man_ss_ff,X                      ; (top 3 bits: the light level)
+   STA pl_ff
+   LDA man_ss_fc,X
+   STA pl_fc
+   LDA #BANK_C                          ; back to the cascade's bank
+   STA $FE30
+   JSR pl_seg
+   LDX #0
+   JSR set_cur                          ; piece 0 until a strip says otherwise
+   ; ---- d at the projected ends: 0 and L16, or from the crossing t ----
+   STZ tx_d1
+   STZ tx_d1+1
+   LDA tx_l16
+   STA tx_d2
+   LDA tx_l16+1
+   STA tx_d2+1
+   LDA zp_seg_v1_clipped
+   BEQ @c2
+   JSR l16t                             ; d1 = (L16 * t + 128) >> 8
+   LDA m_p+1
+   STA tx_d1
+   LDA m_p+2
+   STA tx_d1+1
+   BRA @w
+@c2:
+   LDA zp_seg_v2_clipped
+   BEQ @w
+   JSR l16t                             ; d2 = L16 - ((L16 * t + 128) >> 8)
+   SEC
+   LDA tx_l16
+   SBC m_p+1
+   STA tx_d2
+   LDA tx_l16+1
+   SBC m_p+2
+   STA tx_d2+1
+@w:
+   ; ---- weights: (256 + M8) << (Smax - S), both to 16 bits ----
+   LDA zp_seg_v1_r_s
+   CMP zp_seg_v2_r_s
+   BCS :+
+   LDA zp_seg_v2_r_s
+:  STA t_sx
+   LDA zp_seg_v1_r_m8
+   STA tx_wa
+   LDA #1
+   STA tx_wa+1
+   STZ tx_wa+2
+   SEC
+   LDA t_sx
+   SBC zp_seg_v1_r_s
+   TAX
+   BEQ @wb
+:  ASL tx_wa
+   ROL tx_wa+1
+   ROL tx_wa+2
+   DEX
+   BNE :-
+@wb:
+   LDA zp_seg_v2_r_m8
+   STA tx_wb
+   LDA #1
+   STA tx_wb+1
+   STZ tx_wb+2
+   SEC
+   LDA t_sx
+   SBC zp_seg_v2_r_s
+   TAX
+   BEQ @wn
+:  ASL tx_wb
+   ROL tx_wb+1
+   ROL tx_wb+2
+   DEX
+   BNE :-
+@wn:
+   LDA tx_wa+2
+   ORA tx_wb+2
+   BEQ @ends
+   LSR tx_wa+2
+   ROR tx_wa+1
+   ROR tx_wa
+   LSR tx_wb+2
+   ROR tx_wb+1
+   ROR tx_wb
+   BRA @wn
+@ends:
+   ; ---- first / last strip centres ----
+   LDA mf_x
+   INC A
+   STA tx_xl
+   LDA mf_hi
+   DEC A
+   AND #$FE                             ; last even pixel < hi
+   INC A
+   STA tx_xh
+   LDA tx_xl
+   JSR at                               ; -> m_p: exact d, at_n: raw weight
+   LDA m_p
+   STA tx_dl
+   LDA m_p+1
+   STA tx_dl+1
+   LDX #4
+:  LDA at_n,X
+   STA tx_ra,X
+   DEX
+   BPL :-
+   LDA tx_xh
+   JSR at
+   LDA m_p
+   STA tx_dh
+   LDA m_p+1
+   STA tx_dh+1
+   LDX #4
+:  LDA at_n,X
+   STA tx_rb,X
+   DEX
+   BPL :-
+   ; A, B: the raw weights shifted together until both fit a byte
+@ab:
+   LDA tx_ra+1
+   ORA tx_ra+2
+   ORA tx_ra+3
+   ORA tx_ra+4
+   ORA tx_rb+1
+   ORA tx_rb+2
+   ORA tx_rb+3
+   ORA tx_rb+4
+   BEQ @abok
+   LSR tx_ra+4
+   ROR tx_ra+3
+   ROR tx_ra+2
+   ROR tx_ra+1
+   ROR tx_ra
+   LSR tx_rb+4
+   ROR tx_rb+3
+   ROR tx_rb+2
+   ROR tx_rb+1
+   ROR tx_rb
+   BRA @ab
+@abok:
+   ; den0 = A * (xh - xl); n0 = dL * den0
+   LDA tx_ra
+   STA m_a
+   STZ m_a+1
+   SEC
+   LDA tx_xh
+   SBC tx_xl
+   STA m_b
+   STZ m_b+1
+   JSR mul16
+   LDA m_p
+   STA tx_den
+   STA m_b
+   LDA m_p+1
+   STA tx_den+1
+   STA m_b+1
+   LDA tx_dl
+   STA m_a
+   LDA tx_dl+1
+   STA m_a+1
+   JSR mul16
+   LDX #3
+:  LDA m_p,X
+   STA tx_n,X
+   DEX
+   BPL :-
+   ; dden = 2 * (B - A)  (s16)
+   SEC
+   LDA tx_rb
+   SBC tx_ra
+   STA tx_dden
+   LDA #0
+   SBC #0
+   STA tx_dden+1
+   ASL tx_dden
+   ROL tx_dden+1
+   ; dn = 2 * (dH * B - dL * A)  (s32)
+   LDA tx_dh
+   STA m_a
+   LDA tx_dh+1
+   STA m_a+1
+   LDA tx_rb
+   STA m_b
+   STZ m_b+1
+   JSR mul16
+   LDX #3
+:  LDA m_p,X
+   STA t_tmp,X
+   DEX
+   BPL :-
+   LDA tx_dl
+   STA m_a
+   LDA tx_dl+1
+   STA m_a+1
+   LDA tx_ra
+   STA m_b
+   STZ m_b+1
+   JSR mul16
+   SEC
+   LDX #0
+:  LDA t_tmp,X
+   SBC m_p,X
+   STA tx_dn,X
+   INX
+   TXA                                  ; (keeps C)
+   EOR #4
+   BNE :-
+   ASL tx_dn
+   ROL tx_dn+1
+   ROL tx_dn+2
+   ROL tx_dn+3
+   JMP pe_init                          ; the plane extents, empty
+
+
+.segment "MFILLV"
+; q_a_h: pl_a = (pl_q >> 8) mod 2^16, pl_h = (pl_q >> 14) mod 2^16
+q_a_h:
+   LDA pl_q+1
+   STA pl_a
+   LDA pl_q+2
+   STA pl_a+1
+   LDA pl_q+2                           ; (q >> 16) << 2 | q bits 14-15
+   STA pl_h
+   LDA pl_q+3
+   STA pl_h+1
+   LDA pl_q+1
+   ASL A
+   ROL pl_h
+   ROL pl_h+1
+   ASL A
+   ROL pl_h
+   ROL pl_h+1
    RTS
 
 ; h63: pl_h = 63 * pl_h = (pl_h << 6) - pl_h (mod 2^16); X preserved
@@ -2593,6 +2938,8 @@ pl_zk2:
    .byte ^((1 << 20) / (2 * J + 1))
 .endrepeat
 
+
+.segment "MFILL"
 ; ---- divq16: m_p (32) / m_b (16) -> m_p (16), when the quotient < 2^16
 ; (m_p hi word < m_b): 16 steps, the remainder seeded with the hi word ----
 divq16:
