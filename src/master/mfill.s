@@ -63,6 +63,16 @@ TP  = RASTER_ZP_DX                      ; zp pair: the rasteriser's dx/dy, only
 ; The rasteriser's cnt pair (raster.s only, not linked here).
 maskEven = RASTER_ZP_CNT
 maskOdd  = RASTER_ZP_CNT+1
+; The wall write loop's zero page (tr_screen, a leaf): bytes no code in the
+; MASTER link references (zp.inc notes the reuse), and TP, which is dead
+; while the loop runs.
+zw_lvl  = zp_plot_i                     ; left strip's v (5.11)
+zw_lvh  = zp_dcl_out
+zw_tvl  = zp_clr_save_x                 ; right strip's v
+zw_tvh  = zp_vs_cch
+zw_rowm = zp_old_cur                    ; row mask (th - 1) * 8
+zw_ev   = TP                            ; the combined texel byte (scratch)
+zw_np   = TP+1                          ; pairs left
 NONE = $FF                              ; no texture (master_walls.NONE)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
@@ -1805,7 +1815,7 @@ trun:
    STA trr_rd+2
    LDX t_tid
    LDA mb6_tp_rowm,X
-   STA t_rowm
+   STA zw_rowm
    JMP tr_screen
 
 .segment "MFILL"
@@ -1824,70 +1834,196 @@ tr_screen:
    INC A
    STA t_n                              ; line count
    JSR ln_ptr                           ; PTR, Y for line r_ys
+   LDA trl_rd+1                         ; the two strips' texel columns
+   STA trl_0+1                          ;  (patched into trl_rd / trr_rd by
+   STA trl_2+1                          ;  trun) into the four pair bodies
+   STA trl_4+1
+   STA trl_6+1
+   LDA trl_rd+2
+   STA trl_0+2
+   STA trl_2+2
+   STA trl_4+2
+   STA trl_6+2
+   LDA trr_rd+1
+   STA trr_0+1
+   STA trr_2+1
+   STA trr_4+1
+   STA trr_6+1
+   LDA trr_rd+2
+   STA trr_0+2
+   STA trr_2+2
+   STA trr_4+2
+   STA trr_6+2
+   LDA l_v                              ; both strips' v into zero page
+   STA zw_lvl
+   LDA l_v+1
+   STA zw_lvh
+   LDA t_v
+   STA zw_tvl
+   LDA t_v+1
+   STA zw_tvh
    LDA mb6_tp_bank,X                    ; (X = t_tid still)
    STA $FE30                            ; the texture's bank
    LDA #ACC_DXY
    STA $FE34                            ; -> shadow (no main reads >= $3000)
-pb_tex:
-   LDA l_v+1                            ; row = (v >> 11) & (th - 1), * 8
-   AND t_rowm
-   TAX
-trl_rd:
-   LDA $FFFF,X                          ; (patched: left texel column)
-   ASL A
-   ASL A
-   STA t_ev
-   LDA t_v+1
-   AND t_rowm
-   TAX
-trr_rd:
-   LDA $FFFF,X                          ; (patched: right texel column)
-   ORA t_ev
-   TAX
-   AND maskEven                         ; lit
-   STA t_ev
+   ; an odd first line: its pair's odd byte, alone
+   TYA
+   LSR A
+   BCC @even
+   JSR tr_fetch
    LDA mf_flip,X
    AND maskOdd
-   STA t_od
-@line:
-   TYA
-   LSR A                                ; C = line parity
-   LDA t_ev
-   BCC :+
-   LDA t_od
-:  STA (PTR),Y                          ; the whole byte: no read
+   STA (PTR),Y
    DEC t_n
    BEQ @done
-   INY
-   CPY #8
-   BNE :+
+   JSR tr_vstep
+   INY                                  ; (odd -> even: never the row's end
+   CPY #8                               ;  but at line 7)
+   BNE @even
    LDY #0
    INC PTR+1
    INC PTR+1
-:  TYA
+@even:
+   ; whole pairs from even line Y: the pair bodies, entered at Y's pair
+   LDA t_n
    LSR A
-   BCS @line                            ; odd line: same texel pair
-   CLC                                  ; even line: both strips' next pair
-   LDA l_v
-   ADC l_step
-   STA l_v
-   LDA l_v+1
-   ADC l_step+1
-   STA l_v+1
-   CLC
-   LDA t_v
-   ADC t_step
-   STA t_v
-   LDA t_v+1
-   ADC t_step+1
-   STA t_v+1
-   BRA pb_tex
+   STA zw_np
+   ROR t_n                              ; (bit 7: an even last line remains)
+   LDA zw_np
+   BEQ @tail
+   TYA
+   TAX
+   JMP (tr_blk,X)
+@tail:
+   BIT t_n
+   BPL @done
+   JSR tr_fetch                         ; the last line, even, alone
+   STA (PTR),Y
 @done:
    LDA #ACC_DY
    STA $FE34                            ; back to main RAM
    LDA #BANK_C
    STA $FE30                            ; and the cascade's bank
    RTS
+
+; tb_end: the pairs are done (Y = the last odd line): an even last line,
+; if any, is the next line
+tb_end:
+   INY
+   CPY #8
+   BNE @tail
+   LDY #0
+   INC PTR+1
+   INC PTR+1
+@tail:
+   BIT t_n
+   BPL @done
+   JSR tr_fetch
+   STA (PTR),Y
+@done:
+   LDA #ACC_DY
+   STA $FE34
+   LDA #BANK_C
+   STA $FE30
+   RTS
+
+; tr_fetch: the current pair's combined texel byte: X = it, A = it lit for
+; an even line
+tr_fetch:
+   LDA zw_lvh                           ; row = (v >> 11) & (th - 1), * 8
+   AND zw_rowm
+   TAX
+trl_rd:
+   LDA $FFFF,X                          ; (patched: left texel column)
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAX
+trr_rd:
+   LDA $FFFF,X                          ; (patched: right texel column)
+   ORA zw_ev
+   TAX
+   AND maskEven
+   RTS
+
+; tr_vstep: both strips' v on one pair
+tr_vstep:
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+   RTS
+
+tr_blk:  .word tb_0, tb_2, tb_4, tb_6    ; JMP (tr_blk,X), X = Y = 0, 2, 4, 6
+
+; The pair bodies: the pair on lines K, K + 1 of the character row. Fetch
+; both strips' texels, write the even line lit and the odd line FLIP lit,
+; step both v, count the pair. tb_6 moves PTR on a character row (2 pages).
+.macro TB_PAIR K, tl, tr
+   LDA zw_lvh
+   AND zw_rowm
+   TAX
+tl:
+   LDA $FFFF,X                          ; (patched: left texel column)
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAX
+tr:
+   LDA $FFFF,X                          ; (patched: right texel column)
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #K
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+   DEC zw_np
+   BNE :+
+   JMP tb_end
+:
+.endmacro
+tb_0:
+   TB_PAIR 0, trl_0, trr_0
+tb_2:
+   TB_PAIR 2, trl_2, trr_2
+tb_4:
+   TB_PAIR 4, trl_4, trr_4
+tb_6:
+   TB_PAIR 6, trl_6, trr_6
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   JMP tb_0
 
 .segment "MB6C"
 

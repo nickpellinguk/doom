@@ -14,9 +14,8 @@ given as  px py ab) and attributes every cycle:
              frames: their inclusive figures read 0. tx_seg's includes the
              plane flushes its tail call (pe_init) can trigger.
   arithmetic to the nearest non-arithmetic caller on the stack
-  loop heads executions of each label's first instruction (pb_tex = wall
-             texel pairs, trr_rd@line = wall lines, sp_lp / sl_lp = span
-             bytes)
+  loop heads executions of each label's first instruction (tb_0 + tb_2 +
+             tb_4 + tb_6 = wall line pairs, sp_lp / sl_lp = span bytes)
 
 The fill's routines are also summed by job. Figures are means per frame.
 
@@ -40,7 +39,9 @@ BANK6_CODE = ('MB6C', 'MFILLV')
 ARITH = {'mf_mul8', 'mul16', 'div32', 'divq16', 'dq_set', 'dq_core', 'd8_byte', 'kbmul',
          'mul8x32', 'pl_prod', 'q_a_h', 'neg_ah', 'h63', 'tx_dat'}
 JOBS = [
-    ('wall texel loop', ['tr_screen', 'pb_tex', 'trl_rd', 'trr_rd']),
+    ('wall texel loop', ['tr_screen', 'tr_fetch', 'tr_vstep', 'tr_blk', 'tb_end', 'trl_rd',
+                         'trr_rd', 'tb_0', 'tb_2', 'tb_4', 'tb_6', 'trl_0', 'trr_0', 'trl_2',
+                         'trr_2', 'trl_4', 'trr_4', 'trl_6', 'trr_6']),
     ('span loops (pair, line)', ['sp_go2', 'sp_lp', 'sp_rd', 'sp_adul', 'sp_aduh', 'sp_advl',
                                  'sp_advh', 'sl_go', 'sl_lp', 'sl_rd', 'sl_fl', 'sl_mk',
                                  'sl_adul', 'sl_aduh', 'sl_advl', 'sl_advh']),
@@ -64,8 +65,8 @@ JOBS = [
 INCLUSIVE = ['mf_fill', 'mf_snap', 'band', 'wall_run', 'tv_div', 'tv_v0', 'tcol', 'tx_getd',
              'tx_seg', 'at', 'pl_pair', 'mk_spans', 'sp_setup', 'pl_rowc', 'kbmul', 'st_step',
              'st_val', 'st_peek', 'div32', 'divq16', 'mul16', 'mul8x32']
-LOOP_HEADS = ['pb_tex', 'trr_rd@line', 'sp_lp', 'sl_lp', 'trun', 'sp_go2', 'sl_go', 'mf_fill',
-              'col', 'band', 'tx_getd']
+LOOP_HEADS = ['tb_0', 'tb_2', 'tb_4', 'tb_6', 'sp_lp', 'sl_lp', 'trun', 'sp_go2', 'sl_go',
+              'mf_fill', 'col', 'band', 'tx_getd']
 
 
 def _kv(line):
