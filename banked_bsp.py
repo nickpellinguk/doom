@@ -476,6 +476,29 @@ class MasterBspRender(BankedBspRender):
         # clear_screen would wipe it.
         self.sc.SCREEN_START = None
         self.sc.SCREEN_SIZE = 0
+        # Step 3: the filler writes the shadow buffer through ACCCON X, objects
+        # are off (they apply span lines outside a seg's fill window), and
+        # the sky map is seeded where the disc builder seeds it.
+        import fill_ref
+        from symmap import sym as _ms
+        self.bm.define_shadow()
+        _anyb = _ms('OBJ_ANYB', banked=2)
+        for i in range(32):
+            self.bm[_anyb + i] = 0
+        sk = _ms('mf_skymap', banked=2)
+        for i, b in enumerate(fill_ref.sky_bitmap()):
+            self.bm[sk + i] = b
+        self.bm[abi.DV_BACKHI] = abi.MSCREEN0 >> 8
+        self.bm[0xFE34] = 0x09                # ACCCON at render time: D | Y
+
+    def render_frame(self, px, py, ab, floor_z=0):
+        self.bm.clear_shadow()
+        return super().render_frame(px, py, ab, floor_z)
+
+    def framebuffer(self):
+        """The 10K back buffer the filler drew (shadow RAM)."""
+        lo = abi.MSCREEN0
+        return self.bm.shadow_bytes(lo, lo + 10240)
 
 
 def fb_mask(r):

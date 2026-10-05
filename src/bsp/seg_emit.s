@@ -423,6 +423,11 @@ hgp_fwd:
 ; to the four-class arm cascade below (top/bottom x step-up/step-down),
 ; which loses its solid tests in exchange.
 ; ============================================================================
+.if ::MASTER
+.import mf_snap, mf_fill
+   JSR mf_snap                             ; MASTER: snapshot the spans this
+                                           ; seg overlaps (master/mfill.s)
+.endif
    BIT zp_seg_flags
    BVC portal_cascade                      ; V clear: two-sided seg
 solid_cascade:
@@ -462,6 +467,9 @@ sc_vs1:
    JSR vs_fresh2
 sc_vs2:
    JSR span_mark_solid                     ; zp_i clamps persisted (stage 3)
+.if ::MASTER
+   JSR mf_fill                             ; MASTER: fill what it removed
+.endif
    JMP s_advance
 sc_esk:
    BMI sc_fb                               ; N rides from the fork's LDA:
@@ -585,6 +593,10 @@ ms_zero_rec:
 ms_solid:
    JSR span_mark_solid
 ms_advance:
+.if ::MASTER
+   JSR mf_fill                             ; MASTER: fill what the portal's
+                                           ; updates removed
+.endif
 
 ; ============================================================================
 ; STAGE 9 — ADVANCE.  Two entries: ::s_advance re-pages L0 for the next

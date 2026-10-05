@@ -24,6 +24,7 @@ WINDOW_LO = 0x8000
 WINDOW_HI = 0xC000          # exclusive
 WINDOW_SZ = WINDOW_HI - WINDOW_LO   # 16384
 ROMSEL = 0xFE30
+ACCCON = 0xFE34             # Master: D/E/X/Y paging (define_shadow models X)
 
 
 class BankedMemory(list):
@@ -91,8 +92,37 @@ class BankedMemory(list):
         super().__setitem__(slice(0x8000, 0x9000), list(self._andy))
         self._andy_in = True
 
+    def define_shadow(self):
+        """Model the Master's SHADOW RAM (LYNNE) behind ACCCON X ($FE34
+        bit 2): with X set the CPU's $3000-$7FFF is the shadow 20K. Swapped
+        in and out of the list on the X edge, so reads stay plain list
+        reads (the same trick as the sideways window)."""
+        self._shadow = [0] * 0x5000
+        self._xon = False
+
+    def shadow_bytes(self, lo=0x3000, hi=0x8000):
+        """The shadow RAM as the display sees it, whatever X is now."""
+        if self._xon:
+            return bytes(list.__getitem__(self, slice(lo, hi)))
+        return bytes(self._shadow[lo - 0x3000:hi - 0x3000])
+
+    def clear_shadow(self):
+        if self._xon:
+            list.__setitem__(self, slice(0x3000, 0x8000), [0] * 0x5000)
+        else:
+            self._shadow = [0] * 0x5000
+
     def __setitem__(self, i, v):
         if isinstance(i, int):
+            if i == ACCCON and getattr(self, '_shadow', None) is not None:
+                xon = bool(v & 4)
+                if xon != self._xon:
+                    main = list.__getitem__(self, slice(0x3000, 0x8000))
+                    list.__setitem__(self, slice(0x3000, 0x8000), self._shadow)
+                    self._shadow = main
+                    self._xon = xon
+                list.__setitem__(self, i, v)
+                return
             if i == ROMSEL:
                 self._andy_out()                  # window back to bank bytes
                 self._switch(v & 0x0F)

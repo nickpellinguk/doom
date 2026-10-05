@@ -8,6 +8,8 @@ every pose the Master build must emit EXACTLY the Model B build's line list,
 in the same order. Bank 6 is poisoned in the Master rig, so a bank-C read
 that missed the rebase shows up here as a different list.
 
+Billboard objects are off on both sides (the Master build has none yet).
+
 Poses: the 17 frame-cycle positions (compare_renders.POSITIONS) plus the 11
 ground-truth verify positions from run_regression. Also reports the Master
 cycle total against the Model B C02 build. Prints MASTERENGINE: PASS.
@@ -36,6 +38,13 @@ def lines_for(R):
     r = R(dw.packed_layout, dw.packed_rom_main, dw.packed_rom_detail,
           dw.packed_bbox_table, dw.MAP_CENTER_X, dw.MAP_CENTER_Y, dw.PRESCALE)
     sc = r.sc
+    # Billboard objects are OFF in the Master build (they apply span lines
+    # outside any seg's fill window; no sprites yet), so compare the two
+    # engines with objects off on both sides.
+    from symmap import sym as _sy
+    anyb = _sy('OBJ_ANYB', banked=R.VAR)
+    for i in range(32):
+        r.bm[anyb + i] = 0
     raw = sc._run
     acc = []
     def run(entry, *a, **k):

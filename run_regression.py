@@ -183,6 +183,8 @@ run('textured_ref', ['test_textured_ref.py'],
 # Master textured port, step 3: the span-diff fill model covers every
 # on-map pixel and agrees with the textured reference's surfaces.
 run('fill_ref', ['test_fill_ref.py'], lambda o: 'FILLREF: PASS' in o)
+# ...and the 6502 filler (src/master/mfill.s) draws exactly what it draws.
+run('master_fill', ['test_master_fill.py'], lambda o: 'MASTERFILL: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):

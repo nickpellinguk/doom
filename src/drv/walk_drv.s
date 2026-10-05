@@ -104,6 +104,9 @@ RAWY_MAX = $0490        ;  1168
 .import obj_anyb_fill
 .import zp_br_px, zp_br_py
 .import obj_key
+.if ::MASTER
+.import ok_flip
+.endif
 .import fb_clr0
 .import fb_clr1
 .import fb_clr_back
@@ -212,9 +215,10 @@ zpclr:
     INX
     BNE zpclr
 .if ::MASTER
-    LDA #ACC_D
-    STA $FE34   ; MASTER: display SHADOW (both buffers live there);
-                ; X/E/Y off -- HAZEL is paged in only while it draws
+    LDA #ACC_D | ACC_Y
+    STA $FE34   ; MASTER: display SHADOW (both buffers live there) and
+                ; HAZEL held in for good (the filler runs from it; no OS
+                ; after this point). X is set only while writing pixels.
 .else
     LDA #0
     STA $FE34   ; Master: ACCCON off (harmless on B)
@@ -381,8 +385,11 @@ vxinit:
     LDA #ACC_D | ACC_X | ACC_Y
     STA $FE34
     JSR MHZ_PATTERN
-    LDA #ACC_D
+    LDA #ACC_D | ACC_Y
     STA $FE34
+    JSR ok_flip                     ; MASTER: billboard objects OFF -- they
+                                    ; apply span lines outside any seg's
+                                    ; fill window (no sprites yet)
 .else
     LDA #BANK_C
     STA $FE30   ; the clears live in bank C
@@ -541,8 +548,10 @@ anim_glue_tick:
     STA $FE30   ; (ANIM_FIELDS is stored by mv_frame -- the
     JMP ENG_ANIM_TICK           ;  glue pocket has no room for the copy)
 key_hud:
+.if .not ::MASTER
     JSR obj_key                                     ; "O": billboard objects
                                                     ;  on/off (engine-side)
+.endif
     ; H key: toggle the debug HUD on the press edge only (hud_prev holds
     ; last frame's state, so holding the key flips it exactly once).
     LDA #$54
@@ -585,7 +594,7 @@ hg_on:
     STA MHZ_ARGS+2
     LDA backhi
     JSR MHZ_HUD
-    LDA #ACC_D
+    LDA #ACC_D | ACC_Y
     STA $FE34
     RTS
 .else

@@ -47,6 +47,22 @@ SH_STEP = M.SHADES.index((2, 3))       # cyan / white: upper and lower walls
 KIND = {SH_SKY: 'sky', SH_CEIL: 'ceil', SH_FLOOR: 'floor', SH_WALL: 'wall', SH_STEP: 'wall'}
 
 
+def sky_bitmap():
+    """32 bytes, one bit per subsector: its ceiling is F_SKY1. The 6502
+    filler's mf_skymap (master/mfill.s) is seeded with this; the subsector's
+    sector is the front sector of its (packed) segs, as fill_ref uses."""
+    import doom_wireframe as dw
+    out = bytearray(32)
+    for ss, (cnt, first) in enumerate(dw.fp_ssectors):
+        secs = {dw.fp_segs_vwh[j][1] for j in range(first, first + cnt)}
+        if not secs:
+            continue
+        assert len(secs) == 1, f'subsector {ss} spans sectors {secs}'
+        if dw.sectors[secs.pop()][3].rstrip(b'\0').decode().upper() == SKY:
+            out[ss >> 3] |= 1 << (ss & 7)
+    return bytes(out)
+
+
 def _floor_interp(x, x0, y0, x1, y1):
     if x1 == x0:
         return y0
