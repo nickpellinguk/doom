@@ -33,13 +33,20 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             (pillars, switches, light strips), so the texture and its u
             restart at each joint: the piece holding d gives the dressing
             and u = 16 * u base - piece start + d (master_walls.py).
-            Column = ((u & (16*src_w - 1)) * R) >> 16, R = 4096*tw // src_w
-            (every E1M1 source width is a power of two).
+            Index = (u & (16*src_w - 1)) >> shift into a power-of-two
+            column index of n entries (n = next power of two >= tw,
+            shift = log2(16*src_w / n): every E1M1 source width is a power
+            of two), logical column = index * tw // n: no multiply.
+            ONE DIVISION PER BYTE: d is exact at the left strip's centre
+            x + 1. The right strip's (x + 3) extrapolates from the previous
+            byte's exact d when that byte computed one (it had wall rows):
+                dr = d + ((d - d_prev) >> 1)
+            else it is exact too; past xh it is the left strip's d.
   bytes     the unit is the BYTE COLUMN (fill_ref): every write is a whole
-            byte, a 4x2 fat pixel. A wall byte is two independent strips,
-            (left texel << 2) | right texel: each strip has its own u (at its
-            centre, x + 1 and x + 3) and its own v (its own T and B lines,
-            at x and x + 2); the run extents, part and piece are the byte's.
+            byte, a 4x2 fat pixel. A wall byte is two strips, (left texel
+            << 2) | right texel: each strip has its own u (at its centre,
+            x + 1 and x + 3); v, the run extents, part and piece are the
+            byte's (its T and B lines at x).
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines: the byte,
             then FLIP of it; a pair moves 2 * step):
@@ -142,6 +149,7 @@ class TexRef(Fm.FillRef):
             B >>= 1
         self.dbg[si] = dict(slot=si, l16=L16, d1=d1, d2=d2, wa=wa, wb=wb, xl=xl, xh=xh,
                             dl=dL, dh=dH, A=A, B=B)   # (the 6502 debug view)
+        d_prev = None                       # (x, d) of the last byte with d
         for x in xs:
             o = self._span_at(before, x)
             if o is None:
@@ -152,19 +160,25 @@ class TexRef(Fm.FillRef):
                                                           (self.bot(n, x) + 1, ob, 'lo')]
             T = Fm._floor_interp(x, sx1, ft1, sx2, ft2) + Bz
             B_ = Fm._floor_interp(x, sx1, fb1, sx2, fb2) + Bz
-            # the right strip's own lines, for its own v (the extents of
-            # every run are the byte's: T and B at x)
-            Tr = Fm._floor_interp(x + 2, sx1, ft1, sx2, ft2) + Bz
-            Br = Fm._floor_interp(x + 2, sx1, fb1, sx2, fb2) + Bz
-            # perspective-correct d at each strip centre (x+1, x+3):
+            # perspective-correct d at the left strip's centre x + 1:
             # projective between the visible ends (8-bit weights; numerator
-            # and denominator step by constants, one division per strip)
+            # and denominator step by constants, one division per byte).
+            # Only a byte with wall rows computes it (the 6502's lazy d).
             def dat(xc):
                 dj, dk = xh - xc, xc - xl
                 D = A * dj + B * dk
                 return (dL * A * dj + dH * B * dk) // D if D else dL
-            d = dat(x + 1)
-            dr = dat(x + 3) if x + 3 <= xh else d
+            d = dr = 0                          # (no wall rows: d unused)
+            if any(max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_)
+                   for y0, y1, _ in bands):
+                d = dat(x + 1)
+                if x + 3 > xh:
+                    dr = d
+                elif d_prev is not None and d_prev[0] == x - 4:
+                    dr = d + ((d - d_prev[1]) >> 1)
+                else:
+                    dr = dat(x + 3)
+                d_prev = (x, d)
             # the byte's piece is the LEFT strip's (a merged seg's joint
             # lands on a byte boundary): one part, one v, two columns
             start, (p_up, p_lo, p_mid, ubase) = W.dressing_at(si, d)
@@ -188,7 +202,7 @@ class TexRef(Fm.FillRef):
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
                         self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
-                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br)
+                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, T, B_)
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 
@@ -204,7 +218,7 @@ class TexRef(Fm.FillRef):
         step = (p['K'] // h) & 0xFFFF if h > 0 else 0
         v = (p['vtop'] + ((yb & ~1) - T) * step) & 0xFFFF
         row = (v >> 11) & (tp['th'] - 1)
-        col = ((u & tp['mask']) * tp['R']) >> 16
+        col = ((u & tp['mask']) >> tp['shift']) * tp['tw'] // tp['n']
         return int(self.tex[tp['name']][0][row, col]), row, col, tp['name']
 
     def _compose(self):

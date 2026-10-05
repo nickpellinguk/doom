@@ -98,8 +98,8 @@ mb6_pt_k1:    .res $A0                  ;  0-2 (v step per line = K // h)
 mb6_pt_k2:    .res $A0
 mb6_pt_v0:    .res $A0                  ;  Vtop (5.11) lo / hi
 mb6_pt_v1:    .res $A0
-mb6_tp_rl:    .res $20                  ; per texture (32): R = 4096*tw//src_w,
-mb6_tp_rh:    .res $20                  ;  lo / hi (column = (u&mask)*R >> 16)
+mb6_tp_sl:    .res $20                  ; per texture (32): 8 - shift, index =
+                                        ;  hi((u & mask) << sl)
 mb6_tp_ml:    .res $20                  ;  u mask = 16*src_w - 1, lo / hi
 mb6_tp_mh:    .res $20
 mb6_tp_rowm:  .res $20                  ;  row mask (th-1)*8, applied to v hi
@@ -178,7 +178,7 @@ ln_dm:   .res 2
 ln_neg:  .res 1
 ln_y:    .res 2
 ; steppers (see STEPPERS below)
-st_f:    .res 112
+st_f:    .res 84
 mf_oi:   .res 1                         ; snapshot index the OT/OB steppers hold
 mf_ns:   .res 1                         ; live slot the NT/NB steppers hold
 mf_lc:   .res 1                         ; live-list cursor
@@ -259,15 +259,13 @@ t_ev:    .res 1
 t_od:    .res 1
 t_cl:    .res 1                         ; texel column base lo / hi
 t_ch:    .res 1
-c_tr:    .res 2                         ; the right strip's own T, B (x + 2;
-c_br:    .res 2                         ;  c_t..c_b and c_tr..c_br are pairs)
 q_t:     .res 2                         ; tstrip's T, B (same layout) and d
 q_b:     .res 2
 q_d:     .res 2
 tx_dr:   .res 2                         ; the right strip's d (x + 3)
+tx_lx:   .res 1                         ; the last byte column with an exact d
+tx_dp:   .res 2                         ;  (its x, and that d)
 t_kk:    .res 3                         ; the part's K
-l_v:     .res 2                         ; the left strip's v and pair step
-l_step:  .res 2                         ;  (t_v / t_step: the right strip's)
 ; ---- step 5: floors and ceilings (plane_ref.py is the executable spec) ----
 mf_ep:   .res 1                         ; frame epoch (pc_ep; 0 never valid)
 mf_tick: .res 1                         ; frames (NUKAGE frame = tick/8 mod 3)
@@ -307,7 +305,7 @@ sp_u:    .res 2                         ; the span loop's U, V (4.12)
 sp_v:    .res 2
 sp_t:    .res 1
 sp_n:    .res 1
-mq_b:    .res 1                         ; umul8: multiplier, product lo,
+mq_b:    .res 1                         ; mf_mul8: multiplier, product lo,
 mq_l:    .res 1                         ;  scratch; mul8x32's byte index
 mq_t:    .res 1
 mq_i:    .res 1
@@ -547,11 +545,8 @@ mf_fill:
    STA si_neg
    LDX #ST_B
    JSR st_init
-   ; the right strip's own T and B: the same lines from x0 + 2
-   LDX #ST_T
-   JSR st_dup_r
-   LDX #ST_B
-   JSR st_dup_r
+   LDA #$FF
+   STA tx_lx                            ; no exact d yet in this seg
    LDA mf_x
    CMP mf_hi
    BCC :+
@@ -681,18 +676,6 @@ adv:
    LDY #VIS_YMAX
    JSR clamp_ln
    STA c_bc
-   LDX #ST_TR                           ; the right strip's own T, B (x + 2):
-   JSR st_val                           ;  its v only -- every extent is the
-   LDA ln_y                             ;  byte's
-   STA c_tr
-   LDA ln_y+1
-   STA c_tr+1
-   LDX #ST_BR
-   JSR st_val
-   LDA ln_y
-   STA c_br
-   LDA ln_y+1
-   STA c_br+1
    ; --- the bands ---
    LDA c_new
    BNE @two
@@ -731,12 +714,9 @@ next_col:
    BCC @step
    JMP mf_planes
 @step:
-   STA mf_x
-   LDX #1                               ; every stepper moves 2 pixels a
-@two:                                   ;  step: twice per byte
-   PHX
-   CLC                                  ; the texture d stepper: n += dn,
-   LDA tx_n                             ; den += dden
+   STA mf_x                             ; every stepper moves 4 pixels: once
+   CLC                                  ;  per byte. The texture d stepper:
+   LDA tx_n                             ;  n += dn, den += dden
    ADC tx_dn
    STA tx_n
    LDA tx_n+1
@@ -759,10 +739,6 @@ next_col:
    JSR st_step
    LDX #ST_B
    JSR st_step
-   LDX #ST_TR
-   JSR st_step
-   LDX #ST_BR
-   JSR st_step
    LDA mf_oi
    BMI @no_o
    LDX #ST_OT
@@ -777,15 +753,13 @@ next_col:
    LDX #ST_NB
    JSR st_step
 @no_n:
-   PLX
-   DEX
-   BPL @two
    JMP col
 
 ; ============================================================================
 ; STEPPERS. Each tracks y(x) = y0 +/- floor(|D| * k / W) for k = x - x0
-; exactly as x steps by 2: |D| * k = q * W + r with 0 <= r < W, and
-; 2|D| = Q * W + R, so a step is r += R, q += Q, then one conditional
+; exactly as x steps by 4 (one byte column): |D| * k = q * W + r with
+; 0 <= r < W, and 4|D| = Q * W + R, so a step is r += R, q += Q, then one
+; conditional
 ; r -= W, q += 1. A negative slope reads y0 - (q + (r != 0)) (floor of a
 ; negative quotient). W = 0 is a constant y0 (a zero-width line). The
 ; set-up pays one multiply and two divides; each step a few adds.
@@ -798,8 +772,6 @@ ST_OT = 28
 ST_OB = 42
 ST_NT = 56
 ST_NB = 70
-ST_TR = 84                              ; the right strip's T / B (x + 2)
-ST_BR = 98
 
 ; st_init8: a span edge -- y0 = si_a0, D = si_a1 - si_a0, W = si_w (den),
 ; k = x - si_xlo (u8 values; the clipper's floor interpolation)
@@ -871,7 +843,7 @@ st_init:
    STA st_f+4,X
    LDA m_r+1
    STA st_f+5,X
-   LDA si_d                             ; Q, R = 2|D| / W
+   LDA si_d                             ; Q, R = 4|D| / W
    ASL A
    STA m_p
    LDA si_d+1
@@ -881,6 +853,9 @@ st_init:
    ROL A
    STA m_p+2
    STZ m_p+3
+   ASL m_p
+   ROL m_p+1
+   ROL m_p+2
    LDA si_w
    STA m_b
    LDA si_w+1
@@ -897,23 +872,7 @@ st_init:
    STA st_f+11,X
    RTS
 
-; st_dup_r: stepper X+84 := stepper X moved on 2 pixels (the right strip's
-; T or B line from the same set-up)
-st_dup_r:
-   PHX
-   LDY #14
-:  LDA st_f,X
-   STA st_f+84,X
-   INX
-   DEY
-   BNE :-
-   PLA
-   CLC
-   ADC #84
-   TAX
-   ; fall into st_step
-
-; st_step: advance stepper X by two pixels
+; st_step: advance stepper X by four pixels (one byte column)
 st_step:
    LDA st_f+13,X
    BNE @rts
@@ -1335,7 +1294,9 @@ tx_getd:
    LDA m_p+1
    STA tx_d+1
 @piece:
-   ; the right strip, at x + 3 -- or the left strip's d past the map's end
+   ; the right strip, at x + 3: the left strip's d past the map's end;
+   ; else from the previous byte's exact d, dr = d + ((d - d_prev) >> 1);
+   ; else exact (a second division)
    LDA tx_d
    STA tx_dr
    LDA tx_d+1
@@ -1343,33 +1304,84 @@ tx_getd:
    LDA mf_x
    CLC
    ADC #3
-   BCS @pc                              ; (x + 3 > 255 > xh)
+   BCS @rec_j                           ; (x + 3 > 255 > xh)
    CMP tx_xh
+   BCC :+
    BEQ :+
-   BCS @pc
-:  CLC
+@rec_j:
+   JMP @rec
+:  LDA mf_x
+   SEC
+   SBC #4
+   CMP tx_lx
+   BNE @exact
+   SEC                                  ; m_a = (d - d_prev) >> 1 (signed)
+   LDA tx_d
+   SBC tx_dp
+   STA m_a
+   LDA tx_d+1
+   SBC tx_dp+1
+   CMP #$80
+   ROR A
+   STA m_a+1
+   ROR m_a
+   CLC
+   LDA tx_d
+   ADC m_a
+   STA tx_dr
+   LDA tx_d+1
+   ADC m_a+1
+   STA tx_dr+1
+   BRA @rec
+@exact:
+   LDA tx_dn+3                          ; n + dn / 2, den + dden / 2: two
+   CMP #$80                             ;  pixels on (the steps are 4)
+   ROR A
+   STA t_tmp+3
+   LDA tx_dn+2
+   ROR A
+   STA t_tmp+2
+   LDA tx_dn+1
+   ROR A
+   STA t_tmp+1
+   LDA tx_dn
+   ROR A
+   STA t_tmp
+   CLC
    LDX #0
    LDY #4
-:  LDA tx_n,X                           ; n + dn, den + dden (2 pixels on)
-   ADC tx_dn,X
+:  LDA tx_n,X
+   ADC t_tmp,X
    STA m_p,X
    INX
    DEY
    BNE :-
+   LDA tx_dden+1
+   CMP #$80
+   ROR A
+   STA m_b+1
+   LDA tx_dden
+   ROR A
    CLC
-   LDA tx_den
-   ADC tx_dden
+   ADC tx_den
    STA m_b
-   LDA tx_den+1
-   ADC tx_dden+1
+   LDA m_b+1
+   ADC tx_den+1
    STA m_b+1
    ORA m_b
-   BEQ @pc                              ; (den 0: the left d, as dL)
+   BEQ @rec                             ; (den 0: the left d, as dL)
    JSR divq16
    LDA m_p
    STA tx_dr
    LDA m_p+1
    STA tx_dr+1
+@rec:
+   LDA mf_x                             ; this byte's exact d, for the next
+   STA tx_lx
+   LDA tx_d
+   STA tx_dp
+   LDA tx_d+1
+   STA tx_dp+1
 @pc:
    LDA pc_n
    CMP #2
@@ -1418,8 +1430,8 @@ wall_run:
    JMP run
 
 ; ---- trun: A = part id; textured run over [r_ys, r_ye] (biased) ---------
-; One part, one bank, the byte's extents; two independent strips: each has
-; its own column (u at its centre) and its own v (its own T and B lines).
+; One part, one bank, the byte's extents and v; two strips, each with its
+; own column (u at its centre).
 ; Every line is written WHOLE: (left texel << 2) | right texel, FLIP of it
 ; on odd lines -- a 4x2 fat pixel, nothing read back.
 trun:
@@ -1436,40 +1448,27 @@ trun:
    STA t_kk+1
    LDA mb6_pt_k2,X
    STA t_kk+2
-   ; the left strip: T, B at x, d at x + 1
+   ; the byte's v (T, B at x), then each strip's column (d at x + 1, x + 3)
    LDX #3
 :  LDA c_t,X                            ; c_t, c_b (4 bytes) -> q_t, q_b
    STA q_t,X
    DEX
    BPL :-
+   JSR tvstep
    LDA tx_d
    STA q_d
    LDA tx_d+1
    STA q_d+1
-   JSR tstrip
-   LDA t_v
-   STA l_v
-   LDA t_v+1
-   STA l_v+1
-   LDA t_step
-   STA l_step
-   LDA t_step+1
-   STA l_step+1
+   JSR tcol
    LDA t_cl
    STA trl_rd+1
    LDA t_ch
    STA trl_rd+2
-   ; the right strip: T, B at x + 2, d at x + 3
-   LDX #3
-:  LDA c_tr,X                           ; c_tr, c_br -> q_t, q_b
-   STA q_t,X
-   DEX
-   BPL :-
    LDA tx_dr
    STA q_d
    LDA tx_dr+1
    STA q_d+1
-   JSR tstrip
+   JSR tcol
    LDA t_cl
    STA trr_rd+1
    LDA t_ch
@@ -1496,7 +1495,7 @@ trun:
    LDA #ACC_DXY
    STA $FE34                            ; -> shadow (no main reads >= $3000)
 pb_tex:
-   LDA l_v+1                            ; row = (v >> 11) & (th - 1), * 8
+   LDA t_v+1                            ; row = (v >> 11) & (th - 1), * 8
    AND t_rowm
    TAX
 trl_rd:
@@ -1504,9 +1503,6 @@ trl_rd:
    ASL A
    ASL A
    STA t_ev
-   LDA t_v+1
-   AND t_rowm
-   TAX
 trr_rd:
    LDA $FFFF,X                          ; (patched: right texel column)
    ORA t_ev
@@ -1534,14 +1530,7 @@ trr_rd:
 :  TYA
    LSR A
    BCS @line                            ; odd line: same texel pair
-   CLC                                  ; even line: both strips' next pair
-   LDA l_v
-   ADC l_step
-   STA l_v
-   LDA l_v+1
-   ADC l_step+1
-   STA l_v+1
-   CLC
+   CLC                                  ; even line: the next texel row
    LDA t_v
    ADC t_step
    STA t_v
@@ -1556,11 +1545,10 @@ trr_rd:
    STA $FE30                            ; and the cascade's bank
    RTS
 
-; ---- tstrip: one strip of the run. In: q_t, q_b (s16 T, B), q_d (d),
-; t_kk (K), t_vt (Vtop), t_tid, r_ys (biased). Out: t_step = the PAIR step
-; (2 * K / (B - T), 0 if B <= T), t_v = Vtop + ((ys & ~1) - T) * step
-; (mod 2^16), t_cl/t_ch = the texel column for u = ub*16 - start + d ----
-tstrip:
+; ---- tvstep: the run's v. In: q_t, q_b (s16 T, B), t_kk (K), t_vt (Vtop),
+; r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
+; B <= T), t_v = Vtop + ((ys & ~1) - T) * step (mod 2^16) ----------------
+tvstep:
    LDA t_kk
    STA m_p
    LDA t_kk+1
@@ -1588,7 +1576,7 @@ tstrip:
    STZ t_step
    STZ t_step+1
 @v0:
-   LDA r_ys
+   LDA r_ys                             ; m_a = (ys & ~1) - T (s16)
    AND #$FE
    SEC
    SBC q_t
@@ -1596,6 +1584,27 @@ tstrip:
    LDA #0
    SBC q_t+1
    STA m_a+1
+   ORA m_a
+   BEQ @top                             ; the run starts at T: v = Vtop
+   LDA m_a
+   AND m_a+1
+   CMP #$FF
+   BNE @mul
+   SEC                                  ; one line above T: v = Vtop - step
+   LDA t_vt
+   SBC t_step
+   STA t_v
+   LDA t_vt+1
+   SBC t_step+1
+   STA t_v+1
+   BRA @dbl
+@top:
+   LDA t_vt
+   STA t_v
+   LDA t_vt+1
+   STA t_v+1
+   BRA @dbl
+@mul:
    LDA t_step
    STA m_b
    LDA t_step+1
@@ -1608,9 +1617,14 @@ tstrip:
    LDA m_p+1
    ADC t_vt+1
    STA t_v+1
+@dbl:
    ASL t_step                           ; step is per LINE: a pair moves 2 steps
    ROL t_step+1
-   ; u = ub * 16 - start + d, & mask; column = (u * R) >> 16
+   RTS
+
+; ---- tcol: q_d (d) -> t_cl / t_ch, the texel column: u = ub * 16 - start
+; + d; index = (u & mask) >> shift, as hi((u & mask) << (8 - shift)) ----
+tcol:
    LDA cur_ub
    STA m_a
    STZ m_a+1
@@ -1639,16 +1653,13 @@ tstrip:
    STA m_a
    LDA m_a+1
    AND mb6_tp_mh,X
-   STA m_a+1
-   LDA mb6_tp_rl,X
-   STA m_b
-   LDA mb6_tp_rh,X
-   STA m_b+1
-   JSR mul16                            ; column = m_p+2
-   LDX t_tid
+   LDY mb6_tp_sl,X
+:  ASL m_a
+   ROL A
+   DEY
+   BNE :-
    CLC                                  ; stored column index (main RAM:
-   LDA mb6_tp_ixl,X                     ;  read with X clear)
-   ADC m_p+2
+   ADC mb6_tp_ixl,X                     ;  read with X clear)
    STA TP
    LDA mb6_tp_ixh,X
    ADC #0
@@ -2402,11 +2413,11 @@ kbmul:                                  ; m_p = m_a * pl_kb (mod 2^16)
    LDA pl_kb
    STA mq_b
    LDA m_a+1
-   JSR umul8
+   JSR mf_mul8
    LDA mq_l
    STA m_p+1
    LDA m_a
-   JSR umul8
+   JSR mf_mul8
    CLC
    ADC m_p+1
    STA m_p+1
@@ -2530,7 +2541,7 @@ mul8x32:
    LDX mq_i
    LDA pl_e,X
    BEQ @nx                              ; zero byte: adds nothing
-   JSR umul8
+   JSR mf_mul8
    TAY                                  ; Y = hi
    LDX mq_i
    CLC                                  ; pl_q+i+1 is still clear: no
@@ -2828,7 +2839,7 @@ tx_seg:
    STA tx_n,X
    DEX
    BPL :-
-   ; dden = 2 * (B - A)  (s16)
+   ; dden = 4 * (B - A)  (s16: per 4-pixel byte)
    SEC
    LDA tx_rb
    SBC tx_ra
@@ -2836,9 +2847,11 @@ tx_seg:
    LDA #0
    SBC #0
    STA tx_dden+1
+   ASL tx_dden                          ; (x 2: per strip pair; x 2 again:
+   ROL tx_dden+1                        ;  one step per 4-pixel byte)
    ASL tx_dden
    ROL tx_dden+1
-   ; dn = 2 * (dH * B - dL * A)  (s32)
+   ; dn = 4 * (dH * B - dL * A)  (s32: per 4-pixel byte)
    LDA tx_dh
    STA m_a
    LDA tx_dh+1
@@ -2870,6 +2883,10 @@ tx_seg:
    EOR #4
    BNE :-
    ASL tx_dn
+   ROL tx_dn+1
+   ROL tx_dn+2
+   ROL tx_dn+3
+   ASL tx_dn                            ; (per 4-pixel byte)
    ROL tx_dn+1
    ROL tx_dn+2
    ROL tx_dn+3
@@ -2935,10 +2952,10 @@ pl_zk2:
 .segment "MFILL"
 .segment "MARITH"                       ; main $7E20: the arithmetic (only ever
                                         ;  called with ACCCON X clear)
-; ---- umul8: A * mq_b -> A (hi), mq_l (lo). Quarter squares:
+; ---- mf_mul8: A * mq_b -> A (hi), mq_l (lo). Quarter squares:
 ; a*b = f(a+b) - f(|a-b|), f(n) = n*n >> 2, from the boot-built SQR_*
 ; tables (main RAM $0200-$07FF: readable whatever ACCCON X). X, Y used.
-umul8:
+mf_mul8:
    STA mq_t
    SEC
    SBC mq_b
@@ -3049,7 +3066,7 @@ mul16:                                  ; m_p (32) = m_a * m_b (16 x 16),
    LDA m_b                              ;  m_b kept
    STA mq_b
    LDA m_a
-   JSR umul8                            ; a0 * b0
+   JSR mf_mul8                            ; a0 * b0
    STA m_p+1
    LDA mq_l
    STA m_p
@@ -3057,7 +3074,7 @@ mul16:                                  ; m_p (32) = m_a * m_b (16 x 16),
    STZ m_p+3
    LDA m_a+1
    BEQ @a1z
-   JSR umul8                            ; a1 * b0, at byte 1
+   JSR mf_mul8                            ; a1 * b0, at byte 1
    TAY
    CLC
    LDA mq_l
@@ -3071,7 +3088,7 @@ mul16:                                  ; m_p (32) = m_a * m_b (16 x 16),
    BEQ @done
    STA mq_b
    LDA m_a
-   JSR umul8                            ; a0 * b1, at byte 1
+   JSR mf_mul8                            ; a0 * b1, at byte 1
    TAY
    CLC
    LDA mq_l
@@ -3084,7 +3101,7 @@ mul16:                                  ; m_p (32) = m_a * m_b (16 x 16),
    INC m_p+3
 :  LDA m_a+1
    BEQ @done
-   JSR umul8                            ; a1 * b1, at byte 2
+   JSR mf_mul8                            ; a1 * b1, at byte 2
    TAY
    CLC
    LDA mq_l

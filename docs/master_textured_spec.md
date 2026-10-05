@@ -246,11 +246,15 @@ in integer arithmetic the 6502 can reproduce; gated by `test_tex_ref.py`
   - Per strip: a projective map between those two ends, with their raw
     weights normalised to 8 bits (A, B):
     `d = (dL·A·dj + dH·B·dk) / (A·dj + B·dk)`. Numerator and denominator
-    step by constants, so the 6502 needs adds and one 32/16 division per
-    strip, and no multiply.
-  - Column: `((u & (16·src_w − 1)) · R) >> 16`, with
-    `R = 4096·tw // src_w`. Every E1M1 source width is a power of two, so
-    the texture period is an AND and no modulo is needed.
+    step by constants. Since step 5d, d is exact (one 32/16 division) only
+    at a byte's LEFT strip; the right strip extrapolates from the previous
+    byte's exact d, `dr = d + ((d − d_prev) >> 1)`, when that byte computed
+    one, and is exact otherwise.
+  - Column: index = `(u & (16·src_w − 1)) >> shift` into a power-of-two
+    column index of n entries (n = the next power of two ≥ tw, shift =
+    log2(16·src_w / n)), logical column = index·tw // n. Every E1M1 source
+    width is a power of two, so the texture period is an AND, and there
+    is no multiply. 25 of the 32 textures have n = tw (shift 6).
 - *Pieces*: the engine merges colinear neighbour segs with the same
   sectors. All 20 merges in E1M1 join **different linedefs** (pillars,
   switches, light strips), so the texture and its u restart at the
@@ -264,12 +268,13 @@ in integer arithmetic the 6502 can reproduce; gated by `test_tex_ref.py`
 
 - *Byte columns*: the unit is the byte (4×2 fat pixels, written whole).
   The run extents, part and piece are sampled at the byte's first pixel.
-  Its two strips keep their own u (at x+1 and x+3) and their own v (from
-  their own T and B, at x and x+2). A merged seg's joint therefore lands
-  on a byte boundary.
+  Its two strips keep their own u (at x+1 and x+3); since step 5d they
+  share the byte's v (from its T and B at x). A merged seg's joint
+  therefore lands on a byte boundary.
 
-Agreement with the float `textured_ref` over the on-map poses: 95.3% of
-wall cells within one texel on both axes, 78.2% the exact byte (96.8% and
+Agreement with the float `textured_ref` over the on-map poses: 94.8% of
+wall cells within one texel on both axes, 77.7% the exact byte since step
+5d's shared v (95.3% and 78.3% with a v per strip; 96.8% and
 79.4% with 2-pixel strips; the 4-pixel edges cost the difference). The rest
 is quantisation, plus close-up walls inheriting the engine's 1–2 pixel
 edge differences; the texture follows the engine's drawn edges, as it
@@ -314,13 +319,12 @@ textured walls (`test_master_disc.py`).
   - exact d and raw weights at the visible ends;
   - then the per-strip numerator and denominator and their constant
     steps.
-- *Per byte column*, on demand: d for both strips (x+1, x+3), each one
-  32/16 division (16 steps), and the piece holding the left one.
-- *Per run*, for each of the byte's two strips:
-  - its own step = K / h and v0 = Vtop + (y_even − T)·step, from its own T
-    and B (at x and x+2);
-  - column = ((u & mask)·R) >> 16, then index byte, then the texel column
-    pointer (the stacked textures' 128 row offset is folded in).
+- *Per byte column*, on demand: d for both strips (step 5d: one division,
+  the right strip extrapolated), and the piece holding the left one.
+- *Per run* (step 5d): one step = K / h and v0 = Vtop + (y_even − T)·step
+  from the byte's T and B (`tvstep`); then for each strip its column
+  (`tcol`): index = hi((u & mask) << (8 − shift)), index byte, texel
+  column pointer (the stacked textures' 128 row offset is folded in).
 - *Writing*: the run extents, part and bank are the byte's. Every line is
   written whole, `(TEX1<<2) OR TEX2` (FLIP on odd lines), with nothing
   read back. v steps 2·step per line pair, and row = (v_hi & rowmask).
@@ -475,6 +479,28 @@ the 6502 stays byte-exact (`test_master_tex.py`):
   draws 5 frames in 400 fields, up from 3.
 - *Memory*: the routines live in main $7E20–$7FFC (`MARITH`, loaded
   with the rest of $5800–$7FFF as MCBITS) and `d8_byte` in HAZEL.
+
+**5d. Wall set-up restructure. — DONE.** The per-strip wall maths was
+the largest set-up cost. The model (`tex_ref`, `master_walls`) changed
+first, then the 6502, byte-exact against it:
+- *One v per byte*: a byte's two strips share step and v0, from the
+  byte's own T and B. That drops the right strip's T/B steppers, its
+  divide and multiply, and one v add per line pair in the texel loop.
+  Cost: the float agreement falls 0.4% (94.8% within one texel; the
+  gate is now 94.5%).
+- *One division per byte for u*: the right strip's d extrapolates from
+  the previous byte's exact d when there is one.
+- *No multiply for the column*: a power-of-two column index per texture
+  (`mtex_ix` grows to 996 B); the 25 textures with R = 1024 sample
+  exactly as before.
+- *Steppers step once per byte* (4 pixels, Q and R from 4|D|): still
+  exact, half the steps. The d stepper's constants double the same way.
+- *v0*: no multiply when the run starts at T or one line above it.
+- *Cycles*: 33.7M over the 18 poses, down from 42.3M. At (1056, −3616,
+  32) the frame is 2.41M (2.97M before); wall set-up there is about
+  0.72M, down from 1.17M. What remains is per seg (`tx_seg`, ~8K a seg:
+  four multiplies and a divide in each `at`) and the edge steppers.
+  On jsbeeb the start pose draws 6 frames in 400 fields (5 before).
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

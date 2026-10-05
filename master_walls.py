@@ -10,7 +10,11 @@ what a seg is dressed in.
   texture params  per texture id: tw, th (32, or 16 for the stacked short
                   ones), mask = 16*src_w - 1 (src_w is a power of two for
                   every E1M1 texture, so u mod the texture period is an
-                  AND), R = 4096*tw // src_w (column = (u & mask)*R >> 16)
+                  AND); a POWER-OF-TWO column index of n = the next power
+                  of two >= tw entries, so the index is (u & mask) >> shift,
+                  shift = log2(16*src_w // n), and logical column
+                  i * tw // n (no multiply: 25 of the 32 textures have
+                  n = tw = src_w / 4, shift 6)
   PARTS           one textured wall part: (texture id, K, Vtop)
                     K    = 2048*th*(fc - fh) // src_h  (0 if fc <= fh); the
                            5.11 step per line pair is K // h, h = B - T
@@ -68,8 +72,12 @@ class Walls:
             tb, sw, sh = tex[t['name']]
             th, tw = tb.shape
             assert sw & (sw - 1) == 0, f"{t['name']}: source width {sw} not a power of two"
+            n = 1 << (tw - 1).bit_length()
+            assert 16 * sw % n == 0, f"{t['name']}: index {n} does not divide 16*{sw}"
+            shift = (16 * sw // n).bit_length() - 1
+            assert 3 <= shift <= 8 and n <= 256
             self.tparams.append(dict(name=t['name'], tw=tw, th=th, sw=sw, sh=sh,
-                                     mask=16 * sw - 1, R=(4096 * tw) // sw))
+                                     mask=16 * sw - 1, n=n, shift=shift))
         self.parts, self._part_ix = [], {}
         self.dress, self._dress_ix = [], {}
         self.pieces = []                       # merged segs: [(start16, dressing)]
@@ -234,8 +242,7 @@ class Walls:
             i = t['id']
             assert t['ptr'] & 0xFF == 0 and t['rowoff'] in (0, 128)
             assert tp['th'] == (16 if t['rowoff'] or t['height'] == 16 else 32)
-            bput('mb6_tp_rl', i, tp['R'] & 0xFF)
-            bput('mb6_tp_rh', i, tp['R'] >> 8)
+            bput('mb6_tp_sl', i, 8 - tp['shift'])     # index = hi((u & mask) << sl)
             bput('mb6_tp_ml', i, tp['mask'] & 0xFF)
             bput('mb6_tp_mh', i, tp['mask'] >> 8)
             bput('mb6_tp_rowm', i, (tp['th'] - 1) * 8)
@@ -246,7 +253,7 @@ class Walls:
             bput('mb6_tp_ixl', i, a & 0xFF)
             bput('mb6_tp_ixh', i, a >> 8)
             assert len(t['index']) == tp['tw']
-            ix += bytes(t['index'])
+            ix += bytes(t['index'][j * tp['tw'] // tp['n']] for j in range(tp['n']))
         assert len(ix) <= 0x420, 'column index blob overruns mtex_ix'
         # step 5: flat bank / page by flat id, and the map centre's 4.12 terms
         assert len(man['flats']) <= 0x20
