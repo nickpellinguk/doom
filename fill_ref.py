@@ -10,9 +10,11 @@ fill; the seg's front ceiling/floor lines split each band into ceiling,
 wall and floor. Coverage is exact by construction: every on-screen pixel
 is filled once, in front-to-back order, with no overdraw and no gaps.
 
-  columns   strip c = pixels 2c, 2c+1 belongs to whatever range contains
-            its EVEN pixel 2c (the engine's ranges are half-open [lo, hi))
-  bands     old span (top, bot) vs new at x = 2c, evaluated exactly as the
+  columns   the unit is the BYTE COLUMN k (pixels 4k..4k+3): it belongs to
+            whatever range contains its first pixel 4k (the engine's ranges
+            are half-open [lo, hi)), and every write is a whole byte -- a
+            4x2 fat pixel. Nothing is ever read back.
+  bands     old span (top, bot) vs new at x = 4k, evaluated exactly as the
             engine evaluates span lines (endpoint_spans._span_top/_bot);
             closed column -> [top, bot]; narrowed -> [ot, nt-1], [nb+1, ob]
   split     T, B = the seg's front ceiling / floor lines at x (floor
@@ -127,7 +129,7 @@ class FillRef:
         sh_ceil = SH_SKY if sky else SH_CEIL
         sh_wall = SH_WALL if solid else SH_STEP
         lo, hi = max(0, x_lo), min(255, x_hi)
-        for x in range((lo + 1) & ~1, hi, 2):               # even pixels in [lo, hi)
+        for x in range((lo + 3) & ~3, hi, 4):               # byte samples in [lo, hi)
             o = self._span_at(before, x)
             if o is None:
                 continue
@@ -141,7 +143,7 @@ class FillRef:
             for y0, y1 in bands:
                 for yb in range(max(y0, Bz), min(y1, Bz + LINES - 1) + 1):
                     sh = sh_ceil if yb < T else (SH_FLOOR if yb > B else sh_wall)
-                    self.grid[yb - Bz][c] = sh
+                    self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = sh
 
     def _compose(self):
         fb = bytearray(10240)

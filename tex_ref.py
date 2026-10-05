@@ -35,6 +35,11 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             and u = 16 * u base - piece start + d (master_walls.py).
             Column = ((u & (16*src_w - 1)) * R) >> 16, R = 4096*tw // src_w
             (every E1M1 source width is a power of two).
+  bytes     the unit is the BYTE COLUMN (fill_ref): every write is a whole
+            byte, a 4x2 fat pixel. A wall byte is two independent strips,
+            (left texel << 2) | right texel: each strip has its own u (at its
+            centre, x + 1 and x + 3) and its own v (its own T and B lines,
+            at x and x + 2); the run extents, part and piece are the byte's.
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines: the byte,
             then FLIP of it; a pair moves 2 * step):
@@ -96,7 +101,7 @@ class TexRef(Fm.FillRef):
         b_ceil = M.wall_byte(Fm.SH_SKY if info['sky'] else Fm.SH_CEIL)
         b_floor = M.wall_byte(Fm.SH_FLOOR)
         lo, hi = max(0, x_lo), min(255, x_hi)
-        xs = range((lo + 1) & ~1, hi, 2)
+        xs = range((lo + 3) & ~3, hi, 4)    # the byte columns this seg owns
         if not xs:
             return
         # d (1/16 world units along the seg) at the projected ends; a
@@ -126,7 +131,10 @@ class TexRef(Fm.FillRef):
                 b >>= 1
             return raw, ((d1 * a + d2 * b) // (a + b) if a + b else d1)
 
-        xl, xh = xs[0] + 1, xs[-1] + 1      # first / last strip centre
+        # the map's ends: the first owned strip centre, and the last strip
+        # centre inside [lo, hi) (<= sx2); a byte's right strip past it
+        # takes its left strip's d
+        xl, xh = xs[0] + 1, ((hi - 1) & ~1) + 1
         A, dL = at(xl)
         B, dH = at(xh)
         while max(A, B) > 255:
@@ -144,20 +152,30 @@ class TexRef(Fm.FillRef):
                                                           (self.bot(n, x) + 1, ob, 'lo')]
             T = Fm._floor_interp(x, sx1, ft1, sx2, ft2) + Bz
             B_ = Fm._floor_interp(x, sx1, fb1, sx2, fb2) + Bz
-            # perspective-correct d at the strip centre: projective between
-            # the visible ends (8-bit weights; numerator and denominator
-            # step by constants, one division per strip)
-            xc = x + 1
-            dj, dk = xh - xc, xc - xl
-            D = A * dj + B * dk
-            d = (dL * A * dj + dH * B * dk) // D if D else dL
+            # the right strip's own lines, for its own v (the extents of
+            # every run are the byte's: T and B at x)
+            Tr = Fm._floor_interp(x + 2, sx1, ft1, sx2, ft2) + Bz
+            Br = Fm._floor_interp(x + 2, sx1, fb1, sx2, fb2) + Bz
+            # perspective-correct d at each strip centre (x+1, x+3):
+            # projective between the visible ends (8-bit weights; numerator
+            # and denominator step by constants, one division per strip)
+            def dat(xc):
+                dj, dk = xh - xc, xc - xl
+                D = A * dj + B * dk
+                return (dL * A * dj + dH * B * dk) // D if D else dL
+            d = dat(x + 1)
+            dr = dat(x + 3) if x + 3 <= xh else d
+            # the byte's piece is the LEFT strip's (a merged seg's joint
+            # lands on a byte boundary): one part, one v, two columns
             start, (p_up, p_lo, p_mid, ubase) = W.dressing_at(si, d)
             u = ubase * 16 - start + d
+            ur = ubase * 16 - start + dr
             c = x >> 1
             for y0, y1, which in bands:
                 part = p_mid if solid else (p_up if which == 'up' else
                                             p_lo if which == 'lo' else MW.NONE)
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
+                    self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
                     if yb < T:
                         v = b_ceil
                     elif yb > B_:
@@ -166,10 +184,9 @@ class TexRef(Fm.FillRef):
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
                         self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
-                        self.owner[yb - Bz][c] = si
+                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br)
                         continue
-                    self.grid[yb - Bz][c] = ('b', v)
-                    self.owner[yb - Bz][c] = si
+                    self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 
     def _texel(self, pi, u, yb, T, B):
         p = self.W.parts[pi]

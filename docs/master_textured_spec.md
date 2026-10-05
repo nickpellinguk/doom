@@ -189,26 +189,29 @@ against.
 The rule (`fill_ref.py`, the executable spec): the clip spans are the
 unfilled screen, so whatever a seg's span updates remove (`span_mark_solid`
 for a solid wall; the fused top/bottom walk for a portal) is what that seg
-fills. Diff the pool before and after the seg; per strip (owned by its even
-pixel) fill the removed bands, split at the seg's own front ceiling and
-floor lines: ceiling above, floor below, wall between. Every on-screen
-pixel is filled once, front to back, with no gaps and no overdraw — no
-screen clear is needed. Fills are per screen line (even lines the byte,
-odd lines its FLIP), so band edges may fall on any line.
+fills. Diff the pool before and after the seg. Per BYTE COLUMN (owned by
+the seg whose range holds its first pixel 4k, sampled there), fill the
+removed bands, split at the seg's own front ceiling and floor lines:
+ceiling above, floor below, wall between. Every byte column is filled
+once, front to back, with no gaps and no overdraw, so no screen clear is
+needed. **Every write is a whole byte, a 4×2 fat pixel; nothing is read
+back.** Fills are per screen line (even lines the byte, odd lines its
+FLIP), so band edges may fall on any line. (Until the step-4b revision the
+unit was the 2-pixel strip, written with read-modify-write.)
 `src/master/mfill.s` (HAZEL, $C800) implements it: `mf_snap` at the
 cascade head, `mf_fill` after the seg's updates, exact steppers for the six
-interpolated edges, `hz_run` writing strip runs with ACCCON X set only for
-the run. Sky ceilings come from a per-subsector bitmap. The driver holds
+interpolated edges, `hz_run` writing whole-byte runs with ACCCON X set
+only for the run. Sky ceilings come from a per-subsector bitmap. The driver holds
 ACCCON Y on for the whole render and turns billboard objects **off** (they
 apply span lines outside any seg's fill window; sprites are not in the
-spec yet). Gates: `test_fill_ref.py` (full coverage, 96.4% surface
-agreement with the float `textured_ref`), `test_master_fill.py` (the 6502
-back buffer equals `fill_ref` byte for byte at the 18 poses), both in
-`run_regression.py`; `test_master_disc.py` boots the disc on jsbeeb.
-*Not yet fast*: 1.0–2.7M cycles a frame in py65 (about 1.4 s a frame on
-the emulated Master): stepper set-up uses generic 32-bit maths and every
-strip is written separately with read-modify-write. Step 7 territory, but
-step 4's two-strips-per-byte writer replaces most of the write cost.
+spec yet). Gates: `test_fill_ref.py` (full coverage; 96.1% surface
+agreement with the float `textured_ref` at byte columns), and the 6502
+back buffer byte for byte against the model (since step 4,
+`test_master_tex.py`), both in `run_regression.py`;
+`test_master_disc.py` boots the disc on jsbeeb.
+*Not yet fast*: at step 3, 1.0–2.7M cycles a frame in py65 (about 1.4 s a
+frame on the emulated Master); stepper set-up uses generic 32-bit maths.
+Step 7 territory.
 
 **4. Textured walls. — DONE.** *4a, the bit-exact model*: `tex_ref.py`
 (`TexRef`, on top of `fill_ref`) textures the wall runs of step 3's fill
@@ -253,8 +256,15 @@ in integer arithmetic the 6502 can reproduce; gated by `test_tex_ref.py`
   the top band's wall rows take the upper texture, the bottom band's the
   lower. A sky-to-sky upper draws sky.
 
-Agreement with the float `textured_ref` over the on-map poses: 96.8% of
-wall cells within one texel on both axes, 79.4% the exact byte. The rest
+- *Byte columns*: the unit is the byte (4×2 fat pixels, written whole).
+  The run extents, part and piece are sampled at the byte's first pixel.
+  Its two strips keep their own u (at x+1 and x+3) and their own v (from
+  their own T and B, at x and x+2). A merged seg's joint therefore lands
+  on a byte boundary.
+
+Agreement with the float `textured_ref` over the on-map poses: 95.3% of
+wall cells within one texel on both axes, 78.2% the exact byte (96.8% and
+79.4% with 2-pixel strips; the 4-pixel edges cost the difference). The rest
 is quantisation, plus close-up walls inheriting the engine's 1–2 pixel
 edge differences; the texture follows the engine's drawn edges, as it
 must. Two-sided masked middles are not drawn yet.
@@ -298,27 +308,19 @@ textured walls (`test_master_disc.py`).
   - exact d and raw weights at the visible ends;
   - then the per-strip numerator and denominator and their constant
     steps.
-- *Per strip*, on demand: d = n / den, one 32/16 division (16 steps), and
-  the piece holding d.
-- *Per run*:
-  - step = K / h, then v0 = Vtop + (y_even − T)·step;
+- *Per byte column*, on demand: d for both strips (x+1, x+3), each one
+  32/16 division (16 steps), and the piece holding the left one.
+- *Per run*, for each of the byte's two strips:
+  - its own step = K / h and v0 = Vtop + (y_even − T)·step, from its own T
+    and B (at x and x+2);
   - column = ((u & mask)·R) >> 16, then index byte, then the texel column
-    pointer (the stacked textures' 128 row offset is folded in);
-  - v steps 2·step per line pair; row = (v_hi & rowmask).
-- *Two strips per byte*:
-  - a left strip's runs park in two slots;
-  - the right strip's run pairs with an overlapping parked run in the
-    same bank;
-  - shared lines are written whole, `(TEX1<<2) OR TEX2` (FLIP on odd
-    lines), with no read;
-  - the lines before and after the overlap go through the single-strip
-    read-modify-write loop;
-  - unpaired runs flush at the next byte column and at the seg's end.
-- *Cycles* (py65, 18 poses): 56.6M in total, 2.0–5.4M per on-map frame
-  (step 3: 30.2M). Per-strip writes would cost 60.6M; the two-strip writer
-  saves about 7%. jsbeeb shows about 2.5 s a frame at spawn. The rest is
-  per-strip and per-run arithmetic: shift-add multiplies and divides,
-  which step 7 tables and unrolls.
+    pointer (the stacked textures' 128 row offset is folded in).
+- *Writing*: the run extents, part and bank are the byte's. Every line is
+  written whole, `(TEX1<<2) OR TEX2` (FLIP on odd lines), with nothing
+  read back. v steps 2·step per line pair, and row = (v_hi & rowmask).
+- *Cycles* (py65, 18 poses): 50.4M in total, 1.9–4.8M per on-map frame
+  (step 3: 30.2M). The rest is per-strip and per-run arithmetic:
+  shift-add multiplies and divides, which step 7 tables and unrolls.
 - *Reference gap, found and reported, not fixed here*:
   - The Python reference's projector rounds sx where the engine's count
     projector (`bsp/project.s`, net shift S−3 = 0 at S = 3) truncates.
