@@ -25,6 +25,7 @@ Controls
     S / Down      back                  Q / E     strafe left / right
     Left / Right  turn                  Shift     run
     M             Python / 6502 mode    Tab       mouse-look
+    T             textured Master reference (textured_ref.py) on / off
     F1            toggle help           Esc       quit
 
 Run:  python3 play.py        (needs DOOM1.WAD in this directory)
@@ -125,6 +126,19 @@ def render_frame(fb, px, py, angle_byte):
                      [None] * len(dw.vertexes), [None] * len(dw.vwh_table))
 
 
+_tex = None
+
+
+def get_tex():
+    """Lazily build the textured Master reference (step 2 of
+    docs/master_textured_spec.md): packed assets, exact screen bytes."""
+    global _tex
+    if _tex is None:
+        import textured_ref
+        _tex = textured_ref.TexturedRef()
+    return _tex
+
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WIN_W, WIN_H))
@@ -163,6 +177,8 @@ def main():
                     pygame.event.set_grab(mouse_look)
                 elif ev.key == pygame.K_F1:
                     show_help = not show_help
+                elif ev.key == pygame.K_t:
+                    mode = 'tex' if mode != 'tex' else 'py'
                 elif ev.key == pygame.K_m:
                     mode = '6502' if mode == 'py' else 'py'
                     if mode == '6502' and get_6502() is None:
@@ -194,7 +210,14 @@ def main():
         if an is not None:
             an.tick(dt)          # logical heights advance; tables patch lazily
 
-        if mode == 'py':
+        if mode == 'tex':
+            import textured_ref, master_assets
+            nuk = pygame.time.get_ticks() // 230      # NUKAGE frame (DOOM: 8 tics)
+            img = get_tex().render(px, py, ab, nukage=nuk)
+            rgb = textured_ref.to_rgb(img, master_assets.PALETTE)
+            pygame.surfarray.blit_array(fb, rgb.swapaxes(0, 1))
+            detail = "TEXTURED Master reference (256x160, 4 colours)"
+        elif mode == 'py':
             render_frame(fb, px, py, ab)             # pure-Python fixed-point
             detail = f"PYTHON  {len(dw.map_trace['segs_drawn'])} segs"
         else:
@@ -217,7 +240,7 @@ def main():
             screen.blit(font.render(an.hud_line(), True, DIM), (6, 46))
         if show_help:
             screen.blit(font.render(
-                "WASD/arrows move · Q/E strafe · Shift run · M Python/6502 · "
+                "WASD/arrows move · Q/E strafe · Shift run · M Python/6502 · T textured · "
                 "Tab mouse-look · F1 help · Esc quit", True, DIM),
                 (6, WIN_H - 24))
 

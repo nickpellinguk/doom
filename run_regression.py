@@ -176,6 +176,10 @@ run('master_assets', ['test_master_assets.py'],
 # engine's line list at every pose.
 run('master_engine', ['test_master_engine.py'],
     lambda o: 'MASTERENGINE: PASS' in o)
+# Master textured port, step 2: the textured reference renderer's frames
+# obey the byte rules (FLIP pairs, valid shades) and draw every on-map cell.
+run('textured_ref', ['test_textured_ref.py'],
+    lambda o: 'TEXTUREDREF: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):

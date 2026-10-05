@@ -161,12 +161,26 @@ palette colours appear (needs the jsbeeb clone; prints SKIP without it).
 Measured: about 13 frames per second walking the BSP with no drawing (the
 HUD reads &ED4F µs = 3 fields at the spawn view).
 
-**2. Python textured reference.** Column renderer: 128 wall columns, 80 texel
-rows; per-column wall top/bottom from the clip spans; perspective-correct u,
-per-column v step; upper/middle/lower with WAD offsets and pegging; floors and
-ceilings; sky; output in the exact target bytes, incl. the flip table.
-*Done when*: reference frames exist at the 18 regression positions and
-`play.py` has a textured mode.
+**2. Python textured reference. — DONE:** `textured_ref.py` (`TexturedRef`),
+gated by `test_textured_ref.py` (in `run_regression.py`); `play.py` has a
+textured mode (key T). A classic DOOM column renderer at the target
+resolution, written for clarity: 128 wall strips × 80 texel rows,
+floors/ceilings per byte column (4×2), the engine's camera (focal 128 /
+153.6 at 256×160, eye at floor + 41) and the engine's own map tables
+(alternate BSP, `seg_sectors`). Upper/middle/lower walls with sidedef
+offsets and DOOM pegging; two-sided middle textures (the 7 BRNBIG/BROWNGRN
+panels) drawn once, back to front; flats tile every 64 units; sky is solid
+cyan and sky-to-sky uppers are not drawn. Texels are read from the packed
+bank bytes and assembled HAZEL tables; output is the exact 10K buffer image.
+Reference images for 22 poses land in `build/master/ref/`. The gate checks
+the FLIP rule on every line pair, that every byte is two valid shades, and
+that on-map poses leave nothing undrawn (four poses look off the map edge
+and are listed). About 0.1 s per frame in Python.
+*Decision*: the engine's one-way courtyard windows (`_ONEWAY_WALLED_SIDE`:
+the ledge back wall is solid seen from the room) have no texture on that
+side; the reference shows **sky** there. The 6502 port adds its own
+bit-exact mirror in steps 3–5; this renderer is what those are judged
+against.
 
 **3. Column emission + solid shades on the 6502.** Replace line-fragment
 emission with per-seg, per-span column ranges (start/end column + linear
