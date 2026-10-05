@@ -100,7 +100,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; filler + texturers $C800–$DD53; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K); bank 6 tail $B900–$BDFF: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
-| Main $7A00–$7E1F | Texture column index bytes (1,046 B); $7E20–$7FFF free |
+| Main $7A00–$7E1F | Texture column index bytes (1,046 B) |
+| Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
 | Main $6D38–$6FE9 | Cold per-seg wall and plane set-up |
 
 **Budget (E1M1, measured by `master_assets.py`):**
@@ -403,7 +404,8 @@ side is `src/master/mfill.s`, byte-exact against it in
   are 332 spans of 10.5 bytes on average and 143 partial cells. The span
   loop is about 122 cycles per 4×2 on absolute variables; zero page and a
   nibble table should bring it to about 100, which is step 7 work. Wall
-  set-up (mul16 and div32) now costs more than the planes. On jsbeeb the
+  set-up (mul16 and div32) then cost more than the planes; step 5c
+  fixed the arithmetic. On jsbeeb the
   disc boots and walks: 3 frames in 400 fields at the start pose, up from
   2.
 - *Memory*:
@@ -447,6 +449,28 @@ the FLIP. There are five levels, getting progressively darker
 - *Not yet*: lighting effects (E1M1's blinking and flickering sector
   specials) and DOOM's distance fade. A mover-style table per frame could
   drive the first.
+
+**5c. Fast arithmetic. — DONE.** The fill's general-purpose shift-and-add
+multiply and 32-step divide had become more than half the frame. All of
+them now use fast exact routines, so the Python models are unchanged and
+the 6502 stays byte-exact (`test_master_tex.py`):
+- *Multiplies* (`mul16`, `mul8x32`, `kbmul`) are built from `umul8`, a
+  quarter-square 8×8 on the boot-built `SQR_*` tables at $0200–$07FF
+  (main RAM, readable whatever ACCCON X). A zero operand byte skips its
+  partial product.
+- *Divides*: every E1M1 `div32` has a quotient under 2¹⁶ and 95% have an
+  8-bit divisor.
+  - 8-bit divisor: two 8-step byte divides (`d8_byte`), each skipped
+    outright while the remainder is 0 and the byte is below the divisor
+    (a quarter of the calls divide 0).
+  - 16-bit divisor: `divq16` and `div32` share a 16-step core
+    (`dq_core`) with the divisor patched into its immediates.
+  - Anything else falls back to the 32-step loop.
+- *Cycles*: 42.3M over the 18 poses, down from 63.3M. At (1056, −3616,
+  32) the frame is 2.97M, down from 4.62M. On jsbeeb the start pose
+  draws 5 frames in 400 fields, up from 3.
+- *Memory*: the routines live in main $7E20–$7FFC (`MARITH`, loaded
+  with the rest of $5800–$7FFF as MCBITS) and `d8_byte` in HAZEL.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

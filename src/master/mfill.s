@@ -307,6 +307,11 @@ sp_u:    .res 2                         ; the span loop's U, V (4.12)
 sp_v:    .res 2
 sp_t:    .res 1
 sp_n:    .res 1
+mq_b:    .res 1                         ; umul8: multiplier, product lo,
+mq_l:    .res 1                         ;  scratch; mul8x32's byte index
+mq_t:    .res 1
+mq_i:    .res 1
+d8_by:   .res 1                         ; d8_byte: the dividend byte
 pl_e:    .res 4                         ; pl_row: E, and an 8x32 product
 pl_q:    .res 5
 pl_h:    .res 2
@@ -2393,29 +2398,20 @@ sp_advh:
    RTS
 
 ; kbmul: m_p (16) = m_a * pl_kb (mod 2^16; kb < 64: six shift-add steps)
-kbmul:
-   STZ m_p
-   STZ m_p+1
+kbmul:                                  ; m_p = m_a * pl_kb (mod 2^16)
    LDA pl_kb
-   ASL A
-   ASL A
-   STA m_b
-   LDY #6
-@lp:
-   ASL m_p
-   ROL m_p+1
-   ASL m_b
-   BCC @nx
-   CLC
-   LDA m_p
-   ADC m_a
-   STA m_p
-   LDA m_p+1
-   ADC m_a+1
+   STA mq_b
+   LDA m_a+1
+   JSR umul8
+   LDA mq_l
    STA m_p+1
-@nx:
-   DEY
-   BNE @lp
+   LDA m_a
+   JSR umul8
+   CLC
+   ADC m_p+1
+   STA m_p+1
+   LDA mq_l
+   STA m_p
    RTS
 
 ; pl_row: the row maths for pair pl_p and D pl_d, into pc_*[pl_p]
@@ -2521,36 +2517,33 @@ pl_prod:
    BPL :-
    RTS
 
-; mul8x32: pl_q (5) = pl_e (4) * A (8), shift-add
+; mul8x32: pl_q (5) = pl_e (4) * A (8): four quarter-square 8x8s
 mul8x32:
-   STA pl_a
+   STA mq_b
    STZ pl_q
    STZ pl_q+1
    STZ pl_q+2
    STZ pl_q+3
    STZ pl_q+4
-   LDY #8
+   STZ mq_i
 @lp:
-   ASL pl_q
-   ROL pl_q+1
-   ROL pl_q+2
-   ROL pl_q+3
-   ROL pl_q+4
-   ASL pl_a
-   BCC @nx
-   CLC
-   LDX #0
-:  LDA pl_q,X
-   ADC pl_e,X
+   LDX mq_i
+   LDA pl_e,X
+   BEQ @nx                              ; zero byte: adds nothing
+   JSR umul8
+   TAY                                  ; Y = hi
+   LDX mq_i
+   CLC                                  ; pl_q+i+1 is still clear: no
+   LDA mq_l                             ;  carry out of it
+   ADC pl_q,X
    STA pl_q,X
-   INX
-   TXA
-   EOR #4
-   BNE :-
-   BCC @nx
-   INC pl_q+4
+   TYA
+   ADC pl_q+1,X
+   STA pl_q+1,X
 @nx:
-   DEY
+   INC mq_i
+   LDA mq_i
+   CMP #4
    BNE @lp
    RTS
 
@@ -2940,38 +2933,95 @@ pl_zk2:
 
 
 .segment "MFILL"
-; ---- divq16: m_p (32) / m_b (16) -> m_p (16), when the quotient < 2^16
-; (m_p hi word < m_b): 16 steps, the remainder seeded with the hi word ----
-divq16:
-   LDA m_p+2
-   STA m_r
-   LDA m_p+3
-   STA m_r+1
+.segment "MARITH"                       ; main $7E20: the arithmetic (only ever
+                                        ;  called with ACCCON X clear)
+; ---- umul8: A * mq_b -> A (hi), mq_l (lo). Quarter squares:
+; a*b = f(a+b) - f(|a-b|), f(n) = n*n >> 2, from the boot-built SQR_*
+; tables (main RAM $0200-$07FF: readable whatever ACCCON X). X, Y used.
+umul8:
+   STA mq_t
+   SEC
+   SBC mq_b
+   BCS :+
+   EOR #$FF
+   ADC #1                               ; (C = 0 from the SBC)
+:  TAY                                  ; Y = |a - b|
+   LDA mq_t
+   CLC
+   ADC mq_b
+   TAX                                  ; X = (a + b) & $FF
+   BCS @big
+   SEC
+   LDA SQR_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR_HI,X
+   SBC SQR_HI,Y
+   RTS
+@big:                                   ; a + b >= 256 (C = 1)
+   LDA SQR2_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR2_HI,X
+   SBC SQR_HI,Y
+   RTS
+
+; ---- dq_set / dq_core: the 16-step divide, divisor m_b patched into the
+; immediates. In: remainder seed m_r (lo), A (hi) < m_b; dividend lo word
+; m_p. Out: quotient m_p (16), remainder m_r. X, Y used. ----------------
+dq_set:
+   LDA m_b
+   STA dq_cl+1
+   STA dq_sl+1
+   LDA m_b+1
+   STA dq_ch+1
+   STA dq_sh+1
+   RTS
+dq_core:
    LDX #16
-@lp:
+dq_lp:
    ASL m_p
    ROL m_p+1
    ROL m_r
-   ROL m_r+1
-   BCS @sub
+   ROL A
+   BCS dq_sub                           ; past 16 bits: certainly >= m_b
+dq_ch:
+   CMP #0                               ; (patched: m_b hi)
+   BCC dq_nx
+   BNE dq_sub
+   LDY m_r
+dq_cl:
+   CPY #0                               ; (patched: m_b lo)
+   BCC dq_nx
+dq_sub:                                 ; (C = 1 on every way in)
+   TAY
    LDA m_r
-   CMP m_b
-   LDA m_r+1
-   SBC m_b+1
-   BCC @nx
-@sub:
-   LDA m_r
-   SBC m_b
+dq_sl:
+   SBC #0                               ; (patched: m_b lo)
    STA m_r
-   LDA m_r+1
-   SBC m_b+1
-   STA m_r+1
-   INC m_p
-@nx:
+   TYA
+dq_sh:
+   SBC #0                               ; (patched: m_b hi)
+   INC m_p                              ; quotient bit (ASL freed it)
+dq_nx:
    DEX
-   BNE @lp
+   BNE dq_lp
+   STA m_r+1
    RTS
 
+; ---- divq16: m_p (32) / m_b (16) -> m_p (16), when the quotient < 2^16
+; (m_p hi word < m_b): 16 steps, the remainder seeded with the hi word ----
+divq16:
+   PHY
+   JSR dq_set
+   LDA m_p+2
+   STA m_r
+   LDA m_p+3
+   JSR dq_core
+   PLY
+   RTS
+
+.segment "MFILL"
 ; ---- clamp_ln: A = clamp(ln_y (s16), X, Y) as u8 ------------------------
 clamp_ln:
    STX m_r                              ; lo
@@ -2992,39 +3042,134 @@ clamp_ln:
    LDA m_r+1
    RTS
 
-; ---- mul16: m_p (32) = m_a (16) * m_b (16), unsigned shift-add ----------
-mul16:
-   STZ m_p
-   STZ m_p+1
+.segment "MARITH"
+; ---- mul16 -----------------------------------------------------------------
+mul16:                                  ; m_p (32) = m_a * m_b (16 x 16),
+   PHY                                  ;  four quarter-square 8x8s; m_a,
+   LDA m_b                              ;  m_b kept
+   STA mq_b
+   LDA m_a
+   JSR umul8                            ; a0 * b0
+   STA m_p+1
+   LDA mq_l
+   STA m_p
    STZ m_p+2
    STZ m_p+3
-   LDX #16
-@lp:
-   ASL m_p
-   ROL m_p+1
-   ROL m_p+2
-   ROL m_p+3
-   ASL m_b
-   ROL m_b+1
-   BCC @nx
+   LDA m_a+1
+   BEQ @a1z
+   JSR umul8                            ; a1 * b0, at byte 1
+   TAY
    CLC
-   LDA m_p
-   ADC m_a
-   STA m_p
-   LDA m_p+1
-   ADC m_a+1
+   LDA mq_l
+   ADC m_p+1
    STA m_p+1
-   BCC @nx
-   INC m_p+2
-   BNE @nx
+   TYA
+   ADC m_p+2                            ; (was 0: no carry out)
+   STA m_p+2
+@a1z:
+   LDA m_b+1
+   BEQ @done
+   STA mq_b
+   LDA m_a
+   JSR umul8                            ; a0 * b1, at byte 1
+   TAY
+   CLC
+   LDA mq_l
+   ADC m_p+1
+   STA m_p+1
+   TYA
+   ADC m_p+2
+   STA m_p+2
+   BCC :+
    INC m_p+3
-@nx:
-   DEX
-   BNE @lp
+:  LDA m_a+1
+   BEQ @done
+   JSR umul8                            ; a1 * b1, at byte 2
+   TAY
+   CLC
+   LDA mq_l
+   ADC m_p+2
+   STA m_p+2
+   TYA
+   ADC m_p+3
+   STA m_p+3
+@done:
+   PLY
    RTS
 
-; ---- div32: m_p (32) / m_b (16) -> quotient in m_p (low 16 used), m_r ----
+; ---- div32: m_p (32) / m_b (16) -> quotient m_p (32), remainder m_r.
+; Exact. Every E1M1 call has a quotient < 2^16, 95% an 8-bit divisor:
+;   8-bit divisor, quotient < 2^16: two byte steps (d8_byte), skipped
+;     outright while the remainder is 0 and the byte < m_b
+;   16-bit divisor, quotient < 2^16: the 16-step dq_core
+;   otherwise the plain 32-step loop
+dv_slj:
+   JMP dv_slow
 div32:
+   PHY
+   LDA m_b+1
+   BNE dv_w16
+   LDA m_p+3
+   BNE dv_slj
+   LDA m_p+2
+   CMP m_b
+   BCS dv_slj
+   LDY m_b
+   STY d8_c+1
+   STY d8_s+1
+   STZ m_p+2                            ; (A = remainder seed; flags kept)
+   CMP #0
+   BNE dv_b1
+   LDA m_p+1
+   CMP m_b
+   BCS dv_r0
+   STZ m_p+1                            ; q byte 0, remainder = the byte
+   BRA dv_b0
+dv_r0:
+   LDA #0
+dv_b1:
+   LDX m_p+1
+   STX d8_by
+   JSR d8_byte
+   LDX d8_by
+   STX m_p+1
+dv_b0:
+   CMP #0
+   BNE dv_l0
+   LDA m_p
+   CMP m_b
+   BCS dv_z0
+   STZ m_p
+   BRA dv_end
+dv_z0:
+   LDA #0
+dv_l0:
+   LDX m_p
+   STX d8_by
+   JSR d8_byte
+   LDX d8_by
+   STX m_p
+dv_end:
+   STA m_r
+   STZ m_r+1
+   PLY
+   RTS
+dv_w16:
+   LDA m_p+2                            ; quotient < 2^16 iff hi word < m_b
+   CMP m_b
+   LDA m_p+3
+   SBC m_b+1
+   BCS dv_slj
+   JSR dq_set
+   LDA m_p+2
+   STA m_r
+   LDA m_p+3
+   STZ m_p+2
+   STZ m_p+3
+   JSR dq_core
+   PLY
+   RTS
+dv_slow:
    STZ m_r
    STZ m_r+1
    LDX #32
@@ -3052,6 +3197,27 @@ div32:
 @nx:
    DEX
    BNE @lp
+   PLY
+   RTS
+
+.segment "MFILL"
+; d8_byte: (A:d8_by) / d (patched, 8-bit), A < d -> d8_by = quotient,
+; A = remainder. X used.
+d8_byte:
+   LDX #8
+d8_lp:
+   ASL d8_by
+   ROL A
+   BCS d8_s                             ; past 8 bits: certainly >= d
+d8_c:
+   CMP #0                               ; (patched: d)
+   BCC d8_n
+d8_s:                                   ; (C = 1 on both ways in)
+   SBC #0                               ; (patched: d)
+   INC d8_by
+d8_n:
+   DEX
+   BNE d8_lp
    RTS
 
 .endif                                  ; ::MASTER
