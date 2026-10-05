@@ -4,7 +4,8 @@
 On the engine's own span pool (packed reference + py65 span clipper):
   - every on-map pose is filled completely (the span-diff rule leaves no
     gaps); the off-map poses are the known four
-  - every odd line is FLIP of the line above (bytes are composed per line)
+  - every line is two valid shade halves (odd lines through FLIP); fills
+    are per line, so the two lines of a pair may differ at band edges
   - the surfaces agree with the float textured reference on at least 95%
     of drawn cells (wall / ceiling / floor / sky at each texel row)
 Prints FILLREF: PASS.
@@ -19,6 +20,8 @@ import textured_ref as T
 
 OFFMAP = {(192, -2368, 99), (3648, -2368, 35), (1500, -3700, 0), (3648, -4800, 131)}
 F, R = Fm.FillRef(), T.TexturedRef()
+HALF_L = {(M.wall_byte(s) << 2) & 0xCC for s in range(10)} | {0}
+HALF_R = {M.wall_byte(s) for s in range(10)} | {0}
 out = os.path.join(T.ROOT, 'build', 'master', 'fill')
 os.makedirs(out, exist_ok=True)
 
@@ -38,11 +41,16 @@ for pose in C.POSITIONS:
     hole = F.unfilled()
     if hole and pose not in OFFMAP:
         fails.append(f'{pose}: {hole} unfilled lines-cells on an on-map pose')
-    for y in range(0, 160, 2):
+    # Fills are per LINE, so a band edge may fall between the two lines of
+    # a pair: the rule is per line -- even lines are two valid shade
+    # halves, odd lines are FLIP of two valid shade halves.
+    for y in range(160):
         for k in range(64):
-            a = (y >> 3) * 512 + k * 8 + (y & 7)
-            if fb[a + 1] != M.FLIP[fb[a]]:
-                fails.append(f'{pose}: line {y + 1} col {k} is not FLIP of line {y}')
+            b = fb[(y >> 3) * 512 + k * 8 + (y & 7)]
+            if y & 1:
+                b = M.FLIP[b]
+            if (b & 0xCC) not in HALF_L or (b & 0x33) not in HALF_R:
+                fails.append(f'{pose}: line {y} col {k}: ${b:02X} is not two shades')
                 break
     fk, n, agree = F.kinds(), 0, 0
     for r in range(80):
