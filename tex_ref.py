@@ -177,9 +177,13 @@ class TexRef(Fm.FillRef):
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
                     self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
                     if yb < T:
-                        v = b_ceil
+                        cell = self._plane(si, 'c', yb - Bz, x, b_ceil)
+                        self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = cell
+                        continue
                     elif yb > B_:
-                        v = b_floor
+                        cell = self._plane(si, 'f', yb - Bz, x, b_floor)
+                        self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = cell
+                        continue
                     elif part == MW.NONE:
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
@@ -187,6 +191,11 @@ class TexRef(Fm.FillRef):
                         self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br)
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
+
+    def _plane(self, si, kind, y, x, shade):
+        """The cell for line y (unbiased) of byte column x's ceiling
+        ('c') or floor ('f') run: step 4 draws the solid shade."""
+        return ('b', shade)
 
     def _texel(self, pi, u, yb, T, B):
         p = self.W.parts[pi]
@@ -204,8 +213,11 @@ class TexRef(Fm.FillRef):
             row = self.grid[y]
             for k in range(64):
                 l, r = row[2 * k], row[2 * k + 1]
-                b = (((l[1] << 2) & 0xCC) if l is not None else 0) | \
-                    (r[1] if r is not None else 0)
+                if l is not None and l[0] == 'F':
+                    b = l[1]                        # a whole plane byte
+                else:
+                    b = (((l[1] << 2) & 0xCC) if l is not None else 0) | \
+                        (r[1] if r is not None else 0)
                 fb[(y >> 3) * 512 + k * 8 + (y & 7)] = b if y % 2 == 0 else M.FLIP[b]
         return bytes(fb)
 

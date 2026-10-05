@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Step 5 model: textured floors and ceilings (docs/master_textured_spec.md).
+
+tex_ref.py (step 4) fills each seg's byte columns -- ceiling above its front
+ceiling line T, wall between, floor below its floor line B -- with the
+planes as solid shades. This model textures the plane cells with the
+16x16 flats, in integer arithmetic the 6502 reproduces exactly. Floors are
+largely decorative, so the budget is ONE texel read per 4x2 fat pixel: a
+plane byte is the flat's byte (pixels #0 == #2, #1 == #3) at the byte
+column's centre and the line PAIR's centre, written whole (FLIP of it on
+the pair's odd line).
+
+  depth     a floor seen at line pair p (lines 2p, 2p+1, centre 2p+1) is
+            k = 2p + 1 - 80 lines below the horizon (a ceiling k = 80 -
+            (2p+1) above it), k odd in 1..79. From the engine's projection
+            (focal 128, prescaled heights with the 1.2 aspect baked in) its
+            depth is 1024 * D / k world units, D the eye's prescaled height
+            above the plane -- the SAME prescaled heights the walls' floor
+            and ceiling lines come from (vz - fh, ch - vz). So
+                E = D * (2^20 // k)                     (= 1024 * depth)
+  4.12      u, v in texels (a texel is 4 world units, a flat 16 texels):
+            4.12 fixed point, 16 bits, wrapping at 16 texels for free.
+            With c, s the engine's 8-bit cos / sin magnitudes (unity = 256)
+            and signs:
+                Pc = E * |c|,  Ps = E * |s|
+                A  = sc * (Pc >> 8)    hV = sc * (Pc >> 14)
+                Bs = ss * (Ps >> 8)    hU = ss * (Ps >> 14)
+                U0 = Up + A - 63*hU,   dU = 2*hU            (all mod 2^16)
+                V0 = Vp - Bs - 63*hV,  dV = 2*hV
+            U0/V0 are at byte column 0's centre, dU/dV one byte column (4
+            pixels) on: along a line pair a plane is affine, so the 6502
+            steps U += dU, V += dV per byte -- two adds, one texel read.
+            Up = 1024 * world x, Vp = -1024 * world y of the eye (DOOM flats
+            run -y down), from the engine's 8.8 prescaled position.
+  texel     flat[(V >> 12) * 16 + (U >> 12)]; NUKAGE1 shows frame
+            NUKAGE1 + n (n = the animation frame, 0..2).
+  shade     sky ceilings stay solid cyan; a plane the eye is not on the
+            right side of (D <= 0) keeps its step-4 shade.
+
+    python3 plane_ref.py     # render the regression poses into build/master/plane/
+"""
+import os
+
+import fill_ref as Fm
+import master_assets as M
+import tex_ref as X
+
+ROOT = Fm.ROOT
+HORIZON = 80
+
+
+def _name(b):
+    return b.rstrip(b'\0').decode().upper()
+
+
+class PlaneRef(X.TexRef):
+    def __init__(self, nukage=0):
+        super().__init__()
+        self.nukage = nukage
+        self.flat = self.T.flat                     # name -> 16x16 bytes
+        self.fid = {f['name']: f['id'] for f in self.T.A.man['flats']}
+
+    def render(self, px, py, ab):
+        self.rows = {}                              # (p, kind, D) -> row maths
+        return super().render(px, py, ab)
+
+    def frame_view(self):
+        """The view terms of the 4.12 maths: Up, Vp and the signed 8-bit
+        sin / cos (magnitude, negative?) exactly as the engine stages them."""
+        import fp
+        v = self.view
+        s_mag, s_neg, s_one, c_mag, c_neg, c_one = fp.fp_sincos(v['ab'])
+        dw = self.dw
+        up = (dw.MAP_CENTER_X * 1024 + v['px88'] * 32) & 0xFFFF
+        vp = -(dw.MAP_CENTER_Y * 1024 + v['py88'] * 32) & 0xFFFF
+        return up, vp, (256 if s_one else s_mag), s_neg, (256 if c_one else c_mag), c_neg
+
+    def row(self, p, kind, D):
+        """(U0, dU, V0, dV) for line pair p of a plane D above / below the eye."""
+        key = (p, kind, D)
+        if key in self.rows:
+            return self.rows[key]
+        k = 2 * p + 1 - HORIZON if kind == 'f' else HORIZON - (2 * p + 1)
+        if D <= 0 or k <= 0:
+            self.rows[key] = None
+            return None
+        up, vp, sm, sn, cm, cn = self.frame_view()
+        E = D * ((1 << 20) // k)
+        pc, ps = E * cm, E * sm
+        sgn = lambda neg, v: -v if neg else v
+        A, hV = sgn(cn, pc >> 8), sgn(cn, pc >> 14)
+        Bs, hU = sgn(sn, ps >> 8), sgn(sn, ps >> 14)
+        r = ((up + A - 63 * hU) & 0xFFFF, (2 * hU) & 0xFFFF,
+             (vp - Bs - 63 * hV) & 0xFFFF, (2 * hV) & 0xFFFF)
+        self.rows[key] = r
+        return r
+
+    def _plane(self, si, kind, y, x, shade):
+        dw = self.dw
+        info = self.W.info[si]
+        if kind == 'c' and info['sky']:
+            return ('b', shade)
+        svwh = dw.fp_segs_vwh[si]
+        fh, ch = svwh[3], svwh[4]                   # prescaled s8 (the engine's)
+        vz = self.view['vz']
+        D = (vz - fh) if kind == 'f' else (ch - vz)
+        r = self.row(y >> 1, kind, D)
+        if r is None:
+            return ('b', shade)
+        u0, du, v0, dv = r
+        kb = x >> 2                                 # byte column
+        u = (u0 + kb * du) & 0xFFFF
+        v = (v0 + kb * dv) & 0xFFFF
+        sec = info['front']
+        pic = _name(sec[2] if kind == 'f' else sec[3])
+        if pic.startswith('NUKAGE'):
+            pic = f'NUKAGE{(self.fid[pic] + self.nukage) % 3 + 1}'
+        return ('F', int(self.flat[pic][v >> 12, u >> 12]), kind, u >> 12, v >> 12, pic)
+
+
+if __name__ == '__main__':
+    import compare_renders as C
+    import textured_ref as T
+    R = PlaneRef()
+    out = os.path.join(ROOT, 'build', 'master', 'plane')
+    os.makedirs(out, exist_ok=True)
+    for (px, py, ab) in C.POSITIONS:
+        fb = R.render(px, py, ab)
+        tag = f'{px}_{py}_{ab}'.replace('-', 'm')
+        open(os.path.join(out, f'{tag}.bin'), 'wb').write(fb)
+        T.to_png(fb, os.path.join(out, f'{tag}.png'), M.PALETTE)
+        print(f'({px},{py},{ab}): unfilled {R.unfilled()}')

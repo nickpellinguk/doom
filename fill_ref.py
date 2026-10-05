@@ -105,6 +105,7 @@ class FillRef:
             py_88 = int((py - dw.MAP_CENTER_Y) * 256 / dw.PRESCALE)
             ctx = fp.fp_view_context(px_88, py_88, fp.fp_sincos(ab))
             vz = dw._prescale_height(dw.player_floor(px, py) + 41)
+            self.view = dict(px88=px_88, py88=py_88, vz=vz, ab=ab)   # (plane_ref)
             a = ab * 2 * math.pi / 256
             ram = bytearray(dw.packed_layout['ram_size'])
             spans_init_full(ram, dw.packed_layout['ram_spans'], dw.FP_RENDER_W, dw.FP_RENDER_H - 1)

@@ -91,7 +91,7 @@ def engine_images():
     main = bytes(bm[abi.LOW_BASE:abi.CBITS_M])
     cbits = bytes(bm[abi.CBITS_M:0x8000])           # code + C data + VPTAB + mtex_ix
     assert cbits[ti['ix_base'] - abi.CBITS_M:][:len(ti['ix'])] == ti['ix']
-    hzeng = bytes(bm[0xC800:0xDC00])                # the filler + texturer + sky map
+    hzeng = bytes(bm[0xC800:0xDD80])                # the filler + texturers + sky map
     return b4, b7, ti['b5'], ti['b6'], ti['andy'], main, cbits, hzeng
 
 
@@ -100,7 +100,7 @@ def build():
     hazel_tables()
     b4, b7, b5, b6, andy, main, cbits, hzeng = engine_images()
     hz = asm('mhazel')
-    assert len(hz) <= 0x800, 'boot HAZEL block runs into the filler at $C800'
+    assert len(hz) <= 0x280, 'boot HAZEL block runs into the plane caches at $C280'
     hz = hz.ljust(0x800, b'\0') + hzeng            # $C000 pattern/HUD | $C800 filler
     assert len(andy) == 0x1000
     boot = asm('mboot', (f'HAZEL_PAGES={(len(hz) + 255) // 256}',))

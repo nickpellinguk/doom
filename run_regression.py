@@ -185,8 +185,10 @@ run('textured_ref', ['test_textured_ref.py'],
 run('fill_ref', ['test_fill_ref.py'], lambda o: 'FILLREF: PASS' in o)
 # Step 4a: the integer textured-wall model agrees with the float reference.
 run('tex_ref', ['test_tex_ref.py'], lambda o: 'TEXREF: PASS' in o)
-# Step 4b: the 6502 filler + wall texturer (src/master/mfill.s) draws
-# exactly what tex_ref draws (step 3's solid-shade gate grew into this).
+# Step 5: the floor / ceiling model's 4.12 maths (plane_ref.py)...
+run('plane_ref', ['test_plane_ref.py'], lambda o: 'PLANEREF: PASS' in o)
+# ...and the 6502 filler + wall and plane texturers (src/master/mfill.s)
+# draw exactly what plane_ref (on tex_ref) draws.
 run('master_tex', ['test_master_tex.py'], lambda o: 'MASTERTEX: PASS' in o)
 
 baseline = None

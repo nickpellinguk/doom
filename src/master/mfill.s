@@ -60,7 +60,7 @@ TP  = RASTER_ZP_DX                      ; zp pair: the rasteriser's dx/dy, only
 NONE = $FF                              ; no texture (master_walls.NONE)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
-.export mf_snap, mf_fill, mf_skymap, mf_xt
+.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame, mf_tick
 
 ; ----------------------------------------------------------------------------
 ; Step 4 wall tables: filled by the image builders from master_walls.py
@@ -80,6 +80,8 @@ man_pc_sl:    .res $40                  ; per piece: start (1/16 units) lo
 man_pc_sh:    .res $40                  ;  ... hi
 man_pc_dr:    .res $40                  ;  dressing id
 man_ndress:   .res 1                    ; dressing count
+man_ss_ff:    .res $C4                  ; per subsector: floor flat id
+man_ss_fc:    .res $C4                  ;  ceiling flat id ($FF: sky)
 .assert man_slot_ll - man_slot_d = $300 .and man_slot_lh - man_slot_ll = $300, error, "tx_seg steps the slot planes by $300"
 .assert <man_slot_d = 0, error, "slot planes must be page-aligned"
 
@@ -100,17 +102,24 @@ mb6_tp_bank:  .res $20                  ;  sideways bank (5 or 6)
 mb6_tp_ro:    .res $20                  ;  row offset (128: stacked lower half)
 mb6_tp_ixl:   .res $20                  ;  column index table address lo / hi
 mb6_tp_ixh:   .res $20
+mb6_fl_bank:  .res $20                  ; per flat (23): sideways bank
+mb6_fl_page:  .res $20                  ;  its 256-byte page (16x16 bytes)
+mb6_mcx:      .res 2                    ; map centre x * 1024 (mod 2^16)
+mb6_mcy:      .res 2                    ; -map centre y * 1024 (mod 2^16)
 
 .segment "MTEXIX"                       ; main RAM: read with ACCCON X clear
-mtex_ix:      .res $600                 ; column index bytes, every texture
+mtex_ix:      .res $420                 ; column index bytes, every texture
 
-.segment "MFILLBSS"
-mf_lo:   .res 1                         ; clamped [lo, hi) of the seg
-mf_hi:   .res 1
-mf_x:    .res 1                         ; current byte column's first pixel
-mf_i:    .res 1                         ; snapshot cursor
-sn_n:    .res 1                         ; snapshot count
-sn_xs:   .res 32
+.segment "MPSEG"                        ; main RAM: the per-seg plane state,
+ps_key:       .res 80                   ; per line pair p: the seg key whose
+ps_k:         .res 80                   ;  U, V these are, their byte column,
+ps_ul:        .res 80                   ;  and U, V (4.12)
+ps_uh:        .res 80
+ps_vl:        .res 80
+ps_vh:        .res 80
+
+.segment "MPLANE"                       ; HAZEL $C280: the span snapshot, the
+sn_xs:   .res 32                        ;  run buffer and the per-frame row cache
 sn_xe:   .res 32
 sn_xlo:  .res 32
 sn_den:  .res 32
@@ -118,6 +127,24 @@ sn_tl:   .res 32
 sn_tr:   .res 32
 sn_bl:   .res 32
 sn_br:   .res 32
+pl_buf:  .res 80                        ; the run's texel bytes, per pair
+pc_ep:        .res 80                   ; per line pair p: the frame epoch and
+pc_d:         .res 80                   ;  plane height D it was computed for,
+pc_u0l:       .res 80                   ;  U0 / dU / V0 / dV (4.12, mod 2^16)
+pc_u0h:       .res 80
+pc_dul:       .res 80
+pc_duh:       .res 80
+pc_v0l:       .res 80
+pc_v0h:       .res 80
+pc_dvl:       .res 80
+pc_dvh:       .res 80
+
+.segment "MFILLBSS"
+mf_lo:   .res 1                         ; clamped [lo, hi) of the seg
+mf_hi:   .res 1
+mf_x:    .res 1                         ; current byte column's first pixel
+mf_i:    .res 1                         ; snapshot cursor
+sn_n:    .res 1                         ; snapshot count
 ; seg lines: y = y1 + floor(D * (x - sx1) / W)
 l_sx1:   .res 2
 l_w:     .res 2
@@ -239,6 +266,37 @@ tx_dr:   .res 2                         ; the right strip's d (x + 3)
 t_kk:    .res 3                         ; the part's K
 l_v:     .res 2                         ; the left strip's v and pair step
 l_step:  .res 2                         ;  (t_v / t_step: the right strip's)
+; ---- step 5: floors and ceilings (plane_ref.py is the executable spec) ----
+mf_ep:   .res 1                         ; frame epoch (pc_ep; 0 never valid)
+mf_tick: .res 1                         ; frames (NUKAGE frame = tick/8 mod 3)
+mf_nuk:  .res 1
+ps_seg:  .res 1                         ; seg key (ps_key; 0 never valid)
+pl_up:   .res 2                         ; the frame's view terms: Up, Vp (4.12)
+pl_vp:   .res 2
+pl_sm:   .res 1                         ;  |sin|, unity, negative
+pl_s1:   .res 1
+pl_sn:   .res 1
+pl_cm:   .res 1                         ;  |cos|, unity, negative
+pl_c1:   .res 1
+pl_cn:   .res 1
+pl_df:   .res 1                         ; this seg: eye height over its floor,
+pl_dc:   .res 1                         ;  its ceiling over the eye (0: none)
+pl_ff:   .res 1                         ;  floor / ceiling flat ($FF: none)
+pl_fc:   .res 1
+pl_d:    .res 1                         ; this run: D, flat, shade, kind,
+pl_fl:   .res 1                         ;  pair range, byte column
+pl_sh:   .res 1
+pl_kind: .res 1                         ;  0 ceiling, 1 floor
+pl_p:    .res 1
+pl_p0:   .res 1
+pl_p1:   .res 1
+pl_kb:   .res 1
+pl_u:    .res 2
+pl_v:    .res 2
+pl_e:    .res 4                         ; pl_row: E, and an 8x32 product
+pl_q:    .res 5
+pl_h:    .res 2
+pl_a:    .res 2
 
 ; ----------------------------------------------------------------------------
 .segment "MFILL"
@@ -938,8 +996,7 @@ band:
 :  STA r_ye                             ; (biased, converted in run)
    LDA b_y0
    STA r_ys
-   LDA sh_ceil
-   JSR run
+   JSR ceil_run
    ; wall [max(y0, tc), min(y1, bc)]
    LDA b_y0
    CMP c_tc
@@ -964,8 +1021,7 @@ band:
 :  STA r_ys
    LDA b_y1
    STA r_ye
-   LDA #WB_FLOOR
-   ; fall into run
+   JMP floor_run
 
 ; ---- run: A = shade byte (right-strip form); [r_ys, r_ye] biased --------
 run:
@@ -1134,8 +1190,14 @@ tx_seg:
    CPY pc_n
    BCC @pl
 @andy_out:
+   LDX zp_node_ch_l                     ; step 5: the subsector's flats
+   LDA man_ss_ff,X
+   STA pl_ff
+   LDA man_ss_fc,X
+   STA pl_fc
    LDA #BANK_C                          ; back to the cascade's bank
    STA $FE30
+   JSR pl_seg
    LDX #0
    JSR set_cur                          ; piece 0 until a strip says otherwise
    ; ---- d at the projected ends: 0 and L16, or from the crossing t ----
@@ -1906,6 +1968,592 @@ ln_ptr:
    AND #7
    TAY
    RTS
+
+; ============================================================================
+; STEP 5: FLOORS AND CEILINGS (plane_ref.py is the executable spec). ONE
+; texel read per 4x2 fat pixel: a plane byte is the 16x16 flat's byte at
+; the byte column's centre and the line PAIR's centre, written whole (FLIP
+; on the pair's odd line). 4.12 fixed point: along a line pair a plane is
+; affine, so per pair the row maths gives U0, dU, V0, dV (pl_row, cached
+; per frame in pc_*), and per byte column U += dU, V += dV (the per-seg
+; state ps_*: a seg's next column is two adds, a fresh one U0 + kb*dU).
+; ============================================================================
+
+; mf_frame: render_frame entry (bsp/walk.s, MASTER) -- new epoch, NUKAGE
+; frame, and the view terms (from the view zero page the harness / driver
+; staged; copied, so later scratch use of it cannot matter)
+mf_frame:
+   INC mf_ep
+   BNE @ep
+   LDX #79                              ; wrapped: no stale epoch may match
+:  STZ pc_ep,X
+   DEX
+   BPL :-
+   INC mf_ep
+@ep:
+   INC mf_tick                          ; NUKAGE frame = (tick >> 3) mod 3
+   LDA mf_tick
+   LSR A
+   LSR A
+   LSR A
+:  CMP #3
+   BCC :+
+   SBC #3
+   BRA :-
+:  STA mf_nuk
+   LDA zp_br_smag
+   STA pl_sm
+   LDA zp_br_sone
+   STA pl_s1
+   LDA zp_br_sneg
+   STA pl_sn
+   LDA zp_br_cmag
+   STA pl_cm
+   LDA zp_br_cone
+   STA pl_c1
+   LDA zp_br_cneg
+   STA pl_cn
+   ; Up = mcx + px88 * 32, Vp = mcy - py88 * 32  (mod 2^16)
+   LDA zp_br_px
+   STA pl_a
+   LDA zp_br_px_h
+   STA pl_a+1
+   LDX #5
+:  ASL pl_a
+   ROL pl_a+1
+   DEX
+   BNE :-
+   LDA #BANK_C                          ; (the map centre terms: bank 6 tail)
+   STA $FE30
+   CLC
+   LDA mb6_mcx
+   ADC pl_a
+   STA pl_up
+   LDA mb6_mcx+1
+   ADC pl_a+1
+   STA pl_up+1
+   LDA zp_br_py
+   STA pl_a
+   LDA zp_br_py_h
+   STA pl_a+1
+   LDX #5
+:  ASL pl_a
+   ROL pl_a+1
+   DEX
+   BNE :-
+   SEC
+   LDA mb6_mcy
+   SBC pl_a
+   STA pl_vp
+   LDA mb6_mcy+1
+   SBC pl_a+1
+   STA pl_vp+1
+   LDA #BANK_WALK                       ; render_frame's bank
+   STA $FE30
+   RTS
+
+; pl_seg: per seg (tx_seg, pl_ff / pl_fc read from ANDY) -- the NUKAGE frame,
+; D = vz - fh / ch - vz (0 if the eye is not on the plane's side), a new seg key
+pl_seg:
+   LDA pl_ff
+   JSR nuk
+   STA pl_ff
+   LDA pl_fc
+   JSR nuk
+   STA pl_fc
+   SEC
+   LDA #0
+   SBC zp_seg_bot_dlt                   ; vz - fh
+   BVS :+
+   BPL :++
+:  LDA #0
+:  STA pl_df
+   LDA zp_seg_top_dlt                   ; ch - vz
+   BPL :+
+   LDA #0
+:  STA pl_dc
+   INC ps_seg
+   BNE @rts
+   LDX #79                              ; wrapped: clear every pair's key
+:  STZ ps_key,X
+   DEX
+   BPL :-
+   INC ps_seg
+@rts:
+   RTS
+
+nuk:                                    ; A = flat id -> NUKAGE-animated id
+   CMP #3
+   BCS @rts                             ; not a NUKAGE frame ($FF too)
+   CLC
+   ADC mf_nuk
+   CMP #3
+   BCC @rts
+   SBC #3
+@rts:
+   RTS
+
+; ceil_run / floor_run: [r_ys, r_ye] (biased) of the band's ceiling / floor
+ceil_run:
+   LDA pl_dc
+   BEQ @shade
+   LDA pl_fc
+   CMP #$FF
+   BEQ @shade
+   STA pl_fl
+   LDA pl_dc
+   STA pl_d
+   LDA sh_ceil
+   STA pl_sh
+   STZ pl_kind
+   JMP prun
+@shade:
+   LDA sh_ceil
+   JMP run
+
+floor_run:
+   LDA pl_df
+   BEQ @shade
+   STA pl_d
+   LDA pl_ff
+   STA pl_fl
+   LDA #WB_FLOOR
+   STA pl_sh
+   LDA #1
+   STA pl_kind
+   JMP prun
+@shade:
+   LDA #WB_FLOOR
+   JMP run
+
+; prun: textured plane run [r_ys, r_ye] (biased): pass 1 (X clear, the
+; flat's bank paged) one texel per line pair into pl_buf; pass 2 (X set)
+; every line written whole
+prun:
+   LDA r_ye
+   CMP r_ys
+   BCS :+
+   RTS                                  ; empty
+:  SEC
+   LDA r_ys
+   SBC #Y_BIAS
+   STA r_ys
+   SEC
+   LDA r_ye
+   SBC #Y_BIAS
+   STA r_ye
+   LSR A
+   STA pl_p1
+   LDA r_ys
+   LSR A
+   STA pl_p0
+   LDA mf_x
+   LSR A
+   LSR A
+   STA pl_kb
+   LDX pl_fl
+   LDA mb6_fl_page,X                    ; (bank 6 tail: read before paging)
+   STA pr_rd+2
+   LDA mb6_fl_bank,X
+   STA $FE30                            ; the flat's bank
+   LDA pl_p0
+   STA pl_p
+pr_pair:
+   LDA pl_p                             ; the pair on the plane's side of the
+   CMP #40                              ;  horizon? (floor: p >= 40)
+   LDA #0
+   ROL A
+   CMP pl_kind
+   BNE pr_sh
+   JSR pl_uv
+   LDA pl_v+1                           ; texel (V >> 12) * 16 + (U >> 12)
+   AND #$F0
+   STA pl_a
+   LDA pl_u+1
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   ORA pl_a
+   TAX
+pr_rd:
+   LDA $FF00,X                          ; (patched: the flat's page)
+   BRA pr_put
+pr_sh:
+   LDA pl_sh                            ; the other side: the solid shade
+   ASL A
+   ASL A
+   ORA pl_sh
+pr_put:
+   PHA
+   SEC
+   LDA pl_p
+   SBC pl_p0
+   TAX
+   PLA
+   STA pl_buf,X
+   LDA pl_p
+   CMP pl_p1
+   INC pl_p
+   BCC pr_pair
+   LDA #BANK_C
+   STA $FE30                            ; the cascade's bank again
+   ; pass 2: the lines, whole bytes
+   JSR ln_ptr                           ; PTR, Y for line r_ys
+   SEC
+   LDA r_ye
+   SBC r_ys
+   INC A
+   STA t_n
+   LDA r_ys
+   STA pl_p                             ; the line
+   LDA #ACC_DXY
+   STA $FE34
+pr_line:
+   LDA pl_p
+   LSR A                                ; the pair; C = the line is odd
+   PHP
+   SEC
+   SBC pl_p0
+   TAX
+   LDA pl_buf,X
+   PLP
+   BCC :+
+   TAX
+   LDA mf_flip,X                        ; odd line: FLIP
+:  STA (PTR),Y
+   DEC t_n
+   BEQ pr_done
+   INC pl_p
+   INY
+   CPY #8
+   BNE pr_line
+   LDY #0
+   INC PTR+1
+   INC PTR+1
+   BRA pr_line
+pr_done:
+   LDA #ACC_DY
+   STA $FE34
+   RTS
+
+; pl_uv: pl_u, pl_v = U, V at line pair pl_p, byte column pl_kb, for D pl_d
+pl_uv:
+   LDX pl_p
+   LDA pc_ep,X                          ; this frame's row for this D?
+   CMP mf_ep
+   BNE @calc
+   LDA pc_d,X
+   CMP pl_d
+   BEQ @have
+@calc:
+   JSR pl_row
+@have:
+   LDX pl_p
+   LDA ps_key,X                         ; this seg's state for the pair?
+   CMP ps_seg
+   BNE @fresh
+   LDA ps_k,X
+   CMP pl_kb
+   BEQ @same                            ; the same column (a split pair)
+   INC A
+   CMP pl_kb
+   BNE @fresh
+   CLC                                  ; the next column: + dU, + dV
+   LDA ps_ul,X
+   ADC pc_dul,X
+   STA ps_ul,X
+   LDA ps_uh,X
+   ADC pc_duh,X
+   STA ps_uh,X
+   CLC
+   LDA ps_vl,X
+   ADC pc_dvl,X
+   STA ps_vl,X
+   LDA ps_vh,X
+   ADC pc_dvh,X
+   STA ps_vh,X
+   LDA pl_kb
+   STA ps_k,X
+@same:
+   LDA ps_ul,X
+   STA pl_u
+   LDA ps_uh,X
+   STA pl_u+1
+   LDA ps_vl,X
+   STA pl_v
+   LDA ps_vh,X
+   STA pl_v+1
+   RTS
+@fresh:                                 ; U = U0 + kb * dU, V = V0 + kb * dV
+   LDA pc_dul,X
+   STA m_a
+   LDA pc_duh,X
+   STA m_a+1
+   JSR kbmul
+   LDX pl_p
+   CLC
+   LDA m_p
+   ADC pc_u0l,X
+   STA ps_ul,X
+   LDA m_p+1
+   ADC pc_u0h,X
+   STA ps_uh,X
+   LDA pc_dvl,X
+   STA m_a
+   LDA pc_dvh,X
+   STA m_a+1
+   JSR kbmul
+   LDX pl_p
+   CLC
+   LDA m_p
+   ADC pc_v0l,X
+   STA ps_vl,X
+   LDA m_p+1
+   ADC pc_v0h,X
+   STA ps_vh,X
+   LDA ps_seg
+   STA ps_key,X
+   LDA pl_kb
+   STA ps_k,X
+   JMP @same
+
+; kbmul: m_p (16) = m_a * pl_kb (mod 2^16; kb < 64: six shift-add steps)
+kbmul:
+   STZ m_p
+   STZ m_p+1
+   LDA pl_kb
+   ASL A
+   ASL A
+   STA m_b
+   LDY #6
+@lp:
+   ASL m_p
+   ROL m_p+1
+   ASL m_b
+   BCC @nx
+   CLC
+   LDA m_p
+   ADC m_a
+   STA m_p
+   LDA m_p+1
+   ADC m_a+1
+   STA m_p+1
+@nx:
+   DEY
+   BNE @lp
+   RTS
+
+; pl_row: the row maths for pair pl_p and D pl_d, into pc_*[pl_p]
+;   k = |2p + 1 - 80| (j = k >> 1 indexes pl_zk = 2^20 // k)
+;   E = D * Zk;  Pc = E * |c|, Ps = E * |s| (unity: E << 8)
+;   A = +-(Pc >> 8), hV = +-(Pc >> 14), Bs = +-(Ps >> 8), hU = +-(Ps >> 14)
+;   U0 = Up + A - 63 hU, dU = 2 hU, V0 = Vp - Bs - 63 hV, dV = 2 hV
+pl_row:
+   LDA pl_p
+   SEC
+   SBC #40
+   BCS :+                               ; floor: j = p - 40
+   EOR #$FF                             ; ceiling: j = 39 - p
+:  TAX
+   LDA pl_zk0,X
+   STA pl_e
+   LDA pl_zk1,X
+   STA pl_e+1
+   LDA pl_zk2,X
+   STA pl_e+2
+   STZ pl_e+3
+   LDA pl_d
+   JSR mul8x32                          ; pl_q = E (D <= 127: fits 4 bytes)
+   LDX #3
+:  LDA pl_q,X
+   STA pl_e,X
+   DEX
+   BPL :-
+   ; cos: A and hV
+   LDA pl_cm
+   LDX pl_c1
+   JSR pl_prod                          ; pl_q = E * |c|
+   JSR q_a_h                            ; pl_a = Pc >> 8, pl_h = Pc >> 14
+   LDA pl_cn
+   JSR neg_ah
+   LDX pl_p
+   ; V0 = Vp - Bs - 63 hV (Bs below), dV = 2 hV; A, hV now
+   LDA pl_h
+   ASL A
+   STA pc_dvl,X
+   LDA pl_h+1
+   ROL A
+   STA pc_dvh,X
+   JSR h63                              ; pl_h = 63 * hV
+   CLC                                  ; U0 starts as Up + A
+   LDA pl_up
+   ADC pl_a
+   STA pc_u0l,X
+   LDA pl_up+1
+   ADC pl_a+1
+   STA pc_u0h,X
+   SEC                                  ; V0 starts as Vp - 63 hV
+   LDA pl_vp
+   SBC pl_h
+   STA pc_v0l,X
+   LDA pl_vp+1
+   SBC pl_h+1
+   STA pc_v0h,X
+   ; sin: Bs and hU
+   LDA pl_sm
+   LDX pl_s1
+   JSR pl_prod
+   JSR q_a_h                            ; pl_a = Ps >> 8, pl_h = Ps >> 14
+   LDA pl_sn
+   JSR neg_ah
+   LDX pl_p
+   LDA pl_h
+   ASL A
+   STA pc_dul,X
+   LDA pl_h+1
+   ROL A
+   STA pc_duh,X
+   JSR h63                              ; pl_h = 63 * hU
+   SEC                                  ; U0 -= 63 hU
+   LDA pc_u0l,X
+   SBC pl_h
+   STA pc_u0l,X
+   LDA pc_u0h,X
+   SBC pl_h+1
+   STA pc_u0h,X
+   SEC                                  ; V0 -= Bs
+   LDA pc_v0l,X
+   SBC pl_a
+   STA pc_v0l,X
+   LDA pc_v0h,X
+   SBC pl_a+1
+   STA pc_v0h,X
+   LDA mf_ep
+   STA pc_ep,X
+   LDA pl_d
+   STA pc_d,X
+   RTS
+
+; pl_prod: pl_q (5) = pl_e * A, or pl_e << 8 when X (unity) is non-zero
+pl_prod:
+   CPX #0
+   BEQ mul8x32
+   STZ pl_q
+   LDX #3
+:  LDA pl_e,X
+   STA pl_q+1,X
+   DEX
+   BPL :-
+   RTS
+
+; mul8x32: pl_q (5) = pl_e (4) * A (8), shift-add
+mul8x32:
+   STA pl_a
+   STZ pl_q
+   STZ pl_q+1
+   STZ pl_q+2
+   STZ pl_q+3
+   STZ pl_q+4
+   LDY #8
+@lp:
+   ASL pl_q
+   ROL pl_q+1
+   ROL pl_q+2
+   ROL pl_q+3
+   ROL pl_q+4
+   ASL pl_a
+   BCC @nx
+   CLC
+   LDX #0
+:  LDA pl_q,X
+   ADC pl_e,X
+   STA pl_q,X
+   INX
+   TXA
+   EOR #4
+   BNE :-
+   BCC @nx
+   INC pl_q+4
+@nx:
+   DEY
+   BNE @lp
+   RTS
+
+; q_a_h: pl_a = (pl_q >> 8) mod 2^16, pl_h = (pl_q >> 14) mod 2^16
+q_a_h:
+   LDA pl_q+1
+   STA pl_a
+   LDA pl_q+2
+   STA pl_a+1
+   LDA pl_q+2                           ; (q >> 16) << 2 | q bits 14-15
+   STA pl_h
+   LDA pl_q+3
+   STA pl_h+1
+   LDA pl_q+1
+   ASL A
+   ROL pl_h
+   ROL pl_h+1
+   ASL A
+   ROL pl_h
+   ROL pl_h+1
+   RTS
+
+; neg_ah: A non-zero -> pl_a, pl_h negated (mod 2^16)
+neg_ah:
+   CMP #0
+   BEQ @rts
+   SEC
+   LDA #0
+   SBC pl_a
+   STA pl_a
+   LDA #0
+   SBC pl_a+1
+   STA pl_a+1
+   SEC
+   LDA #0
+   SBC pl_h
+   STA pl_h
+   LDA #0
+   SBC pl_h+1
+   STA pl_h+1
+@rts:
+   RTS
+
+; h63: pl_h = 63 * pl_h = (pl_h << 6) - pl_h (mod 2^16); X preserved
+h63:
+   LDA pl_h
+   STA pl_q
+   LDA pl_h+1
+   STA pl_q+1
+   LDY #6
+:  ASL pl_q
+   ROL pl_q+1
+   DEY
+   BNE :-
+   SEC
+   LDA pl_q
+   SBC pl_h
+   STA pl_h
+   LDA pl_q+1
+   SBC pl_h+1
+   STA pl_h+1
+   RTS
+
+; 2^20 // k for k = 2j + 1, j = 0..39 (the depth of a pair k lines off the
+; horizon, 1024 * depth / D), three byte planes
+pl_zk0:
+.repeat 40, J
+   .byte <((1 << 20) / (2 * J + 1))
+.endrepeat
+pl_zk1:
+.repeat 40, J
+   .byte >((1 << 20) / (2 * J + 1))
+.endrepeat
+pl_zk2:
+.repeat 40, J
+   .byte ^((1 << 20) / (2 * J + 1))
+.endrepeat
 
 ; ---- divq16: m_p (32) / m_b (16) -> m_p (16), when the quotient < 2^16
 ; (m_p hi word < m_b): 16 steps, the remainder seeded with the hi word ----

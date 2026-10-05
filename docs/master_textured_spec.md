@@ -97,10 +97,10 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000; filler + wall texturer $C800–$D9DA; BSS $DC00–$DFFF |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot + plane row cache $C280–$C6EF; filler + texturers $C800–$DD25; BSS $DD80–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K); bank 6 tail $B900–$BDFF: wall part records + texture constants |
-| ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces), 3.6K |
-| Main $7A00–$7FFF | Texture column index bytes (1,046 B) |
+| ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
+| Main $7A00–$7FFF | Texture column index bytes (1,046 B); per-seg plane pair state (480 B) |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
@@ -335,9 +335,68 @@ textured walls (`test_master_disc.py`).
     `fp.fp_project_x` for S ≤ 3) touches every Python gate. It is left
     for a separate change.
 
-**5. Floors and ceilings.** Row spans from the clip spans' edges; per-row
-distance table and step; 16×16 lookup; NUKAGE frame cycling. *Done when*:
-framebuffer identical to Python; playable Master disc.
+**5. Floors and ceilings. — DONE.** The model is `plane_ref.py`
+(`PlaneRef`, on top of `tex_ref`), gated by `test_plane_ref.py`. The 6502
+side is `src/master/mfill.s`, byte-exact against it in
+`test_master_tex.py`. Both gates are in `run_regression.py`.
+
+- *One texel read per 4×2 fat pixel*: floors are largely decorative, so a
+  plane byte is the flat's byte (pixels #0 = #2, #1 = #3). It is sampled
+  at the byte column's centre and the line PAIR's centre, and written
+  whole (FLIP on the pair's odd line).
+- *Depth*: a pair centred k lines off the horizon (k odd, 1–79) sees a
+  plane D above or below the eye at 1024·D/k world units. D is the
+  engine's own prescaled height difference, `vz − fh` or `ch − vz`
+  (`zp_seg_bot_dlt` / `zp_seg_top_dlt`): the same heights the walls'
+  floor and ceiling lines come from, so the texture meets them. It also
+  moves with the movers. Hence `E = D·(2²⁰ // k)`, from a 40-entry table.
+- *4.12 fixed point*: u and v are in texels (4 world units each), 16
+  bits, wrapping at 16 texels for free. Along a line pair a plane is
+  affine. With c and s the engine's 8-bit cos and sin magnitudes (unity
+  256) and their signs, Pc = E·|c| and Ps = E·|s|:
+  - `A = ±(Pc>>8)`, `hV = ±(Pc>>14)`;
+  - `Bs = ±(Ps>>8)`, `hU = ±(Ps>>14)`;
+  - `U0 = Up + A − 63·hU`, `dU = 2·hU`;
+  - `V0 = Vp − Bs − 63·hV`, `dV = 2·hV`.
+
+  Up and Vp are 1024 × the eye's world x and −y (DOOM flats run −y down).
+  The texel is `flat[(V>>12)·16 + (U>>12)]`.
+- *6502 structure*:
+  - `mf_frame` runs at `render_frame` entry (MASTER only): the frame
+    epoch, the NUKAGE frame, and copies of the view terms.
+  - `pl_row` computes U0/dU/V0/dV per line pair and plane height, cached
+    for the frame (`pc_*`, 80 entries, HAZEL $C280+).
+  - Per seg and pair, U and V are kept by byte column (`ps_*`, main
+    $7E20+). The next column is two adds; a fresh one is U0 + kb·dU, a
+    six-step multiply.
+  - `prun`: pass 1 (ACCCON X clear, the flat's bank paged) reads one
+    texel per pair; pass 2 (X set) writes every line whole.
+  - Per-subsector flat ids live in ANDY; flat bank and page and the
+    map-centre terms in the bank-6 tail.
+- *NUKAGE*: flats 0–2 are its frames. The frame is (`mf_tick` >> 3) mod
+  3, and `mf_tick` steps once per rendered frame. The gate checks frames
+  1 and 2 at a pose over the pool.
+- *Sky* ceilings stay solid cyan. A plane the eye is not on the right
+  side of keeps its shade.
+- *Accuracy*:
+  - The 4.12 maths matches a float evaluation of the same geometry
+    within one texel on 100% of plane cells.
+  - Against the world-height float reference, about 60% agree (reported,
+    not gated). The prescaled eye height (41 → 6 units = 40 world) and
+    plane heights (quantum ~6.7 world units) scale depth by a few
+    percent, which grows to whole texels in the distance. Visually the
+    two match closely.
+- *Cycles* (py65, 18 poses): 68.5M in total, against 50.4M with solid
+  planes. At (1056, −3616, 32) there are 3,643 plane bytes for about
+  1.3M cycles, roughly 360 a byte: pair bookkeeping, a 2-pass run and
+  per-line writes, all step 7 material. The disc boots and walks on
+  jsbeeb with textured floors and ceilings.
+- *Memory*:
+  - HAZEL: the code is now $C800–$DD25; the span snapshot, run buffer and
+    row cache are at $C280–$C6EF (mhazel must stay under $280); BSS is at
+    $DD80.
+  - ANDY: plus 392 B of per-subsector flats.
+  - Main $7E20–$7FFF: the per-seg pair state.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

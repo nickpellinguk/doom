@@ -191,7 +191,21 @@ class Walls:
                 k += 1
         assert k <= 0x40
         put('man_ndress', 0, len(self.dress))
-        b6t = bytearray(0x500)
+        # step 5: per subsector, its sector's floor / ceiling flat id
+        # ($FF: sky, drawn as the solid shade)
+        fid = {f['name']: f['id'] for f in man['flats']}
+        assert [fid.get(f'NUKAGE{i}') for i in (1, 2, 3)] == [0, 1, 2], \
+            'the NUKAGE frames must be flats 0-2 (mf_frame cycles them)'
+        dw = self.dw
+        assert len(dw.fp_ssectors) <= 0xC4
+        for ss, (cnt, first) in enumerate(dw.fp_ssectors):
+            if not cnt:
+                continue
+            sec = dw.sectors[dw.fp_segs_vwh[first][1]]
+            fpic, cpic = _name(sec[2]), _name(sec[3])
+            put('man_ss_ff', ss, fid[fpic])
+            put('man_ss_fc', ss, 0xFF if cpic == SKY else fid[cpic])
+        b6t = bytearray(0x700)
         bput = lambda n, i, v: b6t.__setitem__(L(n) - b6t_base + i, v)
         assert len(self.parts) <= 0xA0
         for i, p in enumerate(self.parts):
@@ -221,7 +235,20 @@ class Walls:
             bput('mb6_tp_ixh', i, a >> 8)
             assert len(t['index']) == tp['tw']
             ix += bytes(t['index'])
-        assert len(ix) <= 0x600, 'column index blob overruns mtex_ix'
+        assert len(ix) <= 0x420, 'column index blob overruns mtex_ix'
+        # step 5: flat bank / page by flat id, and the map centre's 4.12 terms
+        assert len(man['flats']) <= 0x20
+        for f in man['flats']:
+            assert f['ptr'] & 0xFF == 0
+            bput('mb6_fl_bank', f['id'], f['bank'])
+            bput('mb6_fl_page', f['id'], f['ptr'] >> 8)
+        cx = (dw.MAP_CENTER_X * 1024) & 0xFFFF
+        cy = (-dw.MAP_CENTER_Y * 1024) & 0xFFFF
+        bput('mb6_mcx', 0, cx & 0xFF)
+        bput('mb6_mcx', 1, cx >> 8)
+        bput('mb6_mcy', 0, cy & 0xFF)
+        bput('mb6_mcy', 1, cy >> 8)
+        assert L('mb6_mcy') + 2 - b6t_base <= len(b6t)
         return {'andy': bytes(andy), 'b6t': bytes(b6t), 'b6t_base': b6t_base,
                 'ix': bytes(ix), 'ix_base': ix_base}
 

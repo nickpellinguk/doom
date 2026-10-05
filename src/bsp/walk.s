@@ -63,6 +63,10 @@ render_frame:
 ; clipper/angle modules page for themselves and the child follows
 ; restore it). One PAGE per frame covers the seed.
    PAGE BANK_WALK
+.if ::MASTER
+.import mf_frame
+   JSR mf_frame                         ; MASTER: a new frame for the plane
+.endif                                  ; caches (master/mfill.s)
 
 ; --- Per-frame init (the standalone br_init_frame is retired).
 ; Records-pointer ground state: the lo byte is never written non-zero
