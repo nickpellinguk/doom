@@ -57,6 +57,12 @@ PTR = RASTER_ZP_X1                      ; zp pair x1/y1 (the rasteriser's JMP
                                         ; the Master; DCL is done by fill time)
 TP  = RASTER_ZP_DX                      ; zp pair: the rasteriser's dx/dy, only
                                         ; raster.s touches it (not linked here)
+; Sector light (step 5b): every byte a seg writes is ANDed with these --
+; maskEven on even lines, maskOdd on odd lines (after the FLIP) -- set per
+; seg from its front sector's level (light_masks); sky is never masked.
+; The rasteriser's cnt pair (raster.s only, not linked here).
+maskEven = RASTER_ZP_CNT
+maskOdd  = RASTER_ZP_CNT+1
 NONE = $FF                              ; no texture (master_walls.NONE)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
@@ -1055,6 +1061,16 @@ hz_run:
    TAX
    LDA mf_flip,X
    STA r_od
+   LDA r_part
+   CMP #WB_SKY
+   BEQ :+                               ; sky: never darkened
+   LDA r_ev
+   AND maskEven
+   STA r_ev
+   LDA r_od
+   AND maskOdd
+   STA r_od
+:
    JSR ln_ptr                           ; PTR, Y for line r_ys
    SEC
    LDA r_ye
@@ -1191,7 +1207,7 @@ tx_seg:
    BCC @pl
 @andy_out:
    LDX zp_node_ch_l                     ; step 5: the subsector's flats
-   LDA man_ss_ff,X
+   LDA man_ss_ff,X                      ; (top 3 bits: the light level)
    STA pl_ff
    LDA man_ss_fc,X
    STA pl_fc
@@ -1781,9 +1797,11 @@ trl_rd:
 trr_rd:
    LDA $FFFF,X                          ; (patched: right texel column)
    ORA t_ev
-   STA t_ev
    TAX
+   AND maskEven                         ; lit
+   STA t_ev
    LDA mf_flip,X
+   AND maskOdd
    STA t_od
 @line:
    TYA
@@ -2055,7 +2073,19 @@ mf_frame:
 ; pl_seg: per seg (tx_seg, pl_ff / pl_fc read from ANDY) -- the NUKAGE frame,
 ; D = vz - fh / ch - vz (0 if the eye is not on the plane's side), a new seg key
 pl_seg:
+   LDA pl_ff                            ; light: level = top 3 bits
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   LSR A
+   TAX
+   LDA light_even,X
+   STA maskEven
+   LDA light_odd,X
+   STA maskOdd
    LDA pl_ff
+   AND #$1F
    JSR nuk
    STA pl_ff
    LDA pl_fc
@@ -2081,6 +2111,11 @@ pl_seg:
    INC ps_seg
 @rts:
    RTS
+
+; the five light levels' masks (master_walls.LIGHT_MASKS): FF.FF, AA.FF,
+; AA.AA, 0A.AA, 0A.0A -- progressively darker
+light_even: .byte $FF, $AA, $AA, $0A, $0A
+light_odd:  .byte $FF, $FF, $AA, $AA, $0A
 
 nuk:                                    ; A = flat id -> NUKAGE-animated id
    CMP #3
@@ -2218,9 +2253,12 @@ pr_line:
    TAX
    LDA pl_buf,X
    PLP
-   BCC :+
-   TAX
-   LDA mf_flip,X                        ; odd line: FLIP
+   BCS :+
+   AND maskEven                         ; even line: lit
+   BRA :++
+:  TAX
+   LDA mf_flip,X                        ; odd line: FLIP, lit
+   AND maskOdd
 :  STA (PTR),Y
    DEC t_n
    BEQ pr_done

@@ -91,7 +91,7 @@ def engine_images():
     main = bytes(bm[abi.LOW_BASE:abi.CBITS_M])
     cbits = bytes(bm[abi.CBITS_M:0x8000])           # code + C data + VPTAB + mtex_ix
     assert cbits[ti['ix_base'] - abi.CBITS_M:][:len(ti['ix'])] == ti['ix']
-    hzeng = bytes(bm[0xC800:0xDD80])                # the filler + texturers + sky map
+    hzeng = bytes(bm[0xC800:0xDE00])                # the filler + texturers + sky map
     return b4, b7, ti['b5'], ti['b6'], ti['andy'], main, cbits, hzeng
 
 

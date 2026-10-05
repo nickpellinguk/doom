@@ -398,6 +398,39 @@ side is `src/master/mfill.s`, byte-exact against it in
   - ANDY: plus 392 B of per-subsector flats.
   - Main $7E20–$7FFF: the per-seg pair state.
 
+**5b. Sector light. — DONE.** Each sector's light darkens everything a seg
+draws: its walls, floor and ceiling, all from its front sector. Two
+zero-page mask bytes, `maskEven` and `maskOdd`, are ANDed into every byte
+written. maskEven applies on even lines, and maskOdd on odd lines, after
+the FLIP. There are five levels, getting progressively darker
+(maskEven.maskOdd):
+
+| Level | Masks | E1M1 lights |
+|---|---|---|
+| 0 | FF.FF | 255, 224 |
+| 1 | AA.FF | 208, 192 |
+| 2 | AA.AA | 176, 160 |
+| 3 | 0A.AA | 144, 128 |
+| 4 | 0A.0A | none |
+
+- *Mapping*: `level = min(4, (255 − light) >> 5)` (`master_walls.light_level`,
+  one function, easy to retune).
+- *Sky* is never masked.
+- *Model*: `tex_ref`'s compose lights each byte by its owner seg (so
+  `plane_ref` is lit too). `textured_ref` stays the unlit float reference.
+- *6502*:
+  - `maskEven` and `maskOdd` are the rasteriser's unused cnt pair in
+    zero page.
+  - Each seg loads them in `pl_seg` from the light level, which is packed
+    into the top 3 bits of the subsector's floor-flat byte in ANDY.
+  - `hz_run` masks its two bytes once per run (unless they are the sky
+    shade). `trun` masks per texel pair. `prun` masks per line.
+  - Cost: about 0.3M cycles over the corpus (68.8M in total).
+  - Byte-exact at all 18 poses and both NUKAGE frames.
+- *Not yet*: lighting effects (E1M1's blinking and flickering sector
+  specials) and DOOM's distance fade. A mover-style table per frame could
+  drive the first.
+
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on
 textured output.

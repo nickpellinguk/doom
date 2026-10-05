@@ -208,17 +208,27 @@ class TexRef(Fm.FillRef):
         return int(self.tex[tp['name']][0][row, col]), row, col, tp['name']
 
     def _compose(self):
+        """The buffer bytes, lit: every byte of a seg is ANDed with its
+        front sector's light masks (maskEven on even lines, maskOdd on odd
+        lines, after the FLIP); sky is never masked."""
         fb = bytearray(10240)
+        sky = M.wall_byte(Fm.SH_SKY)
         for y in range(Fm.LINES):
             row = self.grid[y]
             for k in range(64):
+                si = self.owner[y][2 * k]
+                cell = row[2 * k]
+                if si is None or (cell is not None and cell[0] == 'b' and cell[1] == sky):
+                    mask = 0xFF
+                else:
+                    mask = MW.LIGHT_MASKS[self.W.info[si]['level']][y & 1]
                 l, r = row[2 * k], row[2 * k + 1]
                 if l is not None and l[0] == 'F':
                     b = l[1]                        # a whole plane byte
                 else:
                     b = (((l[1] << 2) & 0xCC) if l is not None else 0) | \
                         (r[1] if r is not None else 0)
-                fb[(y >> 3) * 512 + k * 8 + (y & 7)] = b if y % 2 == 0 else M.FLIP[b]
+                fb[(y >> 3) * 512 + k * 8 + (y & 7)] = (b if y % 2 == 0 else M.FLIP[b]) & mask
         return bytes(fb)
 
 

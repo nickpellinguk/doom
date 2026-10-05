@@ -40,6 +40,15 @@ import math
 
 DONTPEGTOP, DONTPEGBOTTOM = 0x08, 0x10
 NONE = 0xFF
+# Sector light: five mask levels, (maskEven, maskOdd) ANDed into every byte
+# a seg writes (even lines / odd lines, the odd line after its FLIP); sky
+# is never masked. Level = min(4, (255 - light) >> 5): E1M1's 255/224 -> 0,
+# 208/192 -> 1, 176/160 -> 2, 144/128 -> 3.
+LIGHT_MASKS = [(0xFF, 0xFF), (0xAA, 0xFF), (0xAA, 0xAA), (0x0A, 0xAA), (0x0A, 0x0A)]
+
+
+def light_level(light):
+    return min(4, (255 - light) >> 5)
 SKY = 'F_SKY1'
 
 
@@ -141,7 +150,8 @@ class Walls:
         else:
             self.slot_dress[si] = -1 - len(self.pieces)    # fixed up below
             self.pieces.append(pcs)
-        return dict(front=front, back=back, sky=_name(front[3]) == SKY)
+        return dict(front=front, back=back, sky=_name(front[3]) == SKY,
+                    level=light_level(front[4]))
 
     # ---- lookups (the model's view of the tables) -------------------------
     def dressing_at(self, si, d):
@@ -192,7 +202,8 @@ class Walls:
         assert k <= 0x40
         put('man_ndress', 0, len(self.dress))
         # step 5: per subsector, its sector's floor / ceiling flat id
-        # ($FF: sky, drawn as the solid shade)
+        # ($FF: sky, drawn as the solid shade); the floor byte's top 3 bits
+        # carry the sector's light level
         fid = {f['name']: f['id'] for f in man['flats']}
         assert [fid.get(f'NUKAGE{i}') for i in (1, 2, 3)] == [0, 1, 2], \
             'the NUKAGE frames must be flats 0-2 (mf_frame cycles them)'
@@ -203,7 +214,8 @@ class Walls:
                 continue
             sec = dw.sectors[dw.fp_segs_vwh[first][1]]
             fpic, cpic = _name(sec[2]), _name(sec[3])
-            put('man_ss_ff', ss, fid[fpic])
+            assert fid[fpic] < 0x20
+            put('man_ss_ff', ss, fid[fpic] | light_level(sec[4]) << 5)   # + light
             put('man_ss_fc', ss, 0xFF if cpic == SKY else fid[cpic])
         b6t = bytearray(0x700)
         bput = lambda n, i, v: b6t.__setitem__(L(n) - b6t_base + i, v)
