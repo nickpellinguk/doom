@@ -26,6 +26,8 @@ _cache = {}
 def _load(banked=0, c02=None):
     if c02 is None:
         c02 = asmbuild.env_c02()
+    if banked == 2:
+        c02 = 1                 # MASTER links only for the 65C12 (asmbuild)
     key = (banked, int(c02))
     if key in _cache:
         return _cache[key]

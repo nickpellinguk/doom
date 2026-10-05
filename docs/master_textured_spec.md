@@ -122,20 +122,40 @@ packing with no texture crossing a bank, HAZEL tables; flats incl. NUKAGE1–3;
 PNG previews and a memory report. *Done when*: deterministic output, budget
 fits, previews approved.
 
-**1. Master bring-up (no textures).** *Display half DONE*:
-`tools/build_master_display.py` + `src/master/mdisplay.s` boot a disc that
-sets the 256×160 four-colour window (CRTC R1 64, R2 90, R6 20, R7 28, R8 0),
-the palette, both shadow buffers drawn from HAZEL with X set, and a vsync
-flip; `node tools/master_rig.mjs display build/master/mdisplay.ssd
-build/master/mdisplay_expect.bin build/master/display` checks shadow RAM
-byte for byte, the flip, the window size and the colours on jsbeeb's
-Master 128 (needs a jsbeeb clone at `$JSBEEB`, default `/home/user/jsbeeb`,
-with `npm install` and `sharp`). *Remaining*: 65C02 build; new ld65 configs (code in
-main RAM, drawers in HAZEL, data in banks 4–7); boot sequence (load all, then
-claim HAZEL); 256×160 four-colour CRTC setup and palette; double buffer in
-shadow with ACCCON D/E/Y; vsync timer retuned for the new mode. *Done when*:
-boots on jsbeeb's Master 128, the engine walks the BSP each frame, a test
-pattern flips cleanly, and the HUD shows cycles per frame.
+**1. Master bring-up (no textures). — DONE.**
+
+*Display*: `tools/build_master_display.py` + `src/master/mdisplay.s` boot a
+disc that sets the 256×160 four-colour window (CRTC R1 64, R2 90, R6 20,
+R7 28, R8 0), the palette, both shadow buffers drawn from HAZEL with X set,
+and a vsync flip; `tools/master_rig.mjs display` checks shadow RAM byte for
+byte, the flip, the window size and the colours.
+
+*Engine*: the MASTER build (asmbuild variant 2, `src/engine_master.cfg`,
+`-D BANKED=1 -D MASTER=1`, 65C02) is the Model B engine with bank C's
+content laid linear in main RAM at `CBITS_M` = &5800 (clipper code
+&5800–&6FFF, its data &7000–&78FF, object dispatch tables &7900). Banks A
+(4) and B (7) and MAIN (&0F00–&57FF) are exactly the Model B images; bank
+6 is free for textures. The bank-C data homes are `CBANK_ORG` + offset in
+both builds. The rasteriser, plotters, clears and bank-C HUD compile out
+(`RASTERHW` = BANKED and not MASTER): `plot_h`, `plot_v` and
+`RASTER_ENTRY` are RTS emit stubs that step 3 replaces. The flat and Model
+B builds are byte-identical to before.
+
+*Driver and disc*: `walk_drv.s` has MASTER arms for the CRTC widths,
+ACCCON D, the &3000/&5800 buffers, no plot queue, and a HUD drawn by
+HAZEL code (`src/master/mhazel.s`: test pattern + frame time in 1MHz
+ticks and fields, args in `MHZ_ARGS`). `tools/build_master_ssd.py` writes
+`build/master/doom_master.ssd`; its loader (`src/master/mboot.s`) loads
+banks 4 and 7, MAIN, MCBITS and the HAZEL block, sets MODE 129 and the
+palette, and copies the HAZEL block up after the last disc access.
+
+*Gates*: `test_master_engine.py` (in `run_regression.py`) requires the
+Master engine's emitted line list to equal the Model B C02 engine's at 29
+poses (bank 6 is poisoned in its rig); `test_master_disc.py` boots the disc
+on jsbeeb's Master 128 and checks frames flip, LEFT turns, UP walks and only
+palette colours appear (needs the jsbeeb clone; prints SKIP without it).
+Measured: about 13 frames per second walking the BSP with no drawing (the
+HUD reads &ED4F µs = 3 fields at the spawn view).
 
 **2. Python textured reference.** Column renderer: 128 wall columns, 80 texel
 rows; per-column wall top/bottom from the clip spans; perspective-correct u,

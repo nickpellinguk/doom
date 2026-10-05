@@ -1,6 +1,13 @@
 // Headless BBC Master 128 rig for the textured port (docs/master_textured_spec.md).
 //
 //   node tools/master_rig.mjs display <disc.ssd> <expect.bin> <outdir>
+//   node tools/master_rig.mjs engine  <disc.ssd> <addrs.json> <outdir>
+//
+// engine mode boots the Master engine disc and checks it RUNS: frames
+// are counted by watching the driver's flip routine (addrs.flip_sched),
+// the cursor keys turn (DV_ANGIDX) and walk (DV_PX*/DV_PY*), the HUD
+// row is drawn, and only palette colours appear. Prints MASTERDISC:
+// PASS or FAIL after the JSON line.
 //
 // Boots jsbeeb's Master 128 (MOS 3.20, DFS), *RUNs !BOOT from the disc,
 // then MEASURES instead of eyeballing:
@@ -21,6 +28,10 @@ const JSBEEB = process.env.JSBEEB || "/home/user/jsbeeb";
 const { MachineSession } = await import(path.join(JSBEEB, "src/machine-session.js"));
 
 const [mode, disc, expectPath, outdir] = process.argv.slice(2);
+if (mode === "engine") {
+    await engineMode();
+    process.exit(0);
+}
 if (mode !== "display") {
     console.error("usage: node tools/master_rig.mjs display <disc.ssd> <expect.bin> <outdir>");
     process.exit(2);
@@ -115,3 +126,67 @@ for (const f of fails) console.log("FAIL: " + f);
 console.log(fails.length ? "MASTERDISPLAY: FAIL" : "MASTERDISPLAY: PASS");
 s.destroy();
 process.exit(fails.length ? 1 : 0);
+
+async function engineMode() {
+    fs.mkdirSync(outdir, { recursive: true });
+    const A = JSON.parse(fs.readFileSync(expectPath, "utf8"));
+    const s = new MachineSession("Master");
+    await s.initialise();
+    await s.boot(30);
+    s.loadDisc(disc);
+    const fails = [], out = {}, out0 = out;
+    let flips = 0;
+    const cpu = s._machine.processor;
+    cpu.debugInstruction.add((addr) => { if (addr === A.flip_sched) flips++; return false; });
+    await s.type("*RUN !BOOT\r");
+    // Loading ~76K through the emulated drive takes a while: run until the
+    // driver has flipped a few frames (or give up after 6000 fields).
+    for (let i = 0; i < 120 && flips < 5; i++) await s.runFrames(50);
+    out0.boot_fields_waited = s._frameCount;
+    const st = () => {
+        const m = s.readMemory(A.DV_ANGIDX, 8);
+        return { ang: m[0], px: m[3] | (m[4] << 8), py: m[6] | (m[7] << 8) };
+    };
+    out.flips_after_boot = flips;
+    if (flips < 3) fails.push(`engine not flipping (${flips} flips after boot)`);
+    const f0 = flips, s0 = st();
+    await s.runFrames(100);
+    out.flips_per_100_fields = flips - f0;
+    if (flips - f0 < 2) fails.push(`only ${flips - f0} frames in 100 fields`);
+    const s1 = st();
+    if (JSON.stringify(s0) !== JSON.stringify(s1)) fails.push("pose moved with no key held");
+    s.keyDownRaw([9, 1]);                    // LEFT ($19): turn
+    await s.runFrames(60);
+    s.keyUpRaw([9, 1]);
+    await s.runFrames(10);
+    const s2 = st();
+    out.turn = [s1.ang, s2.ang];
+    if (s2.ang === s1.ang) fails.push("LEFT did not turn");
+    s.keyDownRaw([9, 3]);                    // UP ($39): walk
+    await s.runFrames(60);
+    s.keyUpRaw([9, 3]);
+    await s.runFrames(10);
+    const s3 = st();
+    out.walk = [[s2.px, s2.py], [s3.px, s3.py]];
+    if (s3.px === s2.px && s3.py === s2.py) fails.push("UP did not move");
+    fs.writeFileSync(path.join(outdir, "engine.png"), await s.screenshotActive({ scale: 1 }));
+    // screen content: palette only, and the HUD row lit
+    const fb = new Uint8Array(s._completeFb8);
+    const W = 1024, H = 625, cols = new Set();
+    let minx = W, miny = H, maxx = -1, maxy = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 4, c = `${fb[o]},${fb[o + 1]},${fb[o + 2]}`;
+        if (c !== "0,0,0") { cols.add(c);
+            minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
+    }
+    const pal = ["255,0,255", "0,255,255", "255,255,255"];
+    const odd = [...cols].filter((c) => !pal.includes(c));
+    if (odd.length) fails.push(`unexpected colours ${odd.join(" ")}`);
+    out.lit_box = [minx, miny, maxx, maxy];
+    out.flips_total = flips;
+    out.acccon = s.pagingState().acccon;
+    console.log(JSON.stringify(out));
+    for (const f of fails) console.log("FAIL: " + f);
+    console.log(fails.length ? "MASTERDISC: FAIL" : "MASTERDISC: PASS");
+    s.destroy();
+}

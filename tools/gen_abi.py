@@ -40,7 +40,8 @@ ABI = [
     ('MSCREEN0',       0x3000, None, 'MASTER build: shadow framebuffer 0 (256x160 4-colour, 10K; CPU reaches it only with ACCCON X set)'),
     ('MSCREEN1',       0x5800, None, 'MASTER build: shadow framebuffer 1'),
     ('MHZ_PATTERN',    0xC000, None, 'MASTER build: HAZEL entry -- draw the step-1 test pattern into both buffers (caller sets ACCCON D|X|Y)'),
-    ('MHZ_HUD',        0xC003, None, 'MASTER build: HAZEL entry -- draw the cycles HUD into the back buffer (A = buffer page hi; caller sets ACCCON D|X|Y)'),
+    ('MHZ_HUD',        0xC003, None, 'MASTER build: HAZEL entry -- draw the cycles HUD into the back buffer (A = buffer page hi; args at MHZ_ARGS; caller sets ACCCON D|X|Y)'),
+    ('MHZ_ARGS',       0xC006, None, 'MASTER build: HUD argument block in HAZEL: +0/+1 frame time in 1MHz ticks (lo/hi), +2 fields. Written by the driver with HAZEL paged in, so HAZEL code never reads main RAM above $3000 (X is set while it draws)'),
     ('BANK_L2',        7,      None, 'legacy alias for BANK_WALK'),
     ('BANK_WALK',      7,      None, 'sideways bank B: node SoA, L8/AE/VATOX, bbox, COLIDX, ANIM CFG — held for the whole BSP walk. FREED 2026-09-04: the extent cache psi planes $A900-$AEFF + RCACHE_STATE $AF00 (137 B), and the corner memo 6 planes $A600-$A8FF (768 B)'),
     # Jump tables are GONE (2026-07-16, forbidden): engine entry points
