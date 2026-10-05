@@ -57,20 +57,29 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
   page + slot; stepping down adds 8 to Y (last row Y = 248), so `LDA (p),Y`
   never crosses a page.
 - **Deduplication within each texture only**: identical columns are stored
-  once. Each texture has a 16-bit pointer (its first column page + slot) and a
-  bank byte, followed by one **index byte per column**; index i → page i ÷ 8,
-  slot i mod 8 from the texture's base. Textures may start mid-page, so small
-  textures fill gaps.
+  once. Each texture has a header: 16-bit pointer (page-aligned base), bank,
+  width, row offset (0, or 128 for the bottom half of a stack), followed by
+  one **index byte per column**. Column c lives at
+  `ptr + (idx >> 3) * 256 + (idx & 7)`; rows step +8 from Y = row offset.
+  Index values carry the starting slot, so textures may start mid-page and
+  small textures fill gaps.
+- A texture directory (`tex_dir`, one word per texture) points at the
+  headers. Every stored texture is exactly 32 (or 16) rows covering its whole
+  source height, so the vertical wrap is always `v AND 31`; horizontal wrap
+  is modulo the texture's width (not a power of two in general).
 - **Each texture's column data lies within a single sideways RAM bank.**
 - **Pointer, bank and index tables live in HAZEL**, readable whichever bank is
   paged in.
 
 ## 5. Floor and ceiling format
 
-- 16×16, one byte per texel, 256 bytes (one page) per flat.
+- 16×16, one byte per texel, 256 bytes (one page) per flat:
+  byte = row × 16 + column. Two HAZEL byte tables give each flat's bank and
+  page (`flat_bank`, `flat_page`).
 - E1M1 needs **23 flats**: 11 floors + 13 ceilings, minus FLAT20 and FLAT5_5
   (shared) and F_SKY1 (cyan), plus NUKAGE1 and NUKAGE2 so the slime animates
-  through all **three NUKAGE frames** (frame = page swap).
+  through all **three NUKAGE frames** (frame = page swap). The frames are
+  stored on consecutive pages of one bank.
 
 ## 6. Memory map
 
@@ -78,14 +87,15 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Unrolled wall and floor drawing loops, texture pointer/bank/index tables (~1.1K), flip table (256 B) |
+| HAZEL (8K) | Unrolled wall and floor drawing loops, texture directory/headers/index tables and flat tables (1,316 B), flip table (256 B, page-aligned) |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (~23.8K), flats (5.75K) |
 
-**Budget (E1M1, measured with the converter prototype):**
+**Budget (E1M1, measured by `master_assets.py`):**
 
-- Wall column data: 824 unique columns at 32 high; stacking the four short
-  textures brings the total to ~23.8K.
-- Flats: 23 × 256 B = 5.75K.
+- Wall column data: 762 stored columns × 32 B = 24,384 B (23.8K).
+- Flats: 23 × 256 B = 5,888 B (5.75K).
+- Textures and flats together: all of bank 5 and 14,080 B of bank 6
+  (2.25K of bank 6 spare).
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
 - **Total in the banks: ~54K of 64K.** ANDY (4K) is spare.
@@ -99,7 +109,8 @@ access after that.
 Each step ends in something bootable or comparable, and is checked against the
 Python reference byte for byte, as the existing engine is.
 
-**0. Asset converter (Python).** WAD → scaled, quantised walls (32 high,
+**0. Asset converter (Python). — DONE:** `master_assets.py`, gated by
+`test_master_assets.py` (in `run_regression.py`). WAD → scaled, quantised walls (32 high,
 stacked 16-high pairs), per-texture column dedup, interleaved pages, bank
 packing with no texture crossing a bank, HAZEL tables; flats incl. NUKAGE1–3;
 PNG previews and a memory report. *Done when*: deterministic output, budget
@@ -142,13 +153,16 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
 
 ## 8. Open items
 
-- **Stacked-texture safety under movers**: NUKE24 borders the lift
-  (special 88); the converter must check it at full lift travel. If more than
-  24 units can show, NUKE24 cannot be stacked.
+- **Stacked-texture safety under movers**: checked by the converter at full
+  door and lift travel. NUKE24 shows at most 24 units at full lift travel
+  (exactly its height), so stacking is safe; the build fails if that changes.
+- **Dark sources go black**: FLAT14 (blue carpet) is entirely black and
+  FLOOR1_1 nearly so; COMPTILE's blue panel too. Brightness matching with one
+  global gain does this; a per-texture gain is the fix if it matters.
 - **Per-seg texture data** (texture ids, x/y offsets, pegging) is not yet in
   the budget.
 - **Frame rate**: filling 10,240 screen bytes at roughly 25–30 cycles per byte
   on top of ~156K cycles of BSP work suggests a few frames per second;
   step 7 decides whether lower-detail options are needed.
-- The full-colour dither preview tool is a prototype in the session
-  scratchpad; step 0 turns it into a repo tool.
+- **Switch textures**: E1M1's exit switch SW1STRTN normally changes to
+  SW2STRTN when pressed; not included (the spec lists 32 textures).

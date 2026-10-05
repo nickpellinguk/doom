@@ -167,6 +167,10 @@ run('authority_monotonic', ['tools/test_authority_monotonic.py'],
                                        # (the helmet/vest HUD repro 2026-09-03)
 run('span_band', ['tools/test_span_band.py'],
     lambda o: 'SPANBAND: PASS' in o)
+# Master textured port, step 0: texture/flat packing read back through the
+# assembled HAZEL tables, byte formats, bank/page invariants, determinism.
+run('master_assets', ['test_master_assets.py'],
+    lambda o: 'MASTERASSETS: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):
