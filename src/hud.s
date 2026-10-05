@@ -52,7 +52,7 @@
 ; overgrown HUD is a link error rather than a crash on hardware.
 ; ============================================================================
 
-.if ::BANKED
+.if ::RASTERHW
 
 
 ; zp scratch — frame-scoped: these sit inside the VX vertex structs

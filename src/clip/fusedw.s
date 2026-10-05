@@ -57,7 +57,7 @@
 ; CONSTRUCTION — this campaign emptied it — and it is in the clipper's
 ; own bank context (bank C banked; the flat exception window flat).
 .if ::BANKED
-FW_BASE = $9880                         ; bank C tail (2026-08-25 re-cut:
+FW_BASE = CBANK_ORG + $1880                      ; bank C tail (2026-08-25 re-cut:
                                         ; code to $97FF, VEXPL_CONT $9800-
                                         ; $987F, cold state here, SINCOS
                                         ; $9900 unmoved). Ex-records pages;

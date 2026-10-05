@@ -163,8 +163,8 @@ OBJ_ART_END     = $FF              ; entry: template finished
 ; and clear of the HUD at $A400: the whole stamp loop runs under the one
 ; PAGE BANK_C the object prologue already does.  SEEDED BY PYTHON
 ; (banked_bsp) — the asserts are the only guard.
-OBJ_ART  = $9B00
-.assert OBJ_ART + 4*LAY_N_OBJ_ART <= $9E00, error, "banked art templates reach VDESC at $9E00"
+OBJ_ART  = CBANK_ORG + $1B00
+.assert OBJ_ART + 4*LAY_N_OBJ_ART <= CBANK_ORG + $1E00, error, "banked art templates reach VDESC at CBANK_ORG+$1E00"
 .else
 ; FLAT: the CBITS data block (parasite map): three page-aligned windows
 ; at the top of the bank-C-bits run, below VEXPL/VDESC.  Python-seeded,
@@ -234,7 +234,7 @@ ROM_BPAL_BCH_C = BPAL_BASE + $80
 ; bank for them. They were in bank A until its bottom was wanted for the
 ; main-RAM caches. Banked only — the flat harness runs no driver.
 .if ::BANKED
-ROM_DRV_SINCOS_C = $9900                ; bank C (walk_drv pages for it)
+ROM_DRV_SINCOS_C = CBANK_ORG + $1900               ; bank C (walk_drv pages for it)
 ROM_DRV_USEVEC_C = $96FC                ; EVICTED to bank A 2026-09-02: the
                                         ; SPACE use-trace vectors are read
                                         ; right before ENG_PMOVE_USE (which

@@ -64,7 +64,7 @@ plot_bmask:
 ; Y+=8 walks cease to exist. Middles walk DESCENDING (TXA keeps N set
 ; through STA, so BMI is an always-taken loop-back); write order is
 ; left, right, then middles right-to-left — OR-writes commute.
-.if ::BANKED
+.if ::RASTERHW
 SEG_BANKCHOST                              ; host-only rasteriser body:
                                            ; region tail (prefix purity)
 plot_h:
@@ -180,6 +180,15 @@ ph_single:
 ; unrolled-column dispatcher in clip/vplot.s — the flat copy landed in
 ; the recovered $6B00 window. plot_bmask above is its mask table.)
 SEG_BANKC                                  ; back from BANKCHOST
+.elseif ::MASTER
+; MASTER (textured port, step 1): no rasteriser yet. plot_h is an RTS
+; emit stub in the clipper's own segment (main RAM at CBITS_M); the py65
+; rig traps this PC and reads the staged RASTER_ZP args, exactly as it
+; does for the Model B entry. Step 3 replaces it with column emission.
+plot_h:
+   RTS
+raster_stub_m:                             ; RASTER_ENTRY (clip/arith.s)
+   RTS
 .else
 ; FLAT = THE TUBE PARASITE.  It ships no framebuffer and no rasterisers:
 ; the copro runs the engine and EMITS draw commands, the host draws them.
@@ -189,4 +198,4 @@ SEG_BANKC                                  ; back from BANKCHOST
 ; (2026-09-02 flat-first-class purge; the old 3-byte patch slot + the
 ; builder's poke are both gone).
 ::plot_h = $F613
-.endif                                     ; ::BANKED
+.endif                                     ; ::RASTERHW

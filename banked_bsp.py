@@ -34,7 +34,7 @@ def _w16(mem, addr, val):
     mem[addr + 1] = (val >> 8) & 0xFF
 
 
-def build_banked(flatr):
+def build_banked(flatr, master=False):
     """flatr: a constructed BspRender6502 (flat). Returns a BankedMemory set up
     for the banked layout, sharing the same loaded tables."""
     # Build the banked engine BEFORE reading its bins: without this, the
@@ -42,7 +42,9 @@ def build_banked(flatr):
     # consumer ran one build behind its sources (caught 2026-07-10 when a
     # vrcache negative-test alternated PASS/FAIL run-to-run).
     import asmbuild
-    asmbuild.build('engine', banked=1)
+    VAR = 2 if master else 1            # MASTER: bank C content lives in main
+                                        # RAM at CBITS_M (engine_master.cfg)
+    asmbuild.build('engine', banked=VAR)
     fmem = flatr.sc.mpu.memory
     bm = BankedMemory(list(fmem))
     layout = dw.packed_layout
@@ -140,13 +142,15 @@ def build_banked(flatr):
 
     # --- bank C = clipper ($8000) + rasteriser ($A900) ---
     c = bytearray(16384)
-    clip = open('span_clip_bankc.bin', 'rb').read()
+    CB = abi.CBITS_M if master else 0x8000      # = CBANK_ORG (abi.inc)
+    clip = open('engine_cbits_m.bin' if master else 'span_clip_bankc.bin', 'rb').read()
     c[:len(clip)] = clip
-    rast = open('engine_raster_bankc.bin', 'rb').read()   # IN THE ENGINE LINK
-                                                          # since 2026-09-05
-    assert len(rast) <= RASTER_BUDGET, f'rasteriser {len(rast)} bytes overruns VPLOTC at $AE00'
-    roff = RASTER_OFF - 0x8000
-    c[roff:roff + len(rast)] = rast
+    if not master:                              # MASTER: no rasteriser
+        rast = open('engine_raster_bankc.bin', 'rb').read()   # IN THE ENGINE LINK
+                                                              # since 2026-09-05
+        assert len(rast) <= RASTER_BUDGET, f'rasteriser {len(rast)} bytes overruns VPLOTC at $AE00'
+        roff = RASTER_OFF - 0x8000
+        c[roff:roff + len(rast)] = rast
     # VRCACHE fat-path planes are BSS at $9700-$A2D3, directly below the raster code @ $A300 (the
     # clipper must stay below $9700 — guarded here). Must be seeded BEFORE
     # define_bank: it COPIES the image into a fresh buffer.
@@ -159,7 +163,7 @@ def build_banked(flatr):
     from build_anim_ssd import sincos_table as _sct
     from symmap import sym as _csym
     # sincos: bank C $9900 (walk_drv pages C once/frame for it)
-    _scd = _csym('ROM_DRV_SINCOS_C', banked=1) - 0x8000
+    _scd = _csym('ROM_DRV_SINCOS_C', banked=VAR) - CB
     _scb = _sct()
     assert _scd + len(_scb) <= 0x2400, 'sincos runs into the records arenas'
     c[_scd:_scd + len(_scb)] = _scb
@@ -174,8 +178,8 @@ def build_banked(flatr):
     # the asserts below and the matching pair in layout.inc are the guard.
     _art_off = layout['off_obj_art']
     _art_n = layout['art_len']              # all three windows (652 B)
-    _art_d = _csym('OBJ_ART', banked=1) - 0x8000
-    assert _art_d == 0x1B00, f'OBJ_ART banked home moved to ${_art_d + 0x8000:04X}'
+    _art_d = _csym('OBJ_ART', banked=VAR) - CB
+    assert _art_d == 0x1B00, f'OBJ_ART banked home moved to ${_art_d + CB:04X}'
     assert _art_d >= 0x1B00, 'object art overlaps the driver sincos ($9900-$9AFF)'
     assert _art_d + _art_n <= 0x1E00, 'object art runs into VDESC @ $9E00 (bank-C compaction)'
     # window alignment is LOAD-BEARING: the walker's four abs,X reads only
@@ -184,27 +188,38 @@ def build_banked(flatr):
     c[_art_d:_art_d + _art_n] = rom_main[_art_off:_art_off + _art_n]
 
     # (VRCACHE_CODE moved to main $2B00 2026-07-10 — loads via the generic region loop)
-    if os.path.exists('bsp_render_hud_bk.bin'):
+    if not master and os.path.exists('bsp_render_hud_bk.bin'):
         hud = open('bsp_render_hud_bk.bin', 'rb').read()
         c[_csym('HUD_ENTRY', banked=1)-0x8000 : _csym('HUD_ENTRY', banked=1)-0x8000 + len(hud)] = hud
     # vertex-span descriptor tables (banked homes: bank C $B200/$B400 —
     # the verticals section runs under C, zero paging on the code path)
     for i, d in enumerate(dw.vspan_desc):
-        c[(_csym('VDESC', banked=1)-0x8000) + i] = d   # VDESC (moved by C compaction)
+        c[(_csym('VDESC', banked=VAR)-CB) + i] = d   # VDESC (moved by C compaction)
     assert len(dw.vspan_expl) <= 0x80, \
         f'{len(dw.vspan_expl)} explicit vspan entries overrun the 128-slot split'
     for i, (lo, hi, cont) in enumerate(dw.vspan_expl):
         _lo, _hi, _ct = dw.vexpl_bytes(i, lo, hi, cont)   # H2 half-baking
-        c[(_csym('VEXPL_LO', banked=1)-0x8000) + i] = _lo   # VEXPL (C compaction)
-        c[(_csym('VEXPL_HI', banked=1)-0x8000) + i] = _hi
+        c[(_csym('VEXPL_LO', banked=VAR)-CB) + i] = _lo   # VEXPL (C compaction)
+        c[(_csym('VEXPL_HI', banked=VAR)-CB) + i] = _hi
         c[0x1800 + i] = _ct                # VEXPL_CONT @ $9800 (moved off
         #  the page head 2026-08-22 to give the clipper its ceiling back;
         #  128 slots end $96FF, flush against BOT_RECORDS $9700)
     # unrolled vertical plot columns + tables ($B200-$BFFF, cfg VPLOTC)
-    vp = open('engine_vplot_bankc.bin', 'rb').read()
-    assert len(vp) <= 0x0C00, f'vplot {len(vp)} bytes overruns bank C'
-    c[0x2E00:0x2E00 + len(vp)] = vp   # VPLOTC @ $AE00 (top-of-A free 2026-09-02; must match cfg VPLOTC-$8000)
-    bm.define_bank(BANK_C, c)
+    if master:
+        # MASTER: the kept bank-C run ($8000-$A0FF offsets) is MAIN RAM at
+        # CBITS_M..+$20FF; bank 6 is reserved for textures and holds a
+        # POISON pattern in the rig, so any read of bank-C data through the
+        # paged window (a missed rebase) corrupts the output instead of
+        # silently working.
+        assert len(clip) <= 0x1800, f'clipper {len(clip)} bytes reaches VEXPL_CONT'
+        for i in range(0x2100):
+            bm[CB + i] = c[i]
+        bm.define_bank(BANK_C, bytes([0xDB]) * 16384)
+    else:
+        vp = open('engine_vplot_bankc.bin', 'rb').read()
+        assert len(vp) <= 0x0C00, f'vplot {len(vp)} bytes overruns bank C'
+        c[0x2E00:0x2E00 + len(vp)] = vp   # VPLOTC @ $AE00 (top-of-A free 2026-09-02; must match cfg VPLOTC-$8000)
+        bm.define_bank(BANK_C, c)
 
     # (FHCH moved into bank L0 2026-07-10 — level data out of main, $2400-$33xx freed for code)
 
@@ -308,10 +323,12 @@ def build_banked(flatr):
     # wedge).  asmbuild's on-disk marker makes this a no-op when the
     # right variant is already there.
     import asmbuild as _ab
-    _ab.build('engine', banked=1, c02=_ab.env_c02())
-    for addr, fn in _regions(banked=1):
-        if fn.startswith('span_clip') or fn == 'bsp_render_hud_bk.bin':
+    _ab.build('engine', banked=VAR, c02=_ab.env_c02())
+    for addr, fn in _regions(banked=VAR):
+        if fn.startswith('span_clip') or fn == 'bsp_render_hud_bk.bin' \
+                or fn == 'engine_cbits_m.bin':
             continue    # clipper + HUD -> BANK_C (rc/anim/vrcache/sel are main now)
+                        # MASTER: CBITS was placed with the C data above
         if os.path.exists(fn):
             d = open(fn, 'rb').read()
             for i, b in enumerate(d):
@@ -367,23 +384,27 @@ def limit_objects_legacy(r):
 
 
 class BankedBspRender(BspRender6502):
+    VAR = 1                              # asmbuild variant: 1 Model B, 2 MASTER
+
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
-        self.bm = build_banked(self)
+        V = self.VAR
+        self.bm = build_banked(self, master=(V == 2))
         self.sc.mpu.memory = self.bm     # swap in banked memory
         self.sc.SCREEN_START = 0x5800    # hw screens: the BANKED rig is the
         self.sc.SCREEN_SIZE = 5120       # only one with a framebuffer since
         from symmap import sym as _sym0  # by SYMBOL, never a literal: the zp
-        self.bm[_sym0('RASTER_ZP_SCRSTRT', banked=1)] = 0x58   # layout moves
+        self.bm[_sym0('RASTER_ZP_SCRSTRT', banked=V)] = 0x58   # layout moves
                                          # (the parasite re-cut: SIZE=0 on the
                                          # flat side made clear_screen a
                                          # no-op — a stale-residue class)
         # span_init (pool reset) lives in the clipper -> bank C, by symbol.
         sc = self.sc
         from symmap import sym as _sym
-        _span_init = _sym('span_init', banked=1)
+        _span_init = _sym('span_init', banked=V)
         def banked_init():
-            self.bm.select(BANK_C)
+            if V == 1:
+                self.bm.select(BANK_C)
             sc._run(_span_init)
             sc.total_cycles = 0
         sc.init = banked_init
@@ -406,10 +427,11 @@ class BankedBspRender(BspRender6502):
                        ('ENTRY_FUSED_ABOVE', 'fused_above_raw'),
                        ('ENTRY_FUSED_BELOW', 'fused_below_raw'),
                        ('ENTRY_FUSED_MERGE', 'fused_merge_range')):
-            setattr(sc, _n, _sym(_s, banked=1))
-        sc.PLOT_PCS = frozenset((_sym('plot_h', banked=1),
-                                 _sym('plot_v', banked=1),
-                                 abi_RASTER_ENTRY_BANKED))
+            setattr(sc, _n, _sym(_s, banked=V))
+        sc.PLOT_PCS = frozenset((_sym('plot_h', banked=V),
+                                 _sym('plot_v', banked=V),
+                                 abi_RASTER_ENTRY_BANKED if V == 1 else
+                                 _sym('RASTER_ENTRY', banked=V)))
         # Every byte of CODE in the paged window is bank C -- banks A/B/L0/L2
         # are data only, by rule.  So an entry inside $8000-$BFFF is always
         # bank-C code, and running it with another bank live executes that
@@ -417,14 +439,14 @@ class BankedBspRender(BspRender6502):
         # remember (see the pq_pump_op spray, same day).
         _raw_run = sc._run
         def banked_run(entry, *a, **k):
-            if 0x8000 <= entry < 0xC000:
+            if V == 1 and 0x8000 <= entry < 0xC000:
                 self.bm.select(BANK_C)
             return _raw_run(entry, *a, **k)
         sc._run = banked_run
 
     def render_frame(self, px, py, ab, floor_z=0):
         # bca_ab relocated from $FA2F to $1B6F (BCA_WS+$2F) in the banked build.
-        self.bm[_rsym('bca_ab', banked=1)] = ab & 0xFF   # zp.inc symbol,
+        self.bm[_rsym('bca_ab', banked=self.VAR)] = ab & 0xFF   # zp.inc symbol,
                                                   # not a baked abi address
         # 2026-07-10 one-region merge: banked jt is at $2C00 (flat stays at
         # $4800), so the inherited render_frame's flat entry constants no
@@ -432,12 +454,28 @@ class BankedBspRender(BspRender6502):
         import bsp_render_6502 as _br
         from symmap import sym as _sym
         saved = (_br.ENTRY_BR_VIEW_SETUP, _br.ENTRY_BR_RENDER_FRAME)
-        _br.ENTRY_BR_VIEW_SETUP   = _sym('view_setup', banked=1)
-        _br.ENTRY_BR_RENDER_FRAME = _sym('render_frame', banked=1)
+        _br.ENTRY_BR_VIEW_SETUP   = _sym('view_setup', banked=self.VAR)
+        _br.ENTRY_BR_RENDER_FRAME = _sym('render_frame', banked=self.VAR)
         try:
             return super().render_frame(px, py, ab, floor_z)
         finally:
             (_br.ENTRY_BR_VIEW_SETUP, _br.ENTRY_BR_RENDER_FRAME) = saved
+
+
+class MasterBspRender(BankedBspRender):
+    """The MASTER build (asmbuild variant 2) on the same banked memory
+    model: bank-C content in main RAM at CBITS_M, bank 6 poisoned, and
+    plot_h / plot_v / RASTER_ENTRY are RTS emit stubs whose PCs the rig
+    traps -- so last_lines is the engine's complete emitted line list."""
+    VAR = 2
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        # No main-RAM framebuffer: $5800-$7FFF is the clipper and its data
+        # here (the screens are in shadow RAM). The banked rig's per-frame
+        # clear_screen would wipe it.
+        self.sc.SCREEN_START = None
+        self.sc.SCREEN_SIZE = 0
 
 
 def fb_mask(r):

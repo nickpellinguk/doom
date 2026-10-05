@@ -26,7 +26,7 @@
 ; the plot run-ahead queue (fb71e3a) solved that problem a different
 ; way. The comment is not carried over.
 ; ============================================================================
-.if ::BANKED
+.if ::RASTERHW
 
 .if ::BANKED
 ; The framebuffer clears are BANKED-ONLY: walk_drv is their only caller
@@ -89,6 +89,7 @@ cb_one:
 
 .endif
 .else
+.if .not ::MASTER
 ; FLAT = THE TUBE PARASITE: no framebuffer, nothing to clear.  The
 ; driver still LINKS against the clear entries (its flip path calls
 ; them) but never RUNS on the copro (tubedrv is the driver there), so
@@ -99,3 +100,14 @@ cb_one:
 ::fb_clr1 = $F619
 ::fb_clr_back = $F619
 .endif
+.if ::MASTER
+; MASTER: the shadow buffers are cleared by HAZEL code with ACCCON X
+; set (src/master); the engine-side clears are RTS stubs so the driver
+; can still link against them.
+SEG_BANKC
+fb_clr0:
+fb_clr1:
+fb_clr_back:
+   RTS
+.endif
+.endif                                     ; ::RASTERHW

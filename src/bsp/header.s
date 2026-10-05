@@ -499,10 +499,10 @@ L2_BBOX = ROM_BBOX_C                    ; alias (harness/loader points zp_rom_bb
 ; recip. VDONE = the once-per-frame first-touch bitmap (byte index =
 ; the header key's B byte = idx>>3, bit = vc_bit_mask[idx&7]).
 .if ::BANKED
-VDESC      = $9E00                      ; bank C (verticals run under C);
-VEXPL_LO   = $A000                      ; bank C COMPACTION 2026-09-02 (Eben's
-VEXPL_HI   = $A080                      ; plan): the upper C block pulled down
-VEXPL_CONT = $9800                      ; to free the $BAC2-$BFFF tail
+VDESC      = CBANK_ORG + $1E00                     ; bank C (verticals run under C);
+VEXPL_LO   = CBANK_ORG + $2000                     ; bank C COMPACTION 2026-09-02 (Eben's
+VEXPL_HI   = CBANK_ORG + $2080                     ; plan): the upper C block pulled down
+VEXPL_CONT = CBANK_ORG + $1800                     ; to free the $BAC2-$BFFF tail
 .else
 ; PARASITE (2026-09-02, the flat-first-class purge): bank-C data homes
 ; are LINEAR -- flat = banked - $8000 + $D600, one offset for the whole

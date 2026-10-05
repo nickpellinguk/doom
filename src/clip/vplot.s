@@ -94,7 +94,7 @@ vpd_rst:
 .endscope
 .endmacro
 
-.if ::BANKED
+.if ::RASTERHW
 .segment "VPLOTC"
 .align $100
 vpblk0:
@@ -127,10 +127,18 @@ plot_v:
 vp_fb1:
    VPLOT_DISPATCH vptab1_hi, vpblk1
 
+.elseif ::MASTER
+; MASTER (textured port, step 1): no rasteriser yet. plot_v is an RTS
+; emit stub in the clipper's own segment (main RAM at CBITS_M); the py65
+; rig traps this PC and reads the staged RASTER_ZP args, exactly as it
+; does for the Model B entry. Step 3 replaces it with column emission.
+SEG_BANKC
+plot_v:
+   RTS
 .else
 ; FLAT = THE TUBE PARASITE.  plot_v IS the resident glue's v-emitter
 ; slot (tubedrv SKIPTO &F610: diag/h/v at +0/+3/+6) -- an EQUATE; see
 ; plot_axis.s for the whole story.  Segment BANKC carries ZERO
 ; parasite-only bytes.
 ::plot_v = $F616
-.endif                                     ; ::BANKED
+.endif                                     ; ::RASTERHW

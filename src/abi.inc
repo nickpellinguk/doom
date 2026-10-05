@@ -2,6 +2,12 @@
 ; projections: private copies of these addresses are forbidden.
 .ifndef ABI_INC_GUARD
 ABI_INC_GUARD = 1
+.ifndef MASTER
+MASTER = 0
+.endif
+.ifdef BANKED
+RASTERHW = ::BANKED .and (.not ::MASTER)
+.endif
 .if ::BANKED
 BANKA_ORG = $8000          ; bank A ('seg group', image L0) org: sideways window banked, laid flat at $5800 on the parasite
 .else
@@ -15,6 +21,11 @@ BANKB_ORG = $9600
 BANK_L0 = 4                             ; legacy alias for BANK_SEG (two-bank re-cut 2026-08-13)
 BANK_SEG = 4                            ; sideways bank A: seg headers+DIRs, verts, recips, VYCACHE, TABL0 — held for seg stages 1-4
 BANK_C = 6                              ; sideways bank: clipper + rasteriser + HUD
+CBITS_M = $5800                         ; MASTER build: bank-C content (clipper code + data) laid LINEAR in main RAM from here: master = banked - $8000 + CBITS_M (main $5800-$7FFF is free: both screens are in shadow RAM)
+MSCREEN0 = $3000                        ; MASTER build: shadow framebuffer 0 (256x160 4-colour, 10K; CPU reaches it only with ACCCON X set)
+MSCREEN1 = $5800                        ; MASTER build: shadow framebuffer 1
+MHZ_PATTERN = $C000                     ; MASTER build: HAZEL entry -- draw the step-1 test pattern into both buffers (caller sets ACCCON D|X|Y)
+MHZ_HUD = $C003                         ; MASTER build: HAZEL entry -- draw the cycles HUD into the back buffer (A = buffer page hi; caller sets ACCCON D|X|Y)
 BANK_L2 = 7                             ; legacy alias for BANK_WALK
 BANK_WALK = 7                           ; sideways bank B: node SoA, L8/AE/VATOX, bbox, COLIDX, ANIM CFG — held for the whole BSP walk. FREED 2026-09-04: the extent cache psi planes $A900-$AEFF + RCACHE_STATE $AF00 (137 B), and the corner memo 6 planes $A600-$A8FF (768 B)
 MAIN_BASE = $1A00                       ; engine CODE region head — $2500 -> $1A00 2026-08-26 (the LOW-RAM CONSOLIDATION: driver $0F00 | PMOVE $1340 | CODE $1A00 = ONE contiguous engine area to $57FF, freeing ~2.9K below the framebuffer). History: engine CODE region head (cfg-anchored; MAIN first). $2A00 -> $2600 2026-08-19: the -$400 window slide that took the pm_frame code out of bank B — strip $1600, window $1A00-$25FF, CODE $2600 with PMB1-4 appended identically in both builds. $2600 -> $2500 2026-08-23: PMOVE+PMH are 1,728 B and stopped at $24FF, leaving the PMOVE region a dead last page; CODE takes it (+256 B) and the window shrinks to $1A00-$24FF. Both cfgs move together — bottom-22K identity.
@@ -122,4 +133,11 @@ USETAB_BASE = $8A80
 .endif
 SCREEN0 = $5800                         ; framebuffer 0 (banked only: the flat/tube build never rasterises — clearers/plotters compiled out)
 SCREEN1 = $6C00                         ; framebuffer 1 (see SCREEN0)
+.ifdef BANKED
+.if ::MASTER
+CBANK_ORG = CBITS_M
+.else
+CBANK_ORG = $8000
+.endif
+.endif
 .endif

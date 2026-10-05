@@ -36,7 +36,9 @@ _on_disk = {}    # banked -> c02 variant whose bins currently sit on disk.
 # all spare CODE space aggregated at the END (Eben's rule).
 _SOURCES = ['src/bsp_render.s', 'src/slope_div.s', 'src/span_clip.s',
             'src/drv/walk_drv.s', 'src/raster.s']
-_CFGS = {0: 'src/engine_flat.cfg', 1: 'src/engine_banked.cfg'}
+_CFGS = {0: 'src/engine_flat.cfg', 1: 'src/engine_banked.cfg',
+         2: 'src/engine_master.cfg'}     # 2 = MASTER: banked + bank C in main
+                                         # RAM, 65C02 (docs/master_textured_spec.md)
 _TARGETS = {'engine': None, 'slope_div': None, 'span_clip': None,
             'bsp_render': None}
 
@@ -94,6 +96,8 @@ def build(asm, banked=0, c02=None, out=None, force=False):
         c02 = env_c02()
     c02 = int(c02)
     banked = int(banked)
+    if banked == 2:
+        c02 = 1                 # the Master's CPU is a 65C12
     # DOOM_ASMDEFS (2026-09-03): extra "SYM=val,SYM2=val" ca65 defines for
     # POLICY EXPERIMENTS (dwalk_bench builds D-cache variants).  Part of the
     # build key AND the on-disk marker, so a variant never masquerades as
@@ -153,7 +157,8 @@ def _build_locked(asm, banked, c02, defs, dflags, key, objdir, _marker, _stamp):
     for src in _SOURCES:
         name = os.path.basename(src).replace('.s', '')
         obj = os.path.join(objdir, f'{name}_b{banked}c{c02}.o')
-        text += _run(['ca65', '-g', '-D', f'C02={c02}', '-D', f'BANKED={banked}']
+        text += _run(['ca65', '-g', '-D', f'C02={c02}', '-D', f'BANKED={min(banked, 1)}',
+                      '-D', f'MASTER={int(banked == 2)}']
                      + dflags + ['-l', os.path.join(objdir, f'{name}_b{banked}c{c02}.lst'),
                       os.path.join(_ROOT, src), '-o', obj])
         objs.append(obj)

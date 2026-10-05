@@ -20,7 +20,7 @@
 ; 3-byte stub the tube builder patches to the resident emitters -- so the
 ; segment is empty there and the cfg marks it optional.
 ; ============================================================================
-.if ::BANKED
+.if ::BANKED .and (.not ::MASTER)   ; = RASTERHW (this file does not include abi.inc)
 
 .segment "RASTER"
 

@@ -171,6 +171,11 @@ run('span_band', ['tools/test_span_band.py'],
 # assembled HAZEL tables, byte formats, bank/page invariants, determinism.
 run('master_assets', ['test_master_assets.py'],
     lambda o: 'MASTERASSETS: PASS' in o)
+# Master textured port, step 1: the MASTER engine link (bank C laid linear
+# in main RAM, emit stubs for the plotters) must emit exactly the Model B
+# engine's line list at every pose.
+run('master_engine', ['test_master_engine.py'],
+    lambda o: 'MASTERENGINE: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):
