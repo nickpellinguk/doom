@@ -190,6 +190,8 @@ run('plane_ref', ['test_plane_ref.py'], lambda o: 'PLANEREF: PASS' in o)
 # ...and the 6502 filler + wall and plane texturers (src/master/mfill.s)
 # draw exactly what plane_ref (on tex_ref) draws.
 run('master_tex', ['test_master_tex.py'], lambda o: 'MASTERTEX: PASS' in o)
+# ...and the gun overlay (master_gun.py the spec, gun_draw in bank 6)
+run('master_gun', ['test_master_gun.py'], lambda o: 'MASTERGUN: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):

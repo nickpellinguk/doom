@@ -1,0 +1,27 @@
+# PISGA0 (the pistol, idle) 24x25: one Mode 2 pixel x 2 lines each;
+# ' ' transparent, .rgybmcw = K R G Y B M C W. Bottom row sits on line 135.
+            .c.         
+           .bcb.        
+           .bcb.        
+          .bbcbb.       
+          .bcwcb.       
+         .bbc.cbb.      
+         .bc...cb.      
+        .bbc...cbb.     
+        .bc.....cb.     
+        .bc.....cb.     
+        .bbc...cbb.     
+       ..bbbbbbbbb.     
+      .rr.bbbbbbb..     
+    ..rrrr.......rr.    
+   .rrryyrr....rryyr.   
+   .ryyyyrrrrrryyyrr..  
+  .rrrrrrrrrryyrrr.rr.  
+  .rrrrrrrrrrrrr.rr.r.  
+  .rrrrrrrrrrrrrr.rr.   
+   .rrrrrrrrrrrrr..r.   
+   .rrrryrrrrrrrrr..    
+   .rrryyrrrrrrrrr.     
+  .rrrrrrrrrrrrrrr.     
+ .rrrrrrrrrrrrrrrr.     
+.rrrrrrrrrrrrrrrrr.     

@@ -87,7 +87,7 @@ HZ_PAIR = HZ_LINE / 2                   ; its pair (34); the rows per side
 VIEW_PAIRS = VIEW_LINES / 2             ; line pairs in the view (68)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
-.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame, split_init
+.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame, split_init, gun_draw
 
 ; ----------------------------------------------------------------------------
 ; Step 4 wall tables: filled by the image builders from master_walls.py
@@ -222,6 +222,11 @@ r_ye:    .res 1
 r_part:  .res 1
 r_ev:    .res 1
 hz_x:    .res 1                         ; hz_sky: even line ^ odd line byte
+gd_n:    .res 1                         ; gun_draw: bytes left in the row,
+gd_t:    .res 1                         ;  the row's table index, the
+gd_s:    .res 1                         ;  screen offset, and the byte's
+gd_m:    .res 1                         ;  mask and data
+gd_d:    .res 1
 hz_n:    .res 1                         ; hz_run: lines, the first line's
 hz_a:    .res 1                         ;  place in its row, the last line
 hz_l:    .res 1                         ;  (from the row), rows after the
@@ -1531,6 +1536,87 @@ h2_tab:
 .assert h2_t - h2_b0 = 56, error, "h2 bodies must be 7 bytes (hz_x absolute)"
 
 .segment "MB6C"
+
+; ============================================================================
+; gun_draw (step 6f): the gun overlay into the back buffer, after the frame
+; and before the flip (the driver calls it, bank 6 paged). master_gun.py is
+; the spec: per row of gun_tab, both lines of the row get, per byte,
+; (screen AND mask) OR data -- the art's transparent pixels keep the view.
+; ============================================================================
+gun_draw:
+   LDA #ACC_DXY
+   STA $FE34                            ; -> shadow
+   LDA #<gun_tab
+   STA TP
+   LDA #>gun_tab
+   STA TP+1
+@row:
+   LDY #0
+   LDA (TP),Y                           ; the row's (even) line; $FF: done
+   CMP #$FF
+   BEQ @done
+   PHA
+   AND #7
+   STA gd_s                             ; the line within its character row
+   PLA
+   LSR A
+   LSR A
+   LSR A
+   ASL A                                ; (line >> 3) * 2: 512 B a row
+   CLC
+   ADC DV_BACKHI
+   STA PTR+1
+   INY
+   LDA (TP),Y                           ; first byte column * 8
+   ASL A
+   ASL A
+   ASL A
+   STA PTR
+   BCC :+
+   INC PTR+1
+:  INY
+   LDA (TP),Y
+   STA gd_n
+   LDA #3
+   STA gd_t
+@byte:
+   LDY gd_t
+   LDA (TP),Y
+   STA gd_m
+   INY
+   LDA (TP),Y
+   STA gd_d
+   INY
+   STY gd_t
+   LDY gd_s
+   LDA (PTR),Y                          ; even line
+   AND gd_m
+   ORA gd_d
+   STA (PTR),Y
+   INY
+   LDA (PTR),Y                          ; odd line
+   AND gd_m
+   ORA gd_d
+   STA (PTR),Y
+   TYA
+   CLC
+   ADC #7                               ; the next byte column
+   STA gd_s
+   DEC gd_n
+   BNE @byte
+   CLC                                  ; the next row
+   LDA TP
+   ADC gd_t
+   STA TP
+   BCC @row
+   INC TP+1
+   BRA @row
+@done:
+   LDA #ACC_DY
+   STA $FE34
+   RTS
+
+.include "mgun_tab.s"
 
 ; ============================================================================
 ; STEP 4: WALL TEXTURES (tex_ref.py is the executable spec; master_walls.py

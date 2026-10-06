@@ -107,6 +107,7 @@ RAWY_MAX = $0490        ;  1168
 .if ::MASTER
 .import ok_flip
 .import ok_clear
+.import gun_draw
 .import split_init
 .endif
 .import fb_clr0
@@ -510,6 +511,11 @@ frame:
     LDA #BANK_L0
     STA $FE30
     JSR ENG_RENDER_FRAME   ; (init is inline at render entry)
+.if ::MASTER
+    LDA #BANK_C
+    STA $FE30
+    JSR gun_draw           ; the gun overlay (bank 6, step 6f)
+.endif
     JSR flip_sched
     JMP frame
 
