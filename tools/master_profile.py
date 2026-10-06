@@ -15,7 +15,7 @@ given as  px py ab) and attributes every cycle:
              plane flushes its tail call (pe_init) can trigger.
   arithmetic to the nearest non-arithmetic caller on the stack
   loop heads executions of each label's first instruction (wall pairs =
-             the 16 pair bodies' te_* labels, span pairs = the 16 span
+             the 16 pair bodies' te_* labels, span pairs = the 4 span
              bodies' sf_r* texel reads, sl_lp = line-span bytes)
 
 The fill's routines are also summed by job. Figures are means per frame.
@@ -45,9 +45,8 @@ JOBS = [
                         + [f'te_{v}{j}' for v in range(4) for j in range(4)]),
     ('span loops (pair, line)', ['sp_go2', 'sf_end', 'sf_ent', 'sl_go', 'sl_lp', 'sl_rd',
                                  'sl_fl', 'sl_mk']
-                                + [f'sf_{v}' for v in range(4)]
-                                + [f'sf_{v}{q}' for v in range(4) for q in range(4)]
-                                + [f'sf_r{v}{q}' for v in range(4) for q in range(4)]),
+                                + ['sf_lp'] + [f'sf_e{q}' for q in range(4)]
+                                + [f'sf_r{q}' for q in range(4)]),
     ('solid fills', ['hz_run', 'run', 'pl_shade']),
     ('partial/second-run cells', ['pl_line', 'pl_pair', 'pl_cell', 'pc_go', 'pc_rd', 'pl_wr1']),
     ('plane spans set-up', ['mk_spans', 'mk_close', 'sp_setup', 'pp_slot', 'sl_draw', 'pe_init',
@@ -70,7 +69,7 @@ INCLUSIVE = ['mf_fill', 'mf_snap', 'band', 'wall_run', 'tv_div', 'tv_v0', 'tcol'
              'st_val', 'st_peek', 'div32', 'divq16', 'mul16', 'mul8x32']
 LOOP_HEADS = ['sl_lp', 'trun', 'sp_go2', 'sl_go', 'mf_fill', 'col', 'band', 'tx_getd']
 WALL_PAIR_LABELS = [f'te_{v}{j}' for v in range(4) for j in range(4)]
-SPAN_PAIR_LABELS = [f'sf_r{v}{q}' for v in range(4) for q in range(4)]
+SPAN_PAIR_LABELS = [f'sf_r{q}' for q in range(4)]
 
 
 def _kv(line):

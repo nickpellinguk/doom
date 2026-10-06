@@ -339,7 +339,7 @@ mk_t2:   .res 1
 mk_b2:   .res 1
 mk_k:    .res 1
 sp_n:    .res 1                         ; the span loops' byte count
-sf_q:    .res 1                         ; sp_go2: the entry position
+sf_q:    .res 1                         ; sp_go2: the entry position * 8
 mq_b:    .res 1                         ; mf_mul8: multiplier, product lo,
 mq_l:    .res 1                         ;  scratch; mul8x32's byte index
 mq_t:    .res 1
@@ -3135,12 +3135,13 @@ mf_planes:
 ; flat's bank. sp_go2 writes a line PAIR per byte (even line lit, odd line
 ; FLIP lit); sl_go ONE line (sl_draw patches the FLIP and the mask for its
 ; parity).
-; sp_go2 is Duff's device: four versions (sf_0..sf_3) of four bytes each,
-; entered at one of 16 points (sf_sq) so the span's last byte ends a block
-; (q = -n & 3) and the page check falls on columns 3 mod 4 (s = (q - kb)
-; & 3); within four columns Y moves on by an EOR. Each body is [U, V
-; stepped] sf_sq: [texel read, both lines written]: an entry skips its
-; step, so the last byte's never runs. One count per block.
+; sp_go2 is Duff's device: four bytes unrolled (sf_lp), entered at one of
+; four points (sf_eq, q = -n & 3) so the span's last byte ends a block.
+; PTR points at the block's first column (+ the line within the character
+; row), so each body writes at fixed offsets (LDY #8c, INY) and only the
+; block end moves PTR on, by 32. Each body is [U, V stepped] sf_eq:
+; [texel read, both lines written]: an entry skips its step, so the last
+; byte's never runs. One count per block.
 sp_go2:
    STA $FE30                            ; the flat's bank
    LDA #ACC_DXY
@@ -3155,18 +3156,36 @@ sp_go2:
    SEC                                  ;  block
    SBC sp_n
    AND #3
-   STA sf_q
-   SEC                                  ; version s = (q - kb) & 3: its
-   SBC pl_kb                            ;  page check on columns 3 mod 4
-   AND #3
+   ASL A
+   TAX                                  ; X = q * 2
    ASL A
    ASL A
-   ORA sf_q
-   ASL A
-   TAX                                  ; X = (s * 4 + q) * 2
+   STA sf_q                             ; q * 8
+   TYA                                  ; PTR (lo 0) + Y - 8q: the block's
+   SEC                                  ;  column 0 (q columns before the
+   SBC sf_q                             ;  span's first)
+   STA PTR
+   LDA PTR+1
+   SBC #0
+   STA PTR+1
    LDA sv                               ; (A = V at an entry)
    JMP (sf_ent,X)
-sf_0:
+sf_lp:
+sf_e0:
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
+   ORA hi16,X
+   TAX
+sf_r0:
+   LDA $FF00,X                          ; (patched: the flat's page)
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y                          ; even line: whole byte
+   INY
+   LDA mf_flip,X
+   AND maskOdd
+   STA (PTR),Y                          ; odd line: FLIP
    CLC
    LDA su
    ADC sdu
@@ -3175,23 +3194,21 @@ sf_0:
    LDA sv
    ADC sdv
    STA sv
-sf_00:
+sf_e1:
    AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
    LDX su
    ORA hi16,X
    TAX
-sf_r00:
+sf_r1:
    LDA $FF00,X                          ; (patched: the flat's page)
    TAX
    AND maskEven
+   LDY #8
    STA (PTR),Y                          ; even line: whole byte
    INY
    LDA mf_flip,X
    AND maskOdd
    STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
    CLC
    LDA su
    ADC sdu
@@ -3200,23 +3217,21 @@ sf_r00:
    LDA sv
    ADC sdv
    STA sv
-sf_01:
+sf_e2:
    AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
    LDX su
    ORA hi16,X
    TAX
-sf_r01:
+sf_r2:
    LDA $FF00,X                          ; (patched: the flat's page)
    TAX
    AND maskEven
+   LDY #16
    STA (PTR),Y                          ; even line: whole byte
    INY
    LDA mf_flip,X
    AND maskOdd
    STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$19                             ; the next column, within four
-   TAY
    CLC
    LDA su
    ADC sdu
@@ -3225,87 +3240,30 @@ sf_r01:
    LDA sv
    ADC sdv
    STA sv
-sf_02:
+sf_e3:
    AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
    LDX su
    ORA hi16,X
    TAX
-sf_r02:
+sf_r3:
    LDA $FF00,X                          ; (patched: the flat's page)
    TAX
    AND maskEven
+   LDY #24
    STA (PTR),Y                          ; even line: whole byte
    INY
    LDA mf_flip,X
    AND maskOdd
    STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_03:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r03:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   CLC
-   ADC #7                               ; column = 3 mod 4: the next 32
-   TAY
-   BCC :+
-   INC PTR+1                            ;  (next page at column 31 mod 32)
-:
    DEC sf_nb
-   BEQ :+
-   JMP sf_0
-:  JMP sf_end
-sf_1:
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_10:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r10:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   CLC
-   ADC #7                               ; column = 3 mod 4: the next 32
-   TAY
+   BEQ sf_end
+   CLC                                  ; the next four columns
+   LDA PTR
+   ADC #32
+   STA PTR
    BCC :+
-   INC PTR+1                            ;  (next page at column 31 mod 32)
-:
-   CLC
+   INC PTR+1
+:  CLC
    LDA su
    ADC sdu
    STA su
@@ -3313,295 +3271,7 @@ sf_r10:
    LDA sv
    ADC sdv
    STA sv
-sf_11:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r11:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_12:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r12:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$19                             ; the next column, within four
-   TAY
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_13:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r13:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
-   DEC sf_nb
-   BEQ :+
-   JMP sf_1
-:  JMP sf_end
-sf_2:
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_20:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r20:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_21:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r21:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   CLC
-   ADC #7                               ; column = 3 mod 4: the next 32
-   TAY
-   BCC :+
-   INC PTR+1                            ;  (next page at column 31 mod 32)
-:
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_22:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r22:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_23:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r23:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$19                             ; the next column, within four
-   TAY
-   DEC sf_nb
-   BEQ :+
-   JMP sf_2
-:  JMP sf_end
-sf_3:
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_30:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r30:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$19                             ; the next column, within four
-   TAY
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_31:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r31:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_32:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r32:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   CLC
-   ADC #7                               ; column = 3 mod 4: the next 32
-   TAY
-   BCC :+
-   INC PTR+1                            ;  (next page at column 31 mod 32)
-:
-   CLC
-   LDA su
-   ADC sdu
-   STA su
-   CLC
-   LDA sv
-   ADC sdv
-   STA sv
-sf_33:
-   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
-   TAX
-sf_r33:
-   LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
-   STA (PTR),Y                          ; even line: whole byte
-   INY
-   LDA mf_flip,X
-   AND maskOdd
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
-   EOR #$09                             ; the next column, within four
-   TAY
-   DEC sf_nb
-   BEQ :+
-   JMP sf_3
-:  JMP sf_end
+   JMP sf_lp
 sf_end:
    LDA #ACC_DY
    STA $FE34
@@ -3609,10 +3279,7 @@ sf_end:
    STA $FE30
    RTS
 sf_ent:
-   .word sf_00, sf_01, sf_02, sf_03
-   .word sf_10, sf_11, sf_12, sf_13
-   .word sf_20, sf_21, sf_22, sf_23
-   .word sf_30, sf_31, sf_32, sf_33
+   .word sf_e0, sf_e1, sf_e2, sf_e3
 
 sl_go:
    STA $FE30                            ; the flat's bank
@@ -4396,31 +4063,19 @@ sp_setup:
    LDX pl_fl
    LDA mb6_fl_page,X
    STA sl_rd+2
-   CMP sf_r00+2                         ; sp_go2's 16 reads: only on a change
+   CMP sf_r0+2                          ; sp_go2's 4 reads: only on a change
    BEQ :+                               ;  of page
    JSR sf_page
 :  LDX pl_fl
    LDA mb6_fl_bank,X                    ; A = its bank: the loop pages it
    RTS
 
-; sf_page: A = the flat's page, patched into sp_go2's 16 texel reads
+; sf_page: A = the flat's page, patched into sp_go2's 4 texel reads
 sf_page:
-   STA sf_r00+2
-   STA sf_r01+2
-   STA sf_r02+2
-   STA sf_r03+2
-   STA sf_r10+2
-   STA sf_r11+2
-   STA sf_r12+2
-   STA sf_r13+2
-   STA sf_r20+2
-   STA sf_r21+2
-   STA sf_r22+2
-   STA sf_r23+2
-   STA sf_r30+2
-   STA sf_r31+2
-   STA sf_r32+2
-   STA sf_r33+2
+   STA sf_r0+2
+   STA sf_r1+2
+   STA sf_r2+2
+   STA sf_r3+2
    RTS
 
 ; pl_part: A = a partial line (unbiased: an odd first or even last line of
