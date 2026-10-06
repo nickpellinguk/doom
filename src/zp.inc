@@ -481,7 +481,7 @@ zp_seg_top_dlt:             .res 1 ; [bsp]; s8 ch - vz (height delta for top edg
 zp_seg_bot_dlt:             .res 1 ; [bsp]; s8 fh - vz (height delta for bottom edge)
 zp_save0:                   .res 1 ; [clip]; DCL line-clip scratch (also
 LC_OX1_LO:                 .res 1 ; ROTATED IN (zprotate): 27.8 vs fwl_pend's 3.9
-zp_save2:                   .res 1 ; [clip]
+zp_save2:                   .res 1 ; [clip] [MASTER: zw_ev]
 zp_old_cur:                 .res 1 ; [clip]; tighten cursor scratch (tfr.s) [MASTER: zw_rowm]
 zp_ox0:                     .res 1 ; [clip]; subspan extent scratch (dcl+tfr)
 zp_ox1:                     .res 1 ; [clip]
@@ -523,7 +523,7 @@ RASTER_ZP_X1:               .res 2 ; [clip] x1 AND y1 -- ONE reservation
                                    ; free to separate them; layout_fuzz did,
                                    ; and the frame jumped to $5FB7.
 RASTER_ZP_Y1 = RASTER_ZP_X1+1
-bca_boxp:                   .res 2 ; [ang]; ROM box pointer: caller points this at the 8-byte box
+bca_boxp:                   .res 2 ; [ang]; ROM box pointer: caller points this at the 8-byte box [MASTER: zw_tr, the wall loop's right texel pointer (no MASTER reference)]
    .res 1                               ; FREE $88-$88
 zp_cr_vx_l:                 .res 4 ; [bsp]; clipped total vx/vy (s16 counts) — ONE block: lo.s indexes it
 zp_cr_vx_h = zp_cr_vx_l+1
@@ -617,7 +617,7 @@ LC_OX1_HI:                     .res 1 ; ROTATED IN (zprotate): 27.8 vs zp_vrcach
                                   ; branches — vrcache_jsr_site SMC retired
                                   ; 2026-07-18)
 zp_bca_p1:                  .res 1 ; [ang]; s16 pair with $C9
-zp_bca_p1_h:                .res 1 ; [ang]
+zp_bca_p1_h:                .res 1 ; [ang] [MASTER: zw_np]
 obj_yb_l:                   .res 1 ; ROTATED IN 2026-09-04 (zprotate): 29.1
                                   ; accesses/frame.  These two bytes were
 obj_yb_h:                   .res 1 ; zp_tail_vec, the corner arms' tail
