@@ -165,31 +165,34 @@ AMMO_X = 199
 
 
 # The face (DOOM's STFST01, straight ahead), redrawn by hand at the panel's
-# size: '.' black, 'r' red, 'W' white, 'd' red / black cross-hatch (hair,
-# shadows)
+# size from a tone map of the original (19 x 22: the bar's 0.8 x 0.75), so
+# it keeps its shape: the broad square head, the hair, the lit brow ridge,
+# the dark eye sockets, bright cheeks and nose, the tapering chin and the
+# vertical bar ears. '.' black, 'r' red, 'W' white, 'h' red / white
+# cross-hatch (lit skin), 'd' red / black cross-hatch (hair, shadow)
 FACE = [
-    '.....dddddddd.....',
-    '...dddddddddddd...',
-    '..dddddddddddddd..',
-    '.ddddrrrrrrrrdddd.',
-    '.ddrrrrrrrrrrrrdd.',
-    '.drrrrrrrrrrrrrrd.',
-    '.drrrrrrrrrrrrrrd.',
-    '.rr...rrrrrr...rr.',
-    '.rrW.WrrrrrrW.Wrr.',
-    '.rrWWWrrrrrrWWWrr.',
-    '.rrrrrrdrrrrrrrrr.',
-    '.rrrrrrdrrrrrrrrr.',
-    '.rrrrrrd..drrrrrr.',
-    '.drrrrrrrrrrrrrrd.',
-    '.drrrr......rrrrd.',
-    '.drrr.WWWWWW.rrrd.',
-    '.ddrrr......rrrdd.',
-    '..drrrrrrrrrrrrd..',
-    '..ddrrrrrrrrrrdd..',
-    '...ddrrrrrrrrdd...',
-    '....dddrrrrddd....',
-    '......dddddd......',
+    '....ddddddddddd....',
+    '...ddddddddddddd...',
+    '..ddddddddddddddd..',
+    '..ddddddddddddddd..',
+    '..ddddrdrdrdrdddd..',
+    '..ddrrrrrrrrrrrdd..',
+    '..drrrrrrrrrrrrrd..',
+    '..drhhhrrrrrhhhrd..',
+    '..drhhhhrrrhhhhrd..',
+    'r.drrrrrrrrrrrrrd.r',
+    'r.dd...drrrd...dd.r',
+    'r.dWW.WdrhrdW.WWd.r',
+    'r.rhrrrrrhrrrrrhr.r',
+    'r.rhhhhhhWhhhhhhr.r',
+    '.drrhhhhhWhhhhhrrd.',
+    '.drrhhrdddddrhhrrd.',
+    '..drhh.......hhrd..',
+    '..drhh.WWWWW.hhrd..',
+    '...rhh.......hhr...',
+    '...drhhhrrrhhhrd...',
+    '....drhhhhhhhrd....',
+    '.....ddrrrrrdd.....',
 ]
 FACE_BOX = (114, 1, 141, 23)            # the face's black box (x0, y0, x1, y1)
 
@@ -205,7 +208,7 @@ def face(px):
             x, y = fx + i, fy + r
             odd = (x + y) & 1
             px[y, x] = {'.': BLACK, 'r': RED, 'W': WHITE,
-                        'd': BLACK if odd else RED}[c]
+                        'h': WHITE if odd else RED, 'd': BLACK if odd else RED}[c]
     return px
 
 
