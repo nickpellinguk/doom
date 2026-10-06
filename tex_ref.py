@@ -47,7 +47,8 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             else it is exact; past xh it is the left strip's d.
   bytes     the unit is the BYTE COLUMN (fill_ref): every write is a whole
             byte, a 4x2 fat pixel. A wall byte is two independent strips,
-            (left texel << 2) | right texel: each strip has its own u (at its
+            left texel | (right texel >> 1) (Mode 2: one shift; texels are
+            stored as left-pixel bytes): each strip has its own u (at its
             centre, x + 1 and x + 3) and its own v (its own T and B lines,
             at x and x + 2); the run extents, part and piece are the byte's.
             Step 5g: the right strip's lines are the midpoints of the
@@ -63,8 +64,8 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             larger rise of its top and bottom lines; shared_limit), per
             run step <= s_lim. Nothing of the right strip's v is made.
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
-            for free), stepped per LINE PAIR (a texel is 2 lines: the byte,
-            then FLIP of it; a pair moves 2 * step):
+            for free), stepped per LINE PAIR (a texel is 2 lines of the same
+            byte; a pair moves 2 * step):
                 step = K // (B - T),  K = 2048 * th * (fc - fh) // src_h
                 v(y) = Vtop + (y_even - T) * step         (mod 65536)
                 Vtop = floor(2048 * th * (ztop - fc + yoff) / src_h)
@@ -279,30 +280,22 @@ class TexRef(Fm.FillRef):
         return int(self.tex[tp['name']][0][row, col]), row, col, tp['name']
 
     def _compose(self):
-        """The buffer bytes, lit: every byte of a seg is ANDed with its
-        front sector's light masks (maskEven on even lines, maskOdd on odd
-        lines, after the FLIP); sky is never masked. Below the view, the
-        control panel (master_panel)."""
+        """The buffer bytes (Mode 2, step 6a: both lines of a texel row the
+        same byte, no sector light). Below the view, the control panel
+        (master_panel)."""
         import master_panel
         fb = bytearray(10240)
         fb[master_panel.PANEL_OFFSET:] = master_panel.panel_bytes()
-        sky = M.wall_byte(Fm.SH_SKY)
         for y in range(Fm.LINES):
             row = self.grid[y]
             for k in range(64):
-                si = self.owner[y][2 * k]
-                cell = row[2 * k]
-                if si is None or (cell is not None and cell[0] == 'b' and cell[1] == sky):
-                    mask = 0xFF
-                else:
-                    mask = MW.LIGHT_MASKS[self.W.info[si]['level']][y & 1]
                 l, r = row[2 * k], row[2 * k + 1]
                 if l is not None and l[0] == 'F':
                     b = l[1]                        # a whole plane byte
                 else:
-                    b = (((l[1] << 2) & 0xCC) if l is not None else 0) | \
-                        (r[1] if r is not None else 0)
-                fb[(y >> 3) * 512 + k * 8 + (y & 7)] = (b if y % 2 == 0 else M.FLIP[b]) & mask
+                    b = M.wall_pair(l[1] if l is not None else 0,
+                                    r[1] if r is not None else 0)
+                fb[(y >> 3) * 512 + k * 8 + (y & 7)] = b
         return bytes(fb)
 
 

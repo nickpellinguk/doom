@@ -12,20 +12,21 @@ Outputs (all deterministic):
                     assets.json and textab.inc)
   textab.s          ca65 source for the HAZEL tables: texture directory,
                     texture headers + column index bytes, flat tables,
-                    and the 256-byte cross-hatch FLIP table
+                    (no FLIP table since Mode 2)
   textab.inc        TEX_* / FLAT_* ids and bank-image equates
   assets.json       manifest for the Python reference renderer (step 2)
   walls.png, flats.png   previews decoded back from the packed bytes
   report.txt        memory report
 
-Byte formats (Mode 1: pixel k of a byte uses bits 7-k (colour bit 1) and
-3-k (colour bit 0); logical colours 0 black, 1 red, 2 cyan, 3 white):
-  shade         one of 10 pixel pairs (a, b), a <= b: 4 solid + 6 mixes.
-                Textures hold only the TOP row of the cross-hatch; the
-                second screen line is FLIP[byte] (each pair swapped).
-  wall texel    pair in pixels 2,3 (the $33 positions); the drawer writes
-                (TEX1 << 2) OR TEX2, two strips per byte.
-  floor texel   a full byte, pixels a b a b (#0 == #2, #1 == #3).
+Byte formats (Mode 2, since step 6a: the LEFT pixel of a byte uses bits
+7, 5, 3, 1 (colour bits 3..0), the right pixel bits 6, 4, 2, 0; logical
+colours 0-7 are the eight solid colours, black red green yellow blue
+magenta cyan white):
+  shade         a colour, 0-7 (SHADES[s] = (s, s), the old pair form).
+  wall texel    the colour in the LEFT pixel's bits; the drawer writes
+                TEX1 OR (TEX2 >> 1), two strips (pixels) per byte. Both
+                lines of a texel row are the same byte: no cross-hatch.
+  floor texel   a full byte, both pixels the colour.
   wall column   32 bytes, one texel per byte, top row first. A 256-byte
                 page holds 8 columns interleaved: byte = row*8 + slot.
   texture       header in HAZEL: ptr lo, ptr hi, bank, width, rowoff, then
@@ -47,12 +48,16 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 WAD = os.path.join(ROOT, 'DOOM1.WAD')
 
 # ── palette and shades ────────────────────────────────────────────────
-PALETTE = [(0, 0, 0), (255, 0, 0), (0, 255, 255), (255, 255, 255)]
-PHYSICAL = [0, 1, 6, 7]          # VDU 19 physical colours for logical 0-3
-SHADES = [(a, a) for a in range(4)] + [(a, b) for a in range(4)
-                                       for b in range(a + 1, 4)]
-GAIN = 2.0                       # source brightness boost before matching
-CHROMA = 0.0                     # colour-difference weight (0 = brightness only)
+# Mode 2 (step 6a): the eight solid colours, logical = physical
+PALETTE = [(0, 0, 0), (255, 0, 0), (0, 255, 0), (255, 255, 0),
+           (0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255)]
+PHYSICAL = list(range(8))
+BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
+SHADES = [(c, c) for c in range(8)]     # (the old shade-pair form: solid only)
+GAIN = 1.6                       # source brightness boost before matching
+CHROMA = 1.0                     # colour-difference weight
+# (the textures are a nearest-colour PLACEHOLDER: step 6b redraws each
+# one as pixel art, a colour family per material)
 LUMA = np.array([.299, .587, .114])
 
 TEX_H = 32                       # stored texture height (texels)
@@ -83,30 +88,35 @@ def clipped(name, img):
 DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0xA500)]
 
 
-def mode1_byte(pixels):
-    """Four logical colours (left to right) -> one Mode 1 byte."""
+def mode2_byte(pixels):
+    """Two logical colours (left, right) -> one Mode 2 byte: the left
+    pixel's colour bits 3..0 in bits 7, 5, 3, 1, the right's in 6, 4, 2, 0."""
     b = 0
     for k, c in enumerate(pixels):
-        b |= ((c >> 1) & 1) << (7 - k) | (c & 1) << (3 - k)
+        for i in range(4):
+            b |= ((c >> i) & 1) << (2 * i + 1 - k)
     return b
 
 
-def mode1_pixels(b):
-    return [((b >> (7 - k)) & 1) << 1 | ((b >> (3 - k)) & 1) for k in range(4)]
+def mode2_pixels(b):
+    return [sum(((b >> (2 * i + 1 - k)) & 1) << i for i in range(4)) for k in range(2)]
 
 
 def wall_byte(shade):
-    a, b = SHADES[shade]
-    return mode1_byte((0, 0, a, b))
+    """A wall texel: the colour in the LEFT pixel (right = this >> 1)."""
+    return mode2_byte((shade, 0))
 
 
 def floor_byte(shade):
-    a, b = SHADES[shade]
-    return mode1_byte((a, b, a, b))
+    return mode2_byte((shade, shade))
 
 
-FLIP = bytes(mode1_byte((p[1], p[0], p[3], p[2])) for p in map(mode1_pixels, range(256)))
-SHADE_RGB = np.array([(np.array(PALETTE[a]) + PALETTE[b]) / 2 for a, b in SHADES])
+def wall_pair(l, r):
+    """The byte two wall texel bytes make: TEX1 OR (TEX2 >> 1)."""
+    return l | (r >> 1)
+
+
+SHADE_RGB = np.array([PALETTE[a] for a, _ in SHADES], float)
 
 
 # ── WAD reading ───────────────────────────────────────────────────────
@@ -185,6 +195,43 @@ def scale_rgb(rgb, th, tw):
         for j, (x0, x1) in enumerate(_cells(w, tw)):
             out[i, j] = rgb[y0:y1, x0:x1].reshape(-1, 3).mean(0)
     return out
+
+
+RAMPS = {'grey': [BLACK, BLUE, CYAN, WHITE], 'brown': [BLACK, RED, YELLOW, WHITE],
+         'green': [BLACK, GREEN, YELLOW, WHITE], 'blue': [BLACK, BLUE, CYAN, WHITE],
+         'red': [BLACK, RED, MAGENTA, WHITE]}
+RAMP_LEVELS = (0.30, 0.62, 0.88)        # per-texture brightness cut points
+
+
+def material(rgb):
+    """A texture's colour family, from its mean colour."""
+    m = rgb.reshape(-1, 3).mean(0)
+    r, g, b = m
+    if m.max() - m.min() < 0.12 * max(m.max(), 1):
+        return 'grey'
+    if r >= g >= b or (r >= b and g > b):
+        return 'brown' if g > 0.45 * r else 'red'
+    if g >= r and g >= b:
+        return 'green'
+    return 'blue'
+
+
+def quantise_tex(rgb):
+    """PLACEHOLDER pixel colours for a texture or flat (step 6b redraws each
+    as pixel art): its brightness, normalised to its own 5..95% range, cut
+    into four levels of its material's ramp; a strongly coloured pixel (a
+    light, nukage) takes the nearest saturated colour instead."""
+    lum = rgb @ LUMA
+    lo, hi = np.percentile(lum, 5), np.percentile(lum, 95)
+    t = np.clip((lum - lo) / max(hi - lo, 1), 0, 1)
+    ramp = RAMPS[material(rgb)]
+    out = np.choose(sum(t >= c for c in RAMP_LEVELS), ramp)
+    sat = rgb.max(-1) - rgb.min(-1)
+    vivid = (sat > 110) & (rgb.max(-1) > 140)
+    pal = np.array(PALETTE[1:7], float)
+    near = np.argmin(((rgb[..., None, :] * 255 / np.maximum(rgb.max(-1), 1)[..., None, None]
+                       - pal) ** 2).sum(-1), -1) + 1
+    return np.where(vivid, near, out)
 
 
 def quantise(rgb):
@@ -274,7 +321,7 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
         h, w = img.shape
         th = SHORT_H if t in stacked else TEX_H
         tw = max(1, round(w * th / h))
-        q[t] = quantise(scale_rgb(wad.pal[img], th, tw))
+        q[t] = quantise_tex(scale_rgb(wad.pal[img], th, tw))
         meta[t] = dict(src_w=w, src_h=h, height=th, width=tw)
         if t in stacked and exposure[t] > h:
             raise SystemExit(f'{t} is stacked but E1M1 can show {exposure[t]} '
@@ -350,7 +397,7 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
             raise SystemExit('flats do not fit the bank regions')
         for f in unit:
             page = R.top // 256
-            sq = quantise(scale_rgb(wad.pal[wad.flat(f)], FLAT_N, FLAT_N))
+            sq = quantise_tex(scale_rgb(wad.pal[wad.flat(f)], FLAT_N, FLAT_N))
             R.mem[page * 256:(page + 1) * 256] = bytes(floor_byte(s) for s in sq.ravel())
             R.top += 256
             fplace[f] = dict(bank=R.bank, ptr=R.start + page * 256)
@@ -372,10 +419,8 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
         return ''.join(ch if ch.isalnum() else '_' for ch in s)
     S = ['; GENERATED by master_assets.py -- do not edit.',
          '; HAZEL tables for the textured Master build (docs/master_textured_spec.md).',
-         '\t.export tex_dir, flat_bank, flat_page, flip_tab', '',
-         '\t.segment "FLIPTAB"', 'flip_tab:']
-    S += ['\t.byte ' + ','.join(f'${b:02X}' for b in FLIP[i:i + 16]) for i in range(0, 256, 16)]
-    S += ['', '\t.segment "TEXTAB"', 'tex_dir:']
+         '\t.export tex_dir, flat_bank, flat_page', '',
+         '\t.segment "TEXTAB"', 'tex_dir:']
     S += [f'\t.word tex_{cid(t)}' for t in walls]
     S += ['flat_bank:', '\t.byte ' + ','.join(str(fplace[f]['bank']) for f in order),
           'flat_page:', '\t.byte ' + ','.join(f'>${fplace[f]["ptr"]:04X}' for f in order)]
@@ -409,13 +454,13 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
 
     # report
     idx_bytes = sum(len(place[t]['index']) for t in walls)
-    hz = 256 + 2 * len(walls) + 5 * len(walls) + idx_bytes + 2 * len(order)
+    hz = 2 * len(walls) + 5 * len(walls) + idx_bytes + 2 * len(order)
     wall_bytes = sum(len(g[1]) for g in groups) * TEX_H
     rep = [f'E1M1 assets: {len(walls)} wall textures, {len(order)} flats',
            f'wall columns: {sum(len(g[1]) for g in groups)} stored ({wall_bytes} B)',
            f'flats: {len(order)} x 256 = {256 * len(order)} B',
            f'HAZEL tables: {hz} B (dir {2 * len(walls)}, headers {5 * len(walls)}, '
-           f'index {idx_bytes}, flat tables {2 * len(order)}, FLIP 256)']
+           f'index {idx_bytes}, flat tables {2 * len(order)})']
     for R in regs:
         rep.append(f'bank {R.bank}: ${R.start:04X}-${R.start + R.top - 1:04X} used '
                    f'({R.top} of {R.end - R.start} B)' if R.top else f'bank {R.bank}: unused')
@@ -473,12 +518,11 @@ class Assets:
 
 
 def assemble_tables(out, hazel_base=0xC000):
-    """Assemble textab.s with ca65/ld65 (TEXTAB, then FLIPTAB on a page
-    boundary) -> (bytes, labels). Step 1 places it in the real HAZEL map."""
+    """Assemble textab.s with ca65/ld65 -> (bytes, labels)."""
     cfg = os.path.join(out, 'textab_test.cfg')
     open(cfg, 'w').write(
         f'MEMORY {{ HZ: start=${hazel_base:04X}, size=$2000, file=%O, fill=no; }}\n'
-        'SEGMENTS { TEXTAB: load=HZ, type=ro; FLIPTAB: load=HZ, type=ro, align=$100; }\n')
+        'SEGMENTS { TEXTAB: load=HZ, type=ro; }\n')
     o, b, m = (os.path.join(out, n) for n in ('textab.o', 'textab.bin', 'textab.map'))
     subprocess.run(['ca65', os.path.join(out, 'textab.s'), '-o', o], check=True)
     subprocess.run(['ld65', '-C', cfg, o, '-o', b, '-Ln', m], check=True)
@@ -492,7 +536,7 @@ def assemble_tables(out, hazel_base=0xC000):
 
 def previews(out, A):
     """walls.png / flats.png drawn FROM THE PACKED BYTES, exactly as the
-    drawer would: each texel row = byte, then FLIP[byte] on the next line."""
+    drawer would: each texel row is two lines of the same byte."""
     os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
     os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
     import pygame
@@ -500,8 +544,8 @@ def previews(out, A):
     font = pygame.font.Font(None, 16)
     Z = 2                                  # screen pixel -> 2x2 preview pixels; BBC pixels are 2:1
     def put(surf, x, y, byte, wide):
-        for k, c in enumerate(mode1_pixels(byte)[2 if not wide else 0:]):
-            surf.fill(PALETTE[c], (x + k * 2 * Z, y, 2 * Z, Z))
+        for k, c in enumerate(mode2_pixels(byte)[:1 if not wide else 2]):
+            surf.fill(PALETTE[c], (x + k * 4 * Z, y, 4 * Z, Z))
     texs = A.man['textures']
     rowh = [t['height'] * 2 * Z + 18 for t in texs]
     W = max(t['width'] * 4 * Z for t in texs) + 8
@@ -513,8 +557,8 @@ def previews(out, A):
         wb = A.wall_bytes(t['id'])
         for r in range(wb.shape[0]):
             for c in range(wb.shape[1]):
-                for line, b in enumerate((wb[r, c], FLIP[wb[r, c]])):
-                    put(s, c * 4 * Z, y + 16 + (2 * r + line) * Z, b, False)
+                for line in range(2):
+                    put(s, c * 4 * Z, y + 16 + (2 * r + line) * Z, wb[r, c], False)
         y += rh
     pygame.image.save(s, os.path.join(out, 'walls.png'))
     fl = A.man['flats']
@@ -527,8 +571,8 @@ def previews(out, A):
         fb = A.flat_bytes(f['id'])
         for r in range(16):
             for c in range(16):
-                for line, b in enumerate((fb[r, c], FLIP[fb[r, c]])):
-                    put(s, x0 + c * 8 * Z, y0 + 16 + (2 * r + line) * Z, b, True)
+                for line in range(2):
+                    put(s, x0 + c * 8 * Z, y0 + 16 + (2 * r + line) * Z, fb[r, c], True)
     pygame.image.save(s, os.path.join(out, 'flats.png'))
 
 

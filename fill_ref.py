@@ -21,8 +21,7 @@ is filled once, in front-to-back order, with no overdraw and no gaps.
             interpolation between its projected endpoints): y < T ceiling,
             y > B floor, otherwise wall (upper / lower inside a portal)
   shades    step 3 fills SOLID shades: sky ceilings are cyan
-  output    per screen LINE: even lines the byte, odd lines FLIP[byte], so
-            band edges may fall on any line without breaking the hatch
+  output    per screen LINE: the byte (Mode 2: both lines of a pair alike)
 
 The engine's span pool is reached through the packed Python reference with
 the py65 6502 span clipper behind it (doom_wireframe.Instrumented6502Spans),
@@ -44,12 +43,12 @@ import master_assets as M
 STRIPS, LINES = 128, 136
 HORIZON = LINES // 2                    # 68
 SKY = 'F_SKY1'
-# step-3 shades (indices into master_assets.SHADES)
-SH_SKY = M.SHADES.index((2, 2))        # cyan
-SH_CEIL = M.SHADES.index((0, 2))       # black / cyan
-SH_FLOOR = M.SHADES.index((0, 1))      # black / red
-SH_WALL = M.SHADES.index((1, 3))       # red / white
-SH_STEP = M.SHADES.index((2, 3))       # cyan / white: upper and lower walls
+# step-3 shades: Mode 2 colours (master_assets.SHADES indices)
+SH_SKY = M.CYAN
+SH_CEIL = M.BLUE
+SH_FLOOR = M.RED
+SH_WALL = M.WHITE
+SH_STEP = M.YELLOW                     # upper and lower walls
 KIND = {SH_SKY: 'sky', SH_CEIL: 'ceil', SH_FLOOR: 'floor', SH_WALL: 'wall', SH_STEP: 'wall'}
 
 
@@ -186,9 +185,9 @@ class FillRef:
             row = self.grid[y]
             for k in range(64):
                 l, r = row[2 * k], row[2 * k + 1]
-                b = (((M.wall_byte(l) << 2) & 0xCC) if l is not None else 0) | \
-                    (M.wall_byte(r) if r is not None else 0)
-                fb[(y >> 3) * 512 + k * 8 + (y & 7)] = b if y % 2 == 0 else M.FLIP[b]
+                b = M.wall_pair(M.wall_byte(l) if l is not None else 0,
+                                M.wall_byte(r) if r is not None else 0)
+                fb[(y >> 3) * 512 + k * 8 + (y & 7)] = b
         return bytes(fb)
 
     def unfilled(self):

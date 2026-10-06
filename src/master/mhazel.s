@@ -54,22 +54,14 @@ pat_buf:                                ; A = buffer page hi
         sta ptr+1
         ldx #0                          ; byte column
 @col:   lda colbyte,x
-        sta tmp                         ; even lines
-        phx
-        tax
-        lda flip,x
-        plx
-        sta @odd+1                      ; odd lines (SMC, HAZEL is RAM)
+        sta tmp                         ; every line (Mode 2: no cross-hatch)
         lda ptr+1
         pha
         lda #VIEW_ROWS - 1
         sta cnt                         ; character rows 1..16
 @row:   ldy #0
-@line:  lda tmp
-        sta (ptr),y
-        iny
-@odd:   lda #0
-        sta (ptr),y
+        lda tmp
+@line:  sta (ptr),y
         iny
         cpy #8
         bne @line
@@ -93,7 +85,8 @@ pat_buf:                                ; A = buffer page hi
         rts
 
 ; ----------------------------------------------------------------------
-; HUD: 6 glyph cells in character row 0 at byte columns 1..4 and 6..7.
+; HUD: 6 glyph cells in character row 0 (Mode 2: a cell is 2 byte columns,
+; 16 bytes) at byte columns 1..8 and 11..14.
 hud:
         sta ptr+1
         lda #8                          ; byte column 1 (+8 per column)
@@ -104,7 +97,7 @@ hud:
         jsr hex2                        ; frame time lo
         lda ptr                         ; skip a cell
         clc
-        adc #8
+        adc #16
         sta ptr
         lda args+2
         ; fall through: fields
@@ -116,7 +109,8 @@ hex2:   pha                             ; two hex digits of A
         jsr digit
         pla
         and #$0F
-digit:  asl a                           ; glyph offset = digit * 8
+digit:  asl a                           ; glyph offset = digit * 16
+        asl a
         asl a
         asl a
         tax
@@ -125,12 +119,12 @@ digit:  asl a                           ; glyph offset = digit * 8
         sta (ptr),y
         inx
         iny
-        cpy #8
+        cpy #16
         bne :-
         lda ptr
         clc
-        adc #8
+        adc #16
         sta ptr
         rts
 
-        .include "mhazel_tab.s"         ; generated: flip, colbyte, font
+        .include "mhazel_tab.s"         ; generated: colbyte, font

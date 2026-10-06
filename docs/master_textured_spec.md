@@ -8,9 +8,12 @@ Model B memory map are replaced. The Model B build is not maintained.
 
 ## 1. Display
 
-- 256×160, 4 colours, Mode 1 byte format (4 interleaved 2-bit pixels per byte).
-- Palette: **black, red, cyan, white** (logical 0–3 = physical 0, 1, 6, 7;
-  red replaced magenta for a more even brightness spread).
+- **Since step 6a: Mode 2** (shadow MODE 130), 128×160, the **8 solid
+  colours** (black, red, green, yellow, blue, magenta, cyan, white;
+  logical = physical, the default palette). A byte is 2 pixels: the left
+  pixel's colour bits in bits 7, 5, 3, 1, the right's in 6, 4, 2, 0. A
+  pixel is exactly one wall strip. (Steps 1–5: 256×160 Mode 1, black / red /
+  cyan / white with a cross-hatch; see below for what that was.)
 - 64 bytes per line × 160 lines = 10K per buffer. **Both buffers live in the
   20K shadow RAM**, at &3000 and &5800. The display always shows shadow; a
   flip rewrites the CRTC start address (R12/R13).
@@ -21,6 +24,17 @@ Model B memory map are replaced. The Model B build is not maintained.
   panel (DOOM's status bar, `master_panel.py`).
 
 ## 2. Colours
+
+**Since step 6a** (Mode 2): texels are solid colours; no cross-hatch and
+no sector light (the demo is for texturing, not atmospherics). Textures
+are a placeholder conversion until each is redrawn as pixel art (step
+6b): per texture, its brightness (normalised to its own 5–95% range) is
+cut into four levels of a ramp for its material, found from its mean
+colour: grey black/blue/cyan/white, brown black/red/yellow/white, green
+black/green/yellow/white, red black/red/magenta/white; strongly coloured
+pixels (lights, nukage) take the nearest saturated colour.
+
+Steps 1–5 (Mode 1):
 
 - **10 shades**: the 4 solid colours plus the 6 two-pixel mixes. A shade is a
   pixel pair (a, b).
@@ -36,14 +50,15 @@ Model B memory map are replaced. The Model B build is not maintained.
 
 ## 3. Drawing
 
-All writes are whole bytes; each texel row writes byte `B` to line 2r and
-`FLIP[B]` to line 2r+1 (a 4×2 block).
+All writes are whole bytes; each texel row writes byte `B` to lines 2r and
+2r+1 (step 6a; in Mode 1 the second line was `FLIP[B]`).
 
-- **Walls**: two independent strips per byte, giving 2×2 fat pixels:
-  `byte = (TEX1 << 2) OR TEX2`, where each texel byte carries its pixel pair in
-  the `$33` positions (TEX1 is shifted into `$CC`).
-- **Floors and ceilings**: one texel per byte, a full Mode 1 byte with
-  pixel #0 = #2 and #1 = #3.
+- **Walls**: two independent strips per byte, one Mode 2 pixel each:
+  `byte = TEX1 OR (TEX2 >> 1)`, where each texel byte carries its colour in
+  the left pixel's bits (`$AA`): one shift (Mode 1 was `(TEX1 << 2) OR
+  TEX2`, two).
+- **Floors and ceilings**: one texel per byte, a full byte with both
+  pixels the colour.
 - **Sky** (F_SKY1): solid cyan, no texture.
 - Drawing code runs from **HAZEL** and reaches the shadow buffers by setting
   **ACCCON X** for the duration of a draw. The E bit cannot be used: Master
@@ -102,8 +117,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D6E4, **free $D6E5–$DDFF (1.8K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B89E: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16`, page-aligned at $C800, $C900; texel and span loops, `mf_frame`, sky map) $C800–$D403, **free $D404–$DDFF (2.5K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B7EC: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -836,6 +851,56 @@ focal lengths and all wall and flat maths are unchanged).
     356K → 340K.
   Per-column costs (column walk, per-seg and per-byte set-up, ~470K) do
   not shrink with the height.
+
+**6a. Mode 2. — DONE.** In Mode 1 the colours made the demo unenjoyable,
+so it becomes a Mode 2 demo for texturing, not atmospherics. The rendering
+is otherwise identical.
+- *Formats* (`master_assets`):
+  - a texel is its colour in the left pixel's bits;
+  - a wall byte is `TEX1 | (TEX2 >> 1)`;
+  - a floor texel is both pixels;
+  - there is no FLIP table.
+- *No cross-hatch, no light*:
+  - both lines of a texel row are the same byte;
+  - the sector light masks (`maskEven` / `maskOdd`) and the `mf_flip` page
+    are gone. The light level still keys the pending plane spans (a later
+    clean-up can drop it).
+- *6502*:
+  - the wall bodies read the right texel, `LSR`, `ORA` the left, and store
+    one byte twice: about 22 cycles a pair saved;
+  - the span bodies, `sl_go`, `pl_wr1` and `tr_fetch` lose their masks and
+    FLIP;
+  - solid runs (`hz_run`) write `shade | shade >> 1` on every line, so only
+    the one-value row copy is left;
+  - shade constants: `WB_SKY` cyan $28, `WB_CEIL` blue $20, `WB_FLOOR` red
+    $02.
+- *Boot and HUD*:
+  - MODE 130 with its default palette;
+  - the boot pattern writes one byte per line;
+  - the frame-time HUD's glyphs are 2 byte columns (16 bytes) each.
+- *Textures*: a placeholder ramp conversion (section 2), to be redrawn as
+  pixel art, a colour family per material, in step 6b.
+- *Panel* (`master_panel.py`) redrawn as Mode 2 pixel art, 128 × 24:
+  - the stone in the grey ramp (black, blue, cyan);
+  - 4 × 10 big red numbers (seven segments) with a black outline;
+  - white 3 × 5 labels on black (ARMS dropped: it doesn't fit at 0.4 scale);
+  - the arms numbers (the pistol yellow);
+  - a 10 × 22 face (red hair, yellow skin, white eyes, teeth and
+    highlights, bar ears);
+  - the ammo counts in yellow.
+- *Gates*:
+  - `test_textured_ref`: odd lines repeat even ones, and there are no
+    flashing colours;
+  - `test_fill_ref`: every byte is two fill shades;
+  - `test_master_assets`: Mode 2 round trips and `wall_pair`;
+  - the jsbeeb test allows the 8 colours.
+  `test_tex_ref` exact agreement is 81.19% (no light changing bytes).
+- *Cycles* (`tools/master_profile.py`):
+  - the mean frame 1.519M → 1.447M (−4.7%);
+  - the wall loop 275K → 225K;
+  - the span loops 127K → 106K;
+  - the 18 poses 24.9M → 23.8M.
+  HAZEL −256 B (`mf_flip`).
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

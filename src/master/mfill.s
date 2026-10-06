@@ -48,21 +48,18 @@ ACC_DXY = $0D                           ;  ... plus X: CPU on the shadow buffers
 
 ; step-3 shades, in the RIGHT-strip ($33) position: wall_byte(shade) in
 ; master_assets.py, pixel 2 = colour a, pixel 3 = colour b
-WB_SKY   = $30                          ; (cyan, cyan)
-WB_CEIL  = $10                          ; (black, cyan)
-WB_FLOOR = $01                          ; (black, red)
+WB_SKY   = $28                          ; Mode 2 left-pixel bytes: cyan
+WB_CEIL  = $20                          ;  blue
+WB_FLOOR = $02                          ;  red
 
 PTR = RASTER_ZP_X1                      ; zp pair x1/y1 (the rasteriser's JMP
                                         ; vector -- there is no rasteriser on
                                         ; the Master; DCL is done by fill time)
 TP  = RASTER_ZP_DX                      ; zp pair: the rasteriser's dx/dy, only
                                         ; raster.s touches it (not linked here)
-; Sector light (step 5b): every byte a seg writes is ANDed with these --
-; maskEven on even lines, maskOdd on odd lines (after the FLIP) -- set per
-; seg from its front sector's level (light_masks); sky is never masked.
-; The rasteriser's cnt pair (raster.s only, not linked here).
-maskEven = RASTER_ZP_CNT
-maskOdd  = RASTER_ZP_CNT+1
+; (Step 5b's sector light masks, maskEven / maskOdd, were retired in step
+; 6a: the Mode 2 demo is for texturing. The level still keys the pending
+; plane spans.)
 ; The wall write loop's zero page (tr_screen, a leaf): bytes no code in the
 ; MASTER link references (zp.inc notes the reuse), and TP, which is dead
 ; while the loop runs.
@@ -219,7 +216,6 @@ r_ys:    .res 1
 r_ye:    .res 1
 r_part:  .res 1
 r_ev:    .res 1
-r_od:    .res 1
 hz_n:    .res 1                         ; hz_run: lines, the first line's
 hz_a:    .res 1                         ;  place in its row, the last line
 hz_l:    .res 1                         ;  (from the row), rows after the
@@ -376,13 +372,8 @@ lo16:
    .byte (I << 4) & $FF
 .endrepeat
 
-; FLIP: swap the two pixels of every pair (0<->1, 2<->3): the cross-hatch
-; second line. Same table as master_assets.FLIP. (Page-aligned: $CA00.)
-mf_flip:
-.repeat 256, I
-   .byte (((I & $AA) >> 1) | ((I & $55) << 1)) & $FF
-.endrepeat
-.assert (hi16 & $FF) = 0 && (lo16 & $FF) = 0 && (mf_flip & $FF) = 0, error, "x16 / FLIP tables must be page-aligned"
+; (Mode 2: no FLIP table -- both lines of a texel row are the same byte)
+.assert (hi16 & $FF) = 0 && (lo16 & $FF) = 0, error, "x16 tables must be page-aligned"
 
 ; Sky map: one bit per subsector, set when its ceiling is F_SKY1.
 ; SEEDED BY THE IMAGE BUILDER (banked_bsp / tools/build_master_ssd.py).
@@ -1278,30 +1269,15 @@ run:
 .endmacro
 
 ; ============================================================================
-; hz_run: byte column mf_x >> 2, screen lines [r_ys, r_ye], shade r_part:
-; the WHOLE byte (both strips the shade -- a 4x2 fat pixel) on even lines,
-; FLIP of it on odd lines. Nothing is read back. X is set only inside the
-; write loop.
+; hz_run: byte column mf_x >> 2, screen lines [r_ys, r_ye], shade r_part
+; (a left-pixel byte): the WHOLE byte (both pixels the shade) on every
+; line. Nothing is read back. X is set only inside the write loop.
 ; ============================================================================
 hz_run:
    LDA r_part
-   ASL A
-   ASL A
-   ORA r_part                           ; (shade << 2) | shade
+   LSR A
+   ORA r_part                           ; shade | (shade >> 1): both pixels
    STA r_ev
-   TAX
-   LDA mf_flip,X
-   STA r_od
-   LDA r_part
-   CMP #WB_SKY
-   BEQ :+                               ; sky: never darkened
-   LDA r_ev
-   AND maskEven
-   STA r_ev
-   LDA r_od
-   AND maskOdd
-   STA r_od
-:
    JSR ln_ptr                           ; PTR, Y for line r_ys
    SEC
    LDA r_ye
@@ -1310,12 +1286,7 @@ hz_run:
    STA hz_n                             ; line count
    LDA #ACC_DXY
    STA $FE34                            ; -> shadow (no main reads >= $3000)
-   LDA r_ev
-   CMP r_od
-   BNE hz_two
-   HZ_DRIVE h1, 4                       ; one value (sky): A = it
-hz_two:
-   HZ_DRIVE h2, 7                       ; even / odd lines differ
+   HZ_DRIVE h1, 4                       ; A = the byte, every line
 
 ; hz_done: (HZ_DRIVE's exit)
 hz_done:
@@ -1344,26 +1315,6 @@ h1_tab:
    .word h1_b0 + 4 * K
 .endrepeat
 
-h2_b0:
-.repeat 8, K
-   LDY #K
- .if K & 1
-   LDA r_od
- .else
-   LDA r_ev
- .endif
-   STA (PTR),Y
-.endrepeat
-h2_t:                                  ; body 8: the next character row
-   INC PTR+1
-   INC PTR+1
-   DEC hz_r
-   BNE h2_b0
-   RTS
-h2_tab:
-.repeat 8, K
-   .word h2_b0 + 7 * K
-.endrepeat
 .segment "MB6C"
 
 ; ============================================================================
@@ -2007,8 +1958,6 @@ tr_screen:
    LSR A
    BCC @even
    JSR tr_fetch
-   LDA mf_flip,X
-   AND maskOdd
    STA (PTR),Y
    DEC t_n
    BEQ @done
@@ -2149,25 +2098,21 @@ sh_lim:
    STA tw_slim+1
    RTS
 
-; tr_fetch: the current pair's combined texel byte: X = it, A = it lit for
-; an even line (Y kept)
+; tr_fetch: A = the current pair's combined texel byte (Y kept)
 tr_fetch:
    STY tw_ly
    LDA zw_lvh                           ; row = (v >> 11) & (th - 1), * 8
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
    LDY tw_ly
-   AND maskEven
    RTS
 
 ; tr_vstep: both strips' v on one pair
@@ -2222,20 +2167,15 @@ te_00:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2257,20 +2197,15 @@ te_01:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2292,20 +2227,15 @@ te_02:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2327,20 +2257,15 @@ te_03:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -2370,20 +2295,15 @@ te_10:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2405,20 +2325,15 @@ te_11:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2440,20 +2355,15 @@ te_12:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -2477,20 +2387,15 @@ te_13:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    DEC zw_np
@@ -2518,20 +2423,15 @@ te_20:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2553,20 +2453,15 @@ te_21:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -2590,20 +2485,15 @@ te_22:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2625,20 +2515,15 @@ te_23:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    DEC zw_np
@@ -2666,20 +2551,15 @@ te_30:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -2703,20 +2583,15 @@ te_31:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2738,20 +2613,15 @@ te_32:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2773,20 +2643,15 @@ te_33:
    AND zw_rowm
    TAY
    LDA (zw_tl),Y
-   ASL A
-   ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
+   LSR A                                ; the right pixel: one shift
    ORA zw_ev
-   TAX
-   AND maskEven
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    DEC zw_np
@@ -2816,18 +2681,11 @@ ts_00:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2841,18 +2699,11 @@ ts_01:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2866,18 +2717,11 @@ ts_02:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2891,18 +2735,11 @@ ts_03:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -2924,18 +2761,11 @@ ts_10:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2949,18 +2779,11 @@ ts_11:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -2974,18 +2797,11 @@ ts_12:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -3001,18 +2817,11 @@ ts_13:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    DEC zw_np
@@ -3032,18 +2841,11 @@ ts_20:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -3057,18 +2859,11 @@ ts_21:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -3084,18 +2879,11 @@ ts_22:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -3109,18 +2897,11 @@ ts_23:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    DEC zw_np
@@ -3140,18 +2921,11 @@ ts_30:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #6
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    INC PTR+1                            ; the next character row
@@ -3167,18 +2941,11 @@ ts_31:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #0
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -3192,18 +2959,11 @@ ts_32:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #2
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    CLC
@@ -3217,18 +2977,11 @@ ts_33:
    LDA zw_lvh
    AND zw_rowm
    TAY
-   LDA (zw_tl),Y
-   ASL A
-   ASL A
-   STA zw_ev
    LDA (zw_tr),Y
-   ORA zw_ev
-   TAX
-   AND maskEven
+   LSR A                                ; the right pixel: one shift
+   ORA (zw_tl),Y
    LDY #4
-   STA (PTR),Y
-   LDA mf_flip,X
-   AND maskOdd
+   STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
    DEC zw_np
@@ -3490,12 +3243,7 @@ pl_seg:
    LSR A
    LSR A
    LSR A
-   TAX
-   STX pl_lv
-   LDA light_even,X
-   STA maskEven
-   LDA light_odd,X
-   STA maskOdd
+   STA pl_lv
    LDA pl_ff
    AND #$1F
    STA pl_ff
@@ -3514,8 +3262,6 @@ pl_seg:
 
 ; the five light levels' masks (master_walls.LIGHT_MASKS): FF.FF, AA.FF,
 ; AA.AA, 0A.AA, 0A.0A -- progressively darker
-light_even: .byte $FF, $AA, $AA, $0A, $0A
-light_odd:  .byte $FF, $FF, $AA, $AA, $0A
 
 
 ; ceil_run / floor_run: [r_ys, r_ye] (biased) of the band's ceiling / floor
@@ -3754,8 +3500,7 @@ pl_pair:
    ROL A
    ; fall into pl_wr1
 
-; pl_wr1: A = line; t_ev = the texel byte: write it (even: & maskEven;
-; odd: FLIP & maskOdd) at column pl_kb
+; pl_wr1: A = line; t_ev = the texel byte: write it at column pl_kb
 pl_wr1:
    STA pl_y
    LDX r_ys                             ; (ln_ptrk reads r_ys: lend it)
@@ -3767,16 +3512,8 @@ pl_wr1:
    STX r_ys
    LDA #ACC_DXY
    STA $FE34
-   LDA pl_y
-   LSR A
    LDA t_ev
-   BCS :+
-   AND maskEven
-   BRA :++
-:  TAX
-   LDA mf_flip,X
-   AND maskOdd
-:  STA (PTR),Y
+   STA (PTR),Y
    LDA #ACC_DY
    STA $FE34
    RTS
@@ -3836,13 +3573,9 @@ sf_e0:
    TAX
 sf_r0:
    LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
    LDY #0
    STA (PTR),Y                          ; even line: whole byte
    INY
-   LDA mf_flip,X
-   AND maskOdd
    STA (PTR),Y                          ; odd line: FLIP
    CLC
    LDA su
@@ -3859,13 +3592,9 @@ sf_e1:
    TAX
 sf_r1:
    LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
    LDY #8
    STA (PTR),Y                          ; even line: whole byte
    INY
-   LDA mf_flip,X
-   AND maskOdd
    STA (PTR),Y                          ; odd line: FLIP
    CLC
    LDA su
@@ -3882,13 +3611,9 @@ sf_e2:
    TAX
 sf_r2:
    LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
    LDY #16
    STA (PTR),Y                          ; even line: whole byte
    INY
-   LDA mf_flip,X
-   AND maskOdd
    STA (PTR),Y                          ; odd line: FLIP
    CLC
    LDA su
@@ -3905,13 +3630,9 @@ sf_e3:
    TAX
 sf_r3:
    LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-   AND maskEven
    LDY #24
    STA (PTR),Y                          ; even line: whole byte
    INY
-   LDA mf_flip,X
-   AND maskOdd
    STA (PTR),Y                          ; odd line: FLIP
    DEC sf_nb
    BEQ sf_end
@@ -3951,11 +3672,6 @@ sl_lp:
    TAX
 sl_rd:
    LDA $FF00,X                          ; (patched: the flat's page)
-   TAX
-sl_fl:
-   LDA mf_flip,X                        ; (patched: odd line FLIP, even TXA)
-sl_mk:
-   .byte $25, maskOdd                   ; AND zp (patched: the line's mask)
    STA (PTR),Y
    TYA
    CLC
@@ -4889,20 +4605,9 @@ pe_clr:
    RTS
 
 ; pd_flush: X = kind: draw its pending spans -- MakeSpans over the pairs,
-; then the partial lines' line spans -- in the plane's own light; the
-; current seg's masks are kept
+; then the partial lines' line spans
 pd_flush:
    STX fl_kind
-   LDA maskEven
-   PHA
-   LDA maskOdd
-   PHA
-   LDA pd_lv,X
-   TAY
-   LDA light_even,Y
-   STA maskEven
-   LDA light_odd,Y
-   STA maskOdd
    LDA pd_d,X
    STA pl_d
    LDA pd_fl,X
@@ -4921,10 +4626,6 @@ pd_flush:
    JSR pp_slot
    LDX fl_kind
    STZ pd_open,X
-   PLA
-   STA maskOdd
-   PLA
-   STA maskEven
    RTS
 
 ; pp_slot: slot pp_s over the pending columns: each run of one line drawn
@@ -4985,25 +4686,6 @@ sl_draw:
    LDA pl_y
    LSR A
    STA pl_p
-   BCC @even
-   LDA #$BD                             ; odd: LDA mf_flip,X; AND maskOdd
-   STA sl_fl
-   LDA #<mf_flip
-   STA sl_fl+1
-   LDA #>mf_flip
-   STA sl_fl+2
-   LDA #<maskOdd
-   STA sl_mk+1
-   BRA @go
-@even:
-   LDA #$8A                             ; even: TXA; NOP; NOP; AND maskEven
-   STA sl_fl
-   LDA #$EA
-   STA sl_fl+1
-   STA sl_fl+2
-   LDA #<maskEven
-   STA sl_mk+1
-@go:
    JSR sp_setup
    JMP sl_go
 

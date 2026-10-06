@@ -36,28 +36,25 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
           'build is not deterministic')
     A = M.Assets(t1, hz, 0xC000, lab)
 
-    # ── byte formats ──
-    check(all(M.FLIP[M.FLIP[x]] == x for x in range(256)), 'FLIP is not an involution')
-    check(bytes(hz[lab['flip_tab'] - 0xC000:][:256]) == M.FLIP, 'assembled FLIP differs')
-    check(lab['flip_tab'] & 0xFF == 0, 'FLIP table not page aligned')
-    for s, (pa, pb) in enumerate(M.SHADES):
+    # ── byte formats (Mode 2, step 6a) ──
+    for x in range(256):
+        check(M.mode2_byte(M.mode2_pixels(x)) == x, f'mode2 pixels round trip {x:02X}')
+    for s, (pa, _) in enumerate(M.SHADES):
         w = M.wall_byte(s)
-        check(w & ~0x33 & 0xFF == 0, f'wall byte {w:02X} outside $33')
-        check(M.mode1_pixels(w)[2:] == [pa, pb], f'wall byte {w:02X} pixels')
-        check(M.FLIP[w] & ~0x33 & 0xFF == 0, f'FLIP of wall byte {w:02X} leaves $33')
+        check(w & ~0xAA & 0xFF == 0, f'wall byte {w:02X} outside the left pixel ($AA)')
+        check(M.mode2_pixels(w) == [pa, 0], f'wall byte {w:02X} pixels')
         f = M.floor_byte(s)
-        p = M.mode1_pixels(f)
-        check(p == [pa, pb, pa, pb], f'floor byte {f:02X} pixels {p}')
-        check(M.mode1_pixels(M.FLIP[f]) == [pb, pa, pb, pa], f'FLIP of floor byte {f:02X}')
-        for s2, (qa, qb) in enumerate(M.SHADES):     # (TEX1 << 2) OR TEX2
-            comb = ((w << 2) & 0xFF) | M.wall_byte(s2)
-            check(M.mode1_pixels(comb) == [pa, pb, qa, qb], f'strip combine {s},{s2}')
+        check(M.mode2_pixels(f) == [pa, pa], f'floor byte {f:02X} pixels')
+        for s2, (qa, _) in enumerate(M.SHADES):      # TEX1 OR (TEX2 >> 1)
+            comb = M.wall_pair(w, M.wall_byte(s2))
+            check(comb == w | (M.wall_byte(s2) >> 1), f'wall_pair {s},{s2}')
+            check(M.mode2_pixels(comb) == [pa, qa], f'strip combine {s},{s2}')
 
     # ── walls: every texel read back through the tables ──
     wad = M.Wad()
     src = wad.textures()
     for t in man['textures']:
-        q = M.quantise(M.scale_rgb(wad.pal[M.clipped(t['name'], src[t['name']])], t['height'], t['width']))
+        q = M.quantise_tex(M.scale_rgb(wad.pal[M.clipped(t['name'], src[t['name']])], t['height'], t['width']))
         want = np.vectorize(M.wall_byte)(q)
         got = A.wall_bytes(t['id'])
         check(got.shape == want.shape and (got == want).all(), f"{t['name']} reads back wrong")
@@ -78,7 +75,7 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
 
     # ── flats ──
     for f in man['flats']:
-        q = M.quantise(M.scale_rgb(wad.pal[wad.flat(f['name'])], M.FLAT_N, M.FLAT_N))
+        q = M.quantise_tex(M.scale_rgb(wad.pal[wad.flat(f['name'])], M.FLAT_N, M.FLAT_N))
         check((A.flat_bytes(f['id']) == np.vectorize(M.floor_byte)(q)).all(),
               f"{f['name']} reads back wrong")
     names = [f['name'] for f in man['flats']]

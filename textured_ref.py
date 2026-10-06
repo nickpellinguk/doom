@@ -28,9 +28,9 @@ solid columns close) at the Master's resolution and in its exact bytes.
   Texels    read from the PACKED assets (bank images + assembled HAZEL
             tables via master_assets.Assets), i.e. the bytes the 6502 reads.
   Output    10240 bytes = one shadow buffer: byte column k, line y at
-            (y>>3)*512 + k*8 + (y&7); line 2r = the texel byte, line 2r+1 =
-            FLIP[byte]. A byte is (left strip << 2) OR right strip for walls
-            and the floor byte's matching half for planes.
+            (y>>3)*512 + k*8 + (y&7); lines 2r and 2r+1 = the texel byte
+            (Mode 2). A byte is left strip OR (right strip >> 1) for walls
+            and the floor byte's matching pixel for planes.
 
 The 6502 port (steps 3-5) will add its own bit-exact Python mirror; this
 file is the visual and semantic reference those are judged against.
@@ -67,9 +67,7 @@ class TexturedRef:
         for t in A.man['textures']:
             self.tex[t['name']] = (A.wall_bytes(t['id']), t['src_w'], t['src_h'])
         self.flat = {f['name']: A.flat_bytes(f['id']) for f in A.man['flats']}
-        sky = M.SHADES.index((2, 2))                 # solid cyan
-        self.sky_byte = M.floor_byte(sky)
-        self.FLIP = M.FLIP
+        self.sky_byte = M.floor_byte(M.CYAN)        # solid cyan
         import doom_wireframe as dw
         self.dw = dw
 
@@ -282,11 +280,11 @@ class TexturedRef:
                     if v is None:
                         continue                      # never drawn: black
                     if v[0] == 'w':
-                        b |= ((v[1] << 2) & 0xCC) if half == 0 else v[1]
+                        b |= v[1] if half == 0 else v[1] >> 1
                     else:
                         pb = self._plane_byte(c, r, v[1], v[2])
-                        b |= pb & (0xCC if half == 0 else 0x33)
-                for line, val in ((2 * r, b), (2 * r + 1, self.FLIP[b])):
+                        b |= pb & (0xAA if half == 0 else 0x55)
+                for line, val in ((2 * r, b), (2 * r + 1, b)):
                     fb[(line >> 3) * 512 + k * 8 + (line & 7)] = val
         return bytes(fb)
 
@@ -302,7 +300,8 @@ def to_rgb(fb, palette):
     global _LUT
     import master_assets as M
     if _LUT is None:
-        _LUT = np.array([[palette[c] for c in M.mode1_pixels(b)] for b in range(256)], np.uint8)
+        _LUT = np.array([[palette[c & 7] for c in M.mode2_pixels(b) for _ in (0, 1)]
+                         for b in range(256)], np.uint8)         # 2 screen px per pixel
     a = np.frombuffer(fb, np.uint8).reshape(20, 64, 8)       # char row, column, line
     a = a.transpose(0, 2, 1).reshape(160, 64)                # line y, byte column
     return _LUT[a].reshape(160, 256, 3)

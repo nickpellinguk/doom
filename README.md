@@ -120,7 +120,8 @@ B + SWRAM, no Master required.
 
 `doom_master.ssd` is the **BBC Master 128** textured version (work in
 progress, docs/master_textured_spec.md): textured walls, floors and
-ceilings with sector lighting in shadow Mode 1, a 136-line view and a
+ceilings in shadow Mode 2 (8 colours; the textures are a placeholder
+conversion until they are redrawn as pixel art), a 136-line view and a
 static DOOM status bar. Boot it on a Master 128 (or jsbeeb's Master
 model) with SHIFT+BREAK; cursor keys to turn and move. Rebuild it with
 `python3 tools/build_master_ssd.py` (needs DOOM1.WAD).

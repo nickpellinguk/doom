@@ -4,7 +4,7 @@
 Renders the frame-cycle poses (compare_renders.POSITIONS) and the
 ground-truth verify poses, writes the reference images to
 build/master/ref/, and checks what any later 6502 frame will be held to:
-  - every odd line is FLIP of the line above it (the cross-hatch rule)
+  - every odd line repeats the line above it (Mode 2: a texel is 2 lines)
   - every byte half is a valid shade's top row (one of the 10 pairs)
   - on-map poses leave NO cell undrawn; the poses that look off the map
     edge are exactly the known ones (OFFMAP), so a new hole fails
@@ -33,8 +33,7 @@ OFFMAP = {(192, -2368, 99), (3648, -2368, 35), (1500, -3700, 0),
 R = T.TexturedRef()
 out = os.path.join(T.ROOT, 'build', 'master', 'ref')
 os.makedirs(out, exist_ok=True)
-halves_l = {(M.wall_byte(s) << 2) & 0xCC for s in range(10)}
-halves_r = {M.wall_byte(s) for s in range(10)}
+# every pixel one of the 8 solid colours (bit 3, the flashing half, clear)
 fails, kinds = [], set()
 for pose in POSES:
     fb = R.render(*pose)
@@ -49,11 +48,11 @@ for pose in POSES:
         for k in range(64):
             a = (y >> 3) * 512 + k * 8 + (y & 7)
             b, b2 = fb[a], fb[a + 1]
-            if b2 != M.FLIP[b]:
-                fails.append(f'{pose}: line {y + 1} col {k} is not FLIP of line {y}')
+            if b2 != b:
+                fails.append(f'{pose}: line {y + 1} col {k} does not repeat line {y}')
                 break
-            if (b & 0xCC) not in halves_l or (b & 0x33) not in halves_r:
-                fails.append(f'{pose}: byte ${b:02X} at line {y} col {k} is not two shades')
+            if b & 0xC0:
+                fails.append(f'{pose}: byte ${b:02X} at line {y} col {k} has a flashing colour')
                 break
     if hole and pose not in OFFMAP:
         fails.append(f'{pose}: {hole} undrawn cells on an on-map pose')

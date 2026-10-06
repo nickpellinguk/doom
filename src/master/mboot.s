@@ -5,7 +5,8 @@
 ; disc access is done: HAZEL (the filing system keeps its workspace there)
 ; and, once loaded, the engine's own main-RAM image.
 ;
-;   1. MODE 129 (shadow Mode 1) + palette, while the OS is whole.
+;   1. MODE 130 (shadow Mode 2, step 6a; its default palette is the eight
+;      solid colours), while the OS is whole.
 ;   2. Banks 4, 7, 5 and 6: staged at $3000, copied into their sideways
 ;      banks (5 and 6 are the wall textures; 6's tail the part records).
 ;   3. MHAZEL, then MANDY: staged at $3000 and parked in SHADOW RAM (the
@@ -39,7 +40,7 @@ PANEL1      = MSCREEN1 + 17 * 512       ; ... of buffer 1 (shadow $7A00)
         .segment "CODE"
 ldr:
         ldx #0
-@vdu:   lda vdu_init,x                  ; MODE 129 + palette first
+@vdu:   lda vdu_init,x                  ; MODE 130 first
         jsr $FFEE
         inx
         cpx #vdu_end - vdu_init
@@ -156,10 +157,7 @@ c_hz:   .byte "LOAD MHAZEL 3000", 13
 c_an:   .byte "LOAD MANDY 3000", 13
 c_pn:   .byte "LOAD MPANEL 3000", 13
 vdu_init:
-        .byte 22, 129                   ; MODE 129: Mode 1 in shadow RAM
-        .byte 19, 1, 1, 0, 0, 0         ; logical 1 -> red
-        .byte 19, 2, 6, 0, 0, 0         ; logical 2 -> cyan
-        .byte 19, 3, 7, 0, 0, 0         ; logical 3 -> white
+        .byte 22, 130                   ; MODE 130: Mode 2 in shadow RAM
 vdu_end:
 
 stub_image:

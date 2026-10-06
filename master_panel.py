@@ -7,9 +7,10 @@ is character rows 17..19, lines 136..159. It is drawn once, into both
 buffers, and nothing writes there again (the Master never clears a
 screen).
 
-It is pixel art at the full Mode 1 resolution (256 x 24), not a texture
-match: grey stone is a red / cyan cross-hatch, the big numbers pure red
-with a 1-pixel black outline (panel_pixels).
+It is Mode 2 pixel art (128 x 24, step 6a): the bar's stone in the grey
+material ramp (black, blue, cyan), big red numbers with a 1-pixel black
+outline, white labels on black, the face redrawn at 10 x 22 and the ammo
+counts in yellow (panel_pixels).
 
     python3 master_panel.py     # writes build/master/panel.bin and .png
 """
@@ -27,123 +28,81 @@ PANEL_OFFSET = PANEL_ROW * 512          # its offset in a 10K buffer ($2200)
 PANEL_SIZE = PANEL_LINES // 8 * 512     # 1536 bytes
 
 
-DARK, LIGHT = 41, 140                   # grey levels: black below, white above
-RED, CYAN, BLACK, WHITE = 1, 2, 0, 3    # logical colours (master_assets.PALETTE)
+PANEL_W = 128                           # Mode 2 pixels across (2 per byte)
+BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
 
 
-def _draw(w, bar, name, x, y, big=None):
-    """V_DrawPatch onto the bar: at (x, y) less the patch's offsets. With
-    `big`, a big-number glyph: only its red body is marked there (its own
-    dark edge is left to the stone; the panel outlines the body itself)."""
+def _draw(w, bar, name, x, y):
+    """V_DrawPatch onto the bar: at (x, y) less the patch's offsets."""
     import struct
     _, _, lo, to = struct.unpack_from('<HHhh', w.lump(name))
     p = w._patch(name)
     ys, xs = np.nonzero(p >= 0)
     Y, X = ys + y - to, xs + x - lo
     ok = (X >= 0) & (X < 320) & (Y >= 0) & (Y < 32)
-    if big is None:
-        bar[Y[ok], X[ok]] = p[ys[ok], xs[ok]]
-    else:
-        body = w.pal[p[ys, xs]][:, 0] >= 90
-        big[Y[ok & body], X[ok & body]] = True
-
-
-def _num(w, bar, font, width, v, x, y, big=None):
-    """STlib_drawNum: v right-aligned with its right edge at x."""
-    for i, d in enumerate(reversed(str(v))):
-        _draw(w, bar, f'{font}{d}', x - width * (i + 1), y, big)
+    bar[Y[ok], X[ok]] = p[ys[ok], xs[ok]]
 
 
 def status_bar():
-    """(32, 320) palette indices, and the big numbers' (32, 320) body mask:
-    STBAR with a new game's single-player state as st_stuff.c places it
-    (ammo 50, health 100%, the pistol, the straight face, armour 0%, the
-    four ammo counts)."""
+    """(32, 320) palette indices: STBAR with the arms box drawn on it (the
+    numbers, face and lettering are the panel's own pixel art)."""
     w = M.Wad()
     bar = w._patch('STBAR')
-    big = np.zeros(bar.shape, bool)
-    _num(w, bar, 'STTNUM', 14, 50, 44, 3, big)          # ammo
-    _num(w, bar, 'STTNUM', 14, 100, 90, 3, big)         # health
-    _draw(w, bar, 'STTPRCNT', 90, 3, big)
-    _draw(w, bar, 'STARMS', 104, 0)                     # arms box
-    for i, wp in enumerate(range(2, 8)):                # the pistol owned
-        _draw(w, bar, f'{"STYSNUM" if wp == 2 else "STGNUM"}{wp}',
-              111 + (i % 3) * 12, 4 + (i // 3) * 10)
-    _draw(w, bar, 'STFST01', 143, 0)                    # face
-    _num(w, bar, 'STTNUM', 14, 0, 221, 3, big)          # armour
-    _draw(w, bar, 'STTPRCNT', 221, 3, big)
-    for y, have, most in ((5, 50, 200), (11, 0, 50), (23, 0, 300), (17, 0, 50)):
-        _num(w, bar, 'STYSNUM', 4, have, 288, y)        # ammo counts
-        _num(w, bar, 'STYSNUM', 4, most, 314, y)
-    return w, bar, big
+    _draw(w, bar, 'STARMS', 104, 0)
+    return w, bar
 
 
-def panel_pixels():
-    """(24, 256) logical colours, drawn as pixel art rather than matched:
-    the bar sampled at each pixel's centre (320 x 32 -> 256 x 24), then
-      grey stone (DARK..LIGHT)  red / cyan cross-hatch, by (x + y) parity;
-                                a lone dark or light grey pixel in it
-                                (the stone's own specks) is stone too
-      dark grey                 black (dividers, shadows, the face box)
-      light grey                white (labels, bevels)
-      the big numbers           pure red, with a 1-pixel black outline
-      anything coloured         the nearest palette colour (face, the
-                                small yellow numbers)"""
-    w, bar, big = status_bar()
+def stone():
+    """(24, 128): the bar's stone and frames in the grey material ramp
+    (black, blue, cyan), sampled at each Mode 2 pixel's centre."""
+    w, bar = status_bar()
     sy = (np.arange(PANEL_LINES) * 2 + 1) * 32 // (2 * PANEL_LINES)
-    sx = (np.arange(256) * 2 + 1) * 320 // (2 * 256)
-    rgb = w.pal[np.clip(bar[np.ix_(sy, sx)], 0, 255)]
-    body = big[np.ix_(sy, sx)]
-    pal = np.array(M.PALETTE, float)
-    out = np.argmin(((rgb[..., None, :] - pal) ** 2).sum(-1), -1)
-    grey = (rgb.max(-1) - rgb.min(-1)) < 24
-    lum = rgb.mean(-1)
-    yy, xx = np.mgrid[0:PANEL_LINES, 0:256]
-    hatch = np.where((xx + yy) & 1, CYAN, RED)
-    out = np.where(grey & (lum < DARK), BLACK, out)
-    out = np.where(grey & (lum >= LIGHT), WHITE, out)
-    stone = grey & (lum >= DARK) & (lum < LIGHT)
-    for _ in range(2):                                  # the stone's own specks:
-        n4 = np.pad(stone, 1, constant_values=True)    # a grey pixel with stone
-        lone = (n4[:-2, 1:-1] & n4[2:, 1:-1]           # all round is stone
-                & n4[1:-1, :-2] & n4[1:-1, 2:])
-        stone |= grey & lone
-    out = np.where(stone, hatch, out)
-    ring = np.zeros_like(body)                          # 8-neighbours of a digit
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            ring |= np.roll(np.roll(np.pad(body, 1), dy, 0), dx, 1)[1:-1, 1:-1]
-    out = np.where(ring & ~body, BLACK, out)
-    return np.where(body, RED, out)
+    sx = (np.arange(PANEL_W) * 2 + 1) * 320 // (2 * PANEL_W)
+    lum = w.pal[np.clip(bar[np.ix_(sy, sx)], 0, 255)].mean(-1)
+    return np.where(lum < 45, BLACK, np.where(lum < 125, BLUE, CYAN))
 
 
-# The panel's own font: 3 x 5 capitals and digits (M 5 wide), white on
-# black. ('#' lit; rows top to bottom.)
+# The panel's small font: 3 x 5 capitals and digits ('#' lit)
 FONT = {
-    'A': ['.#.', '#.#', '###', '#.#', '#.#'], 'B': ['##.', '#.#', '##.', '#.#', '##.'],
-    'C': ['.##', '#..', '#..', '#..', '.##'], 'E': ['###', '#..', '##.', '#..', '###'],
-    'H': ['#.#', '#.#', '###', '#.#', '#.#'], 'K': ['#.#', '#.#', '##.', '#.#', '#.#'],
-    'L': ['#..', '#..', '#..', '#..', '###'], 'O': ['.#.', '#.#', '#.#', '#.#', '.#.'],
+    'A': ['.#.', '#.#', '###', '#.#', '#.#'], 'E': ['###', '#..', '##.', '#..', '###'],
+    'H': ['#.#', '#.#', '###', '#.#', '#.#'], 'L': ['#..', '#..', '#..', '#..', '###'],
+    'M': ['#.#', '###', '###', '#.#', '#.#'], 'O': ['.#.', '#.#', '#.#', '#.#', '.#.'],
     'R': ['##.', '#.#', '##.', '#.#', '#.#'], 'S': ['.##', '#..', '.#.', '..#', '##.'],
-    'T': ['###', '.#.', '.#.', '.#.', '.#.'], 'U': ['#.#', '#.#', '#.#', '#.#', '###'],
-    'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#'],
-    '/': ['..#', '..#', '.#.', '#..', '#..'],
+    'T': ['###', '.#.', '.#.', '.#.', '.#.'], '/': ['..#', '..#', '.#.', '#..', '#..'],
     '0': ['###', '#.#', '#.#', '#.#', '###'], '1': ['.#.', '##.', '.#.', '.#.', '###'],
     '2': ['###', '..#', '###', '#..', '###'], '3': ['###', '..#', '###', '..#', '###'],
     '4': ['#.#', '#.#', '###', '..#', '..#'], '5': ['###', '#..', '###', '..#', '###'],
     '6': ['###', '#..', '###', '#.#', '###'], '7': ['###', '..#', '..#', '..#', '..#'],
     '8': ['###', '#.#', '###', '#.#', '###'], '9': ['###', '#.#', '###', '..#', '###'],
 }
+# The big numbers: 4 x 10, seven segments with 2-line horizontals
+_SEG = {'0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fbgc', '5': 'afgcd',
+        '6': 'afgecd', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg'}
+
+
+def big_glyph(c):
+    if c == '%':
+        return ['#..#', '#..#', '...#', '..#.', '..#.', '.#..', '.#..', '#...', '#..#', '#..#']
+    g = [['.'] * 4 for _ in range(10)]
+    on = _SEG[c]
+    for seg, rows, cols in (('a', (0, 1), range(4)), ('g', (4, 5), range(4)),
+                            ('d', (8, 9), range(4)), ('f', (0, 1, 2, 3, 4, 5), (0,)),
+                            ('b', (0, 1, 2, 3, 4, 5), (3,)), ('e', (4, 5, 6, 7, 8, 9), (0,)),
+                            ('c', (4, 5, 6, 7, 8, 9), (3,))):
+        if seg in on:
+            for r in rows:
+                for x in cols:
+                    g[r][x] = '#'
+    return [''.join(r) for r in g]
 
 
 def text_width(t):
     return sum(len(FONT[c][0]) + 1 for c in t) - 1
 
 
-def _text(px, t, x, y, colour=WHITE):
-    """Draw t with its top-left at (x, y), one blank column between glyphs."""
+def _glyphs(px, rows_of, t, x, y, colour):
     for c in t:
-        g = FONT[c]
+        g = rows_of(c)
         for r, row in enumerate(g):
             for i, b in enumerate(row):
                 if b == '#':
@@ -151,101 +110,101 @@ def _text(px, t, x, y, colour=WHITE):
         x += len(g[0]) + 1
 
 
+def _text(px, t, x, y, colour=WHITE):
+    _glyphs(px, FONT.__getitem__, t, x, y, colour)
+
+
+def _big(px, t, right, y=1):
+    """Big red numbers ending at column right - 1, with a 1-pixel black
+    outline (the 8 neighbours)."""
+    body = np.zeros(px.shape, bool)
+    x = right - 5 * len(t) + 1
+    _glyphs(body.view(np.uint8), big_glyph, t, x, y, 1)
+    ring = np.zeros_like(body)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            ring |= np.roll(np.roll(np.pad(body, 1), dy, 0), dx, 1)[1:-1, 1:-1]
+    px[ring & ~body] = BLACK
+    px[body] = RED
+
+
 def _box(px, x0, y0, x1, y1):
     px[y0:y1 + 1, x0:x1 + 1] = BLACK
 
 
-# The section labels: (text, the source label's columns) -- centred where
-# DOOM's are, on lines 18..22, in a black box covering the old label too
-LABELS = [('AMMO', 8, 37), ('HEALTH', 55, 94), ('ARMS', 106, 137), ('ARMOR', 188, 223)]
-LABEL_Y = 18
-# The ammo table: black from x 199, a row every 6 lines from line 1
-AMMO = [('BULL', 50, 200), ('SHEL', 0, 50), ('RCKT', 0, 50), ('CELL', 0, 300)]
-AMMO_X = 199
-
-
-# The face (DOOM's STFST01, straight ahead), redrawn by hand at the panel's
-# size from a tone map of the original (19 x 22: the bar's 0.8 x 0.75), so
-# it keeps its shape: the broad square head, the hair, the lit brow ridge,
-# the dark eye sockets, bright cheeks and nose, the tapering chin and the
-# vertical bar ears. '.' black, 'r' red, 'W' white, 'h' red / white
-# cross-hatch (lit skin), 'd' red / black cross-hatch (hair, shadow)
+# The labels: (text, its first column), each in a black box just around it
+# (DOOM's ARMS label is dropped: at 0.4 scale it would touch HEALTH, and
+# the box above it shows the weapon numbers)
+LABELS = [('AMMO', 1), ('HEALTH', 19), ('ARMOR', 73)]
+LABEL_Y = 17
+# The ammo table: the counts only (have / most), yellow as DOOM's
+AMMO = [(50, 200), (0, 50), (0, 50), (0, 300)]
+# The face (DOOM's STFST01, straight ahead) at 10 x 22 Mode 2 pixels:
+# '.' black, 'r' red (hair, shadow), 'y' yellow (skin), 'W' white (lit
+# brow and cheeks, eyes, teeth); the broad head, the bar ears
 FACE = [
-    '....ddddddddddd....',
-    '...ddddddddddddd...',
-    '..ddddddddddddddd..',
-    '..ddddddddddddddd..',
-    '..ddddrdrdrdrdddd..',
-    '..ddrrrrrrrrrrrdd..',
-    '..drrrrrrrrrrrrrd..',
-    '..drhhhrrrrrhhhrd..',
-    '..drhhhhrrrhhhhrd..',
-    'r.drrrrrrrrrrrrrd.r',
-    'r.dd...drrrd...dd.r',
-    'r.dWW.WdrhrdW.WWd.r',
-    'r.rhrrrrrhrrrrrhr.r',
-    'r.rhhhhhhWhhhhhhr.r',
-    '.drrhhhhhWhhhhhrrd.',
-    '.drrhhrdddddrhhrrd.',
-    '..drhh.......hhrd..',
-    '..drhh.WWWWW.hhrd..',
-    '...rhh.......hhr...',
-    '...drhhhrrrhhhrd...',
-    '....drhhhhhhhrd....',
-    '.....ddrrrrrdd.....',
+    '..rrrrrr..',
+    '.rrrrrrrr.',
+    '.rrrrrrrr.',
+    '.rr.rr.rr.',
+    '.rrrrrrrr.',
+    '.ryyyyyyr.',
+    '.yyyyyyyy.',
+    '.yWyyyyWy.',
+    '.y..yy..y.',
+    'ryW.yy.Wyr',
+    'ry..yy..yr',
+    'ryyyyyyyyr',
+    'ryyyrryyyr',
+    'ryWyyyyWyr',
+    'ryyyyyyyyr',
+    '.yr....ry.',
+    '.yr.WW.ry.',
+    '.yr....ry.',
+    '.ryyyyyyr.',
+    '..ryyyyr..',
+    '..rryyrr..',
+    '...rrrr...',
 ]
-FACE_BOX = (114, 1, 141, 23)            # the face's black box (x0, y0, x1, y1)
+FACE_BOX = (57, 1, 70, 23)
 
 
-def face(px):
-    """Draw FACE centred in FACE_BOX (on black)."""
+def panel_pixels():
+    """(24, 128) logical colours: the panel as Mode 2 pixel art."""
+    px = stone()
+    _big(px, '50', 18)                                  # ammo
+    _big(px, '100%', 41)                                # health
+    _big(px, '0%', 93)                                  # armour
+    for t, x in LABELS:
+        _box(px, x - 1, LABEL_Y - 1, x + text_width(t), LABEL_Y + 5)
+        _text(px, t, x, LABEL_Y)
+    _box(px, 42, 1, 56, 22)                             # the arms numbers
+    for i, wp in enumerate(range(2, 8)):
+        _text(px, str(wp), 43 + (i % 3) * 5, 2 + (i // 3) * 7,
+              YELLOW if wp == 2 else RED)
     x0, y0, x1, y1 = FACE_BOX
     _box(px, x0, y0, x1, y1)
     fx = x0 + (x1 - x0 + 1 - len(FACE[0])) // 2
-    fy = y0 + (y1 - y0 + 1 - len(FACE)) // 2
     for r, row in enumerate(FACE):
         for i, c in enumerate(row):
-            x, y = fx + i, fy + r
-            odd = (x + y) & 1
-            px[y, x] = {'.': BLACK, 'r': RED, 'W': WHITE,
-                        'h': WHITE if odd else RED, 'd': BLACK if odd else RED}[c]
-    return px
-
-
-def lettering(px):
-    """The panel's small text, drawn over panel_pixels' conversion: the
-    section labels, the arms numbers (the pistol's white, the rest red, as
-    DOOM's yellow and grey) and the ammo table, all on black."""
-    for t, a, b in LABELS:
-        w = text_width(t)
-        x = (a + b + 1) * 4 // 10 - w // 2             # the source centre * 0.8
-        _box(px, min(x, a * 4 // 5) - 1, LABEL_Y - 1,
-             max(x + w - 1, b * 4 // 5 + 1) + 1, LABEL_Y + 5)
-        _text(px, t, x, LABEL_Y)
-    _box(px, 87, 2, 112, 15)                            # the arms numbers
-    for i, wp in enumerate(range(2, 8)):
-        _text(px, str(wp), 89 + (i % 3) * 9, 3 + (i // 3) * 7,
-              WHITE if wp == 2 else RED)
-    _box(px, AMMO_X, 0, 255, PANEL_LINES - 1)
-    for r, (t, have, most) in enumerate(AMMO):
-        y = 1 + 6 * r
-        _text(px, t, AMMO_X + 2, y)
-        _text(px, str(have), 233 - text_width(str(have)), y)
-        _text(px, '/', 235, y)
-        _text(px, str(most), 255 - text_width(str(most)), y)
+            px[y0 + r, fx + i] = {'.': BLACK, 'r': RED, 'y': YELLOW, 'W': WHITE}[c]
+    _box(px, 99, 0, PANEL_W - 1, PANEL_LINES - 1)       # the ammo table
+    for r, (have, most) in enumerate(AMMO):
+        t = f'{have}/{most}'
+        _text(px, t, PANEL_W - text_width(t), 1 + 6 * r, YELLOW)
     return px
 
 
 @functools.lru_cache(None)
 def panel_bytes():
     """The panel as it sits in a buffer: 1536 bytes, character rows 17..19
-    (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 1 byte
-    per four pixels."""
-    px = face(lettering(panel_pixels()))
+    (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 2 byte
+    per two pixels."""
+    px = panel_pixels()
     out = bytearray(PANEL_SIZE)
     for y in range(PANEL_LINES):
         for k in range(64):
-            out[(y >> 3) * 512 + k * 8 + (y & 7)] = M.mode1_byte(px[y, 4 * k:4 * k + 4])
+            out[(y >> 3) * 512 + k * 8 + (y & 7)] = M.mode2_byte(px[y, 2 * k:2 * k + 2])
     return bytes(out)
 
 

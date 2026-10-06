@@ -6,9 +6,9 @@ ceiling line T, wall between, floor below its floor line B -- with the
 planes as solid shades. This model textures the plane cells with the
 16x16 flats, in integer arithmetic the 6502 reproduces exactly. Floors are
 largely decorative, so the budget is ONE texel read per 4x2 fat pixel: a
-plane byte is the flat's byte (pixels #0 == #2, #1 == #3) at the byte
-column's centre and the line PAIR's centre, written whole (FLIP of it on
-the pair's odd line).
+plane byte is the flat's byte (both Mode 2 pixels the texel) at the byte
+column's centre and the line PAIR's centre, written whole on both lines of
+the pair.
 
   depth     a floor seen at line pair p (lines 2p, 2p+1, centre 2p+1) is
             k = 2p + 1 - 68 lines below the horizon (a ceiling k = 68 -
