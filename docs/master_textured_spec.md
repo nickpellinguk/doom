@@ -99,7 +99,7 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D1F5, **free $D1F6–$DDFF (3.0K)**; BSS $DE00–$DFFF |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D30A, **free $D30B–$DDFF (2.7K)**; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B867: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
@@ -624,6 +624,32 @@ parity, counted, and checked the character row's end.
 - *Cycles* (`tools/master_profile.py`): the loop 569K → 361K per frame
   (~125 cycles per pair with each run's set-up); the mean frame 2.054M →
   1.847M (−10%). Byte-exact (no model change).
+
+**5j. Wall v stepping: 4.4, 4.4, 4.4, 4.12. — DONE.** In each block of
+four pairs, three v steps add only the high byte and one adds a 16-bit
+correction.
+- *Model* (`tex_ref.run_vs`): S is the per-pair step (twice the line step),
+  s8 = round(S / 256) and e = S − 256·s8 (S's low byte, signed). The short
+  step is v += 256·s8, and the long step is v += C, with
+  C = 4S − 768·s8 = 256·s8 + 4e. Over a block that is exact.
+- *Centred*: a run's whole pairs start at block position
+  j = −(pairs & 3) & 3, the same position the 6502 enters at. Its v starts
+  at v + ⌊3e/2⌋ − j·e, so the short steps' drift stays within ±1.5e
+  rather than 0..3e. Uncentred, the float-agreement gate fails (94.96%).
+  Centred, it gives 95.00%: exactly the gate, with 77.48% exact.
+- *6502*: in each version's bodies, position 0 holds the long step
+  (`l_c` / `t_c`) and positions 1–3 the short steps (`l_s8` / `t_s8`).
+  `tb_end`'s tail step is the long one.
+- *Per-run set-up* (`tr_prep`, HAZEL):
+  - `TP_SC` makes s8 and C per strip.
+  - Then `JMP (tp_tab,X)` (X = 2j) picks one of four adjustment tails
+    (`TP_ADJ`), using ⌊3e/2⌋ − j·e = h + (1 − j)·e with h = e >> 1. So it
+    is v += h plus nothing, +e, −e or −2e, with no multiplies.
+  - The first version did the j·e by a loop and multiplied 3e, costing
+    ~380 cycles per run. That made the frame 0.4% slower than step 5i.
+- *Cycles* (`tools/master_profile.py`): the loop 361K → 322K per frame,
+  and the per-run set-up gives back ~29K of that. The mean frame is
+  1.847M → 1.837M (−0.5%). Byte-exact against the revised model.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

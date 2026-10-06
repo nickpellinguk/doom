@@ -284,7 +284,15 @@ tw_lh:   .res 1                         ;  texel column addresses
 tw_rl:   .res 1
 tw_rh:   .res 1
 tw_np:   .res 1                         ; whole pairs in the run
-tw_ly:   .res 1                         ; tr_fetch: the caller's Y                         ; c_tr / c_br made for this byte
+tw_ly:   .res 1                         ; tr_fetch: the caller's Y
+l_s8:    .res 1                         ; step 5j, per run and strip: s8 =
+t_s8:    .res 1                         ;  round(S / 256), C = 4S - 768 s8
+l_c:     .res 2
+t_c:     .res 2
+tw_a:    .res 1                         ; tr_prep scratch, the entry position
+tw_t:    .res 1                         ;  j * 2 and the entry index
+tw_j:    .res 1
+tw_x:    .res 1                         ; c_tr / c_br made for this byte
 t_part:  .res 1                         ; trun: the part, its left strip's
 t_sl:    .res 2                         ;  (undoubled) step
 ss_x:    .res 3                         ; per band kind (b_kind): the byte,
@@ -1828,6 +1836,82 @@ trun:
 
 .segment "MFILL"
 ; trun's screen side (HAZEL: it pages the texture's bank). X = t_tid.
+; step 5j, per strip: s8 = round(S / 256) and C = 4S - 768 s8 = 256 s8 + 4e,
+; where e = S - 256 s8 is S's low byte, signed
+.macro TP_SC S, S8, CC
+.local tp_p
+   LDA S
+   CMP #$80
+   LDA S+1
+   ADC #0
+   STA S8
+   LDX #0                               ; tw_t:A = e, sign-extended, * 4
+   LDA S
+   BPL tp_p
+   DEX
+tp_p:
+   STX tw_t
+   ASL A
+   ROL tw_t
+   ASL A
+   ROL tw_t
+   STA CC
+   LDA tw_t
+   CLC
+   ADC S8
+   STA CC+1
+.endmacro
+
+; v += (3e >> 1) - j e = h + (1 - j) e, h = e >> 1 (arithmetic): the
+; entry adjustment for position J, centring the short steps' error
+.macro TP_ADJ S, VL, VH, J
+.local tp_p
+   LDX #0
+   LDA S
+   CMP #$80
+   ROR A                                ; h; X = its sign, and e's
+   BPL tp_p
+   DEX
+tp_p:
+   CLC
+   ADC VL
+   STA VL
+   TXA
+   ADC VH
+   STA VH
+.if J = 0
+   CLC                                  ; + e
+   LDA S
+   ADC VL
+   STA VL
+   TXA
+   ADC VH
+   STA VH
+.elseif J = 2
+   STX tw_t                             ; - e
+   SEC
+   LDA VL
+   SBC S
+   STA VL
+   LDA VH
+   SBC tw_t
+   STA VH
+.elseif J = 3
+   STX tw_t                             ; - 2e
+   LDA S
+   ASL A
+   ROL tw_t
+   STA tw_a
+   SEC
+   LDA VL
+   SBC tw_a
+   STA VL
+   LDA VH
+   SBC tw_t
+   STA VH
+.endif
+.endmacro
+
 tr_screen:
    SEC
    LDA r_ys
@@ -1902,7 +1986,17 @@ tr_screen:
    ASL A
    ASL A
    ORA zw_ev
-   TAX                                  ; Y * 4 + (pairs & 3) * 2
+   STA tw_x                             ; Y * 4 + (pairs & 3) * 2
+   LDA tw_np
+   AND #3
+   EOR #$FF
+   SEC
+   ADC #0                               ; -(pairs & 3)
+   AND #3
+   ASL A
+   STA tw_j                             ; the entry position j, * 2
+   JSR tr_prep
+   LDX tw_x
    JMP (tr_ent,X)
 @tail:
    BIT t_n
@@ -1926,7 +2020,20 @@ tb_end:
    CPY #8
    BNE :+
    LDY #0
-:  JSR tr_vstep
+:  CLC                                  ; the next pair: a position 0 (+ C)
+   LDA zw_lvl
+   ADC l_c
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_c+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_c
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_c+1
+   STA zw_tvh
    JSR tr_fetch
    STA (PTR),Y
 @done:
@@ -1935,6 +2042,32 @@ tb_end:
    LDA #BANK_C
    STA $FE30
    RTS
+
+; tr_prep: per run with whole pairs, both strips: s8, C, and v adjusted
+; for the entry position (step 5j)
+tr_prep:
+   TP_SC l_step, l_s8, l_c
+   TP_SC t_step, t_s8, t_c
+   LDX tw_j
+   JMP (tp_tab,X)
+tp_j0:
+   TP_ADJ l_step, zw_lvl, zw_lvh, 0
+   TP_ADJ t_step, zw_tvl, zw_tvh, 0
+   RTS
+tp_j1:
+   TP_ADJ l_step, zw_lvl, zw_lvh, 1
+   TP_ADJ t_step, zw_tvl, zw_tvh, 1
+   RTS
+tp_j2:
+   TP_ADJ l_step, zw_lvl, zw_lvh, 2
+   TP_ADJ t_step, zw_tvl, zw_tvh, 2
+   RTS
+tp_j3:
+   TP_ADJ l_step, zw_lvl, zw_lvh, 3
+   TP_ADJ t_step, zw_tvl, zw_tvh, 3
+   RTS
+tp_tab:
+   .word tp_j0, tp_j1, tp_j2, tp_j3
 
 ; tr_fetch: the current pair's combined texel byte: X = it, A = it lit for
 ; an even line (Y kept)
@@ -1981,7 +2114,9 @@ tr_vstep:
 ;   [both v stepped]  te_sj:  [both texels read through zw_tl / zw_tr,
 ;   combined; even line lit; odd line FLIP lit]
 ; so entering at te_sj skips the step (the first pair's v is current) and
-; the last pair's step never runs. One count per block of four.
+; the last pair's step never runs. One count per block of four. Step 5j:
+; positions 1-3 step only v's high byte (+ s8), position 0 adds C (16
+; bits), which cancels the three short steps' rounding (tex_ref.run_vs).
 tr_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
    .word te_00, te_13, te_22, te_31   ; Y = 0: r = 0..3
    .word te_10, te_23, te_32, te_01   ; Y = 2: r = 0..3
@@ -1990,19 +2125,19 @@ tr_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
 
 tv_0:
    ; (pairs on lines 0, 2, 4, 6)
-   CLC
+   CLC                                  ; (long: v + C, all 16 bits)
    LDA zw_lvl
-   ADC l_step
+   ADC l_c
    STA zw_lvl
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_c+1
    STA zw_lvh
    CLC
    LDA zw_tvl
-   ADC t_step
+   ADC t_c
    STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_c+1
    STA zw_tvh
 te_00:
    LDA zw_lvh
@@ -2025,19 +2160,13 @@ te_00:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_01:
    LDA zw_lvh
@@ -2060,19 +2189,13 @@ te_01:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_02:
    LDA zw_lvh
@@ -2095,19 +2218,13 @@ te_02:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_03:
    LDA zw_lvh
@@ -2138,19 +2255,19 @@ te_03:
 :  JMP tb_end
 tv_1:
    ; (pairs on lines 2, 4, 6, 0)
-   CLC
+   CLC                                  ; (long: v + C, all 16 bits)
    LDA zw_lvl
-   ADC l_step
+   ADC l_c
    STA zw_lvl
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_c+1
    STA zw_lvh
    CLC
    LDA zw_tvl
-   ADC t_step
+   ADC t_c
    STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_c+1
    STA zw_tvh
 te_10:
    LDA zw_lvh
@@ -2173,19 +2290,13 @@ te_10:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_11:
    LDA zw_lvh
@@ -2208,19 +2319,13 @@ te_11:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_12:
    LDA zw_lvh
@@ -2245,19 +2350,13 @@ te_12:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_13:
    LDA zw_lvh
@@ -2286,19 +2385,19 @@ te_13:
 :  JMP tb_end
 tv_2:
    ; (pairs on lines 4, 6, 0, 2)
-   CLC
+   CLC                                  ; (long: v + C, all 16 bits)
    LDA zw_lvl
-   ADC l_step
+   ADC l_c
    STA zw_lvl
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_c+1
    STA zw_lvh
    CLC
    LDA zw_tvl
-   ADC t_step
+   ADC t_c
    STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_c+1
    STA zw_tvh
 te_20:
    LDA zw_lvh
@@ -2321,19 +2420,13 @@ te_20:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_21:
    LDA zw_lvh
@@ -2358,19 +2451,13 @@ te_21:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_22:
    LDA zw_lvh
@@ -2393,19 +2480,13 @@ te_22:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_23:
    LDA zw_lvh
@@ -2434,19 +2515,19 @@ te_23:
 :  JMP tb_end
 tv_3:
    ; (pairs on lines 6, 0, 2, 4)
-   CLC
+   CLC                                  ; (long: v + C, all 16 bits)
    LDA zw_lvl
-   ADC l_step
+   ADC l_c
    STA zw_lvl
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_c+1
    STA zw_lvh
    CLC
    LDA zw_tvl
-   ADC t_step
+   ADC t_c
    STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_c+1
    STA zw_tvh
 te_30:
    LDA zw_lvh
@@ -2471,19 +2552,13 @@ te_30:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_31:
    LDA zw_lvh
@@ -2506,19 +2581,13 @@ te_31:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_32:
    LDA zw_lvh
@@ -2541,19 +2610,13 @@ te_32:
    AND maskOdd
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
-   ADC l_step
-   STA zw_lvl
+   CLC                                  ; (short: v's high byte + s8)
    LDA zw_lvh
-   ADC l_step+1
+   ADC l_s8
    STA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
    LDA zw_tvh
-   ADC t_step+1
+   ADC t_s8
    STA zw_tvh
 te_33:
    LDA zw_lvh
