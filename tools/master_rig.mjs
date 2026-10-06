@@ -137,7 +137,33 @@ async function engineMode() {
     const fails = [], out = {}, out0 = out;
     let flips = 0;
     const cpu = s._machine.processor;
-    cpu.debugInstruction.add((addr) => { if (addr === A.flip_sched) flips++; return false; });
+    // holes: at each render's start the back buffer's view (lines 0..135)
+    // is filled with a byte no art produces; at the flip after it, any
+    // left are cells the engine never drew -- stale bytes that differ
+    // between the buffers and flash as they flip (billboards left on did
+    // exactly this until step 6e's fix)
+    let holeArm = null, holeFrames = 0, holeCells = 0, holeChecked = 0;
+    cpu.debugInstruction.add((addr) => {
+        if (addr === A.flip_sched) {
+            flips++;
+            if (holeArm !== null) {
+                const v = s.readMemory(holeArm, 8704, { shadow: true });
+                let n = 0;
+                for (let i = 0; i < 8704; i++) if (v[i] === A.hole_marker) n++;
+                holeChecked++;
+                if (n) { holeFrames++; holeCells += n; }
+                holeArm = null;
+            }
+        }
+        if (addr === A.render_frame) {
+            const base = s.readMemory(A.DV_ANGIDX + 1, 1)[0] << 8;     // DV_BACKHI
+            if (base === 0x3000 || base === 0x5800) {
+                s.writeMemory(base, new Array(8704).fill(A.hole_marker), { shadow: true });
+                holeArm = base;
+            }
+        }
+        return false;
+    });
     await s.type("*RUN !BOOT\r");
     // Loading ~76K through the emulated drive takes a while: run until the
     // driver has flipped a few frames (or give up after 6000 fields).
@@ -169,6 +195,9 @@ async function engineMode() {
     const s3 = st();
     out.walk = [[s2.px, s2.py], [s3.px, s3.py]];
     if (s3.px === s2.px && s3.py === s2.py) fails.push("UP did not move");
+    out.holes = { frames_checked: holeChecked, frames_with_holes: holeFrames, cells: holeCells };
+    if (holeChecked < 5) fails.push(`hole check ran on only ${holeChecked} frames`);
+    if (holeFrames) fails.push(`engine left ${holeCells} cells undrawn over ${holeFrames} frames`);
     fs.writeFileSync(path.join(outdir, "engine.png"), await s.screenshotActive({ scale: 1 }));
     // the control panel: both buffers' bottom 24 lines, exactly as loaded,
     // after the engine has drawn and flipped many frames over them

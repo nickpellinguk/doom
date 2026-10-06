@@ -128,8 +128,8 @@ TONES = [(c, c) for c in range(8)] + PAIRS      # tone t -> (left, right)
 # spec: master/mfill.s's cyc_tab is generated from the same rules.
 CYC_N = 8                         # nukage n o p q, lamp halo h, glint t, blinks z x
 CYC_PHASES = 8
-CYC_FIELDS = 8                    # fields a phase (6.25 phases a second)
-NUKE_WAVE = [BLACK, GREEN, GREEN, YELLOW]
+CYC_FIELDS = 16                   # fields a phase (~3 phases a second)
+NUKE_WAVE = [GREEN, GREEN, YELLOW, GREEN]   # a yellow highlight travelling
 
 
 def cycle_colour(entry, phase):
@@ -138,12 +138,12 @@ def cycle_colour(entry, phase):
     if k < 4:
         return NUKE_WAVE[(k + phase) & 3]          # 8-11: the nukage wave
     if k == 4:
-        return RED if (phase & 3) < 2 else BLACK   # 12: lamp halo, pulsing
+        return BLACK if (phase & 3) == 3 else RED  # 12: lamp halo, off 1 in 4
     if k == 5:
         return WHITE if (phase & 3) == 0 else RED  # 13: lamp glint
     if k == 6:
-        return YELLOW if phase % 2 == 0 else BLACK # 14: blink A
-    return RED if phase % 2 else BLACK             # 15: blink B
+        return BLACK if (phase & 3) == 0 else YELLOW   # 14: blink A, off 1 in 4
+    return BLACK if (phase & 3) == 2 else RED      # 15: blink B, out of step
 
 
 def palette16(phase=0):

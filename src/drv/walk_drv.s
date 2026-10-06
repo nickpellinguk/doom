@@ -106,6 +106,7 @@ RAWY_MAX = $0490        ;  1168
 .import obj_key
 .if ::MASTER
 .import ok_flip
+.import ok_clear
 .import split_init
 .endif
 .import fb_clr0
@@ -393,9 +394,12 @@ vxinit:
     JSR MHZ_PATTERN
     LDA #ACC_D | ACC_Y
     STA $FE34
-    JSR ok_flip                     ; MASTER: billboard objects OFF -- they
+    JSR ok_clear                    ; MASTER: billboard objects OFF -- they
                                     ; apply span lines outside any seg's
-                                    ; fill window (no sprites yet)
+                                    ; fill window (no sprites yet). (Not
+                                    ; ok_flip: that toggles, and OFF is
+                                    ; already the default -- it turned
+                                    ; them ON: holes the filler skipped)
     JSR split_init                  ; MASTER: the Mode 2 / Mode 1 panel
                                     ; raster split (its IRQ; CLI)
 .else

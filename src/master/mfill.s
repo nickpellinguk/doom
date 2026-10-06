@@ -1363,19 +1363,19 @@ split_init:
 
 ; cyc_tab: the colour cycle (step 6e), 8 phases x logical 8..15, palette
 ; register values; master_assets.cycle_colour is the spec (test_master_tex
-; compares). 8-11 the nukage wave (black green green yellow, entry k at
-; phase p showing step (k + p) & 3), 12 the lamp halo (red red black black),
-; 13 the lamp glint (white red red red), 14 / 15 two blinks (yellow / red
-; on alternate phases).
+; compares). 8-11 the nukage wave (green green yellow green, entry k at
+; phase p showing step (k + p) & 3), 12 the lamp halo (red, off 1 phase in
+; 4), 13 the lamp glint (white red red red), 14 / 15 two blinks (yellow /
+; red, each off 1 phase in 4, out of step).
 cyc_tab:
 .repeat 8, P
-.repeat 4, K                            ; 8-11: black green green yellow
-   .byte ((8 + K) << 4) | ((2 * (((K + P) & 3) = 1) + 2 * (((K + P) & 3) = 2) + 3 * (((K + P) & 3) = 3)) ^ 7)
+.repeat 4, K                            ; 8-11: green green yellow green
+   .byte ((8 + K) << 4) | ((2 * (((K + P) & 3) = 0) + 2 * (((K + P) & 3) = 1) + 3 * (((K + P) & 3) = 2) + 2 * (((K + P) & 3) = 3)) ^ 7)
 .endrepeat
-   .byte (12 << 4) | ((((P & 3) < 2) * 1) ^ 7)          ; halo: red, black
+   .byte (12 << 4) | ((1 * ((P & 3) <> 3)) ^ 7)         ; halo: red, off 1 in 4
    .byte (13 << 4) | ((1 + 6 * ((P & 3) = 0)) ^ 7)      ; glint: white, red
-   .byte (14 << 4) | ((3 * ((P & 1) = 0)) ^ 7)          ; blink: yellow
-   .byte (15 << 4) | ((1 * ((P & 1) = 1)) ^ 7)          ; blink: red
+   .byte (14 << 4) | ((3 * ((P & 3) <> 0)) ^ 7)         ; blink: yellow
+   .byte (15 << 4) | ((1 * ((P & 3) <> 2)) ^ 7)         ; blink: red
 .endrepeat
 
 ; split_irq: IRQ1V (A is in $FC; X, Y untouched)
@@ -1423,8 +1423,9 @@ split_irq:
    STA $FE21
 .endrepeat
    PHX                                  ; entries 8..15: the colour cycle's
-   INC sp_tick                          ;  phase, one every 8 fields
+   INC sp_tick                          ;  phase, one every 16 fields
    LDA sp_tick
+   LSR A
    AND #$38                             ; phase * 8
    TAX
 .repeat 8, K
