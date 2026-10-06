@@ -71,8 +71,10 @@ zw_lvh  = zp_dcl_out
 zw_tvl  = zp_clr_save_x                 ; right strip's v
 zw_tvh  = zp_vs_cch
 zw_rowm = zp_old_cur                    ; row mask (th - 1) * 8
-zw_ev   = TP                            ; the combined texel byte (scratch)
-zw_np   = TP+1                          ; pairs left
+zw_tl   = TP                            ; left texel column pointer (2)
+zw_tr   = bca_boxp                      ; right texel column pointer (2)
+zw_ev   = zp_save2                      ; the combined texel byte (scratch)
+zw_np   = zp_bca_p1_h                   ; blocks of four pairs left
 NONE = $FF                              ; no texture (master_walls.NONE)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
@@ -276,7 +278,13 @@ q_d:     .res 2
 tx_dr:   .res 2                         ; the right strip's d (x + 3)
 l_v:     .res 2                         ; the left strip's v and pair step
 l_step:  .res 2                         ;  (t_v / t_step: the right strip's)
-c_trok:  .res 1                         ; c_tr / c_br made for this byte
+c_trok:  .res 1
+tw_ll:   .res 1                         ; trun -> tr_screen: the two strips'
+tw_lh:   .res 1                         ;  texel column addresses
+tw_rl:   .res 1
+tw_rh:   .res 1
+tw_np:   .res 1                         ; whole pairs in the run
+tw_ly:   .res 1                         ; tr_fetch: the caller's Y                         ; c_tr / c_br made for this byte
 t_part:  .res 1                         ; trun: the part, its left strip's
 t_sl:    .res 2                         ;  (undoubled) step
 ss_x:    .res 3                         ; per band kind (b_kind): the byte,
@@ -1751,9 +1759,9 @@ trun:
    STA q_d+1
    JSR tcol
    LDA t_cl
-   STA trl_rd+1
+   STA tw_ll
    LDA t_ch
-   STA trl_rd+2
+   STA tw_lh
    ; the right strip: its own v from its own T, B (the midpoints with the
    ; next byte's); its step extrapolated from the left strip's steps (the
    ; same band kind and part on the previous byte), else exact; its column
@@ -1810,9 +1818,9 @@ trun:
    STA q_d+1
    JSR tcol
    LDA t_cl
-   STA trr_rd+1
+   STA tw_rl
    LDA t_ch
-   STA trr_rd+2
+   STA tw_rh
    LDX t_tid
    LDA mb6_tp_rowm,X
    STA zw_rowm
@@ -1834,26 +1842,14 @@ tr_screen:
    INC A
    STA t_n                              ; line count
    JSR ln_ptr                           ; PTR, Y for line r_ys
-   LDA trl_rd+1                         ; the two strips' texel columns
-   STA trl_0+1                          ;  (patched into trl_rd / trr_rd by
-   STA trl_2+1                          ;  trun) into the four pair bodies
-   STA trl_4+1
-   STA trl_6+1
-   LDA trl_rd+2
-   STA trl_0+2
-   STA trl_2+2
-   STA trl_4+2
-   STA trl_6+2
-   LDA trr_rd+1
-   STA trr_0+1
-   STA trr_2+1
-   STA trr_4+1
-   STA trr_6+1
-   LDA trr_rd+2
-   STA trr_0+2
-   STA trr_2+2
-   STA trr_4+2
-   STA trr_6+2
+   LDA tw_ll                            ; the texel column pointers
+   STA zw_tl
+   LDA tw_lh
+   STA zw_tl+1
+   LDA tw_rl
+   STA zw_tr
+   LDA tw_rh
+   STA zw_tr+1
    LDA l_v                              ; both strips' v into zero page
    STA zw_lvl
    LDA l_v+1
@@ -1866,7 +1862,7 @@ tr_screen:
    STA $FE30                            ; the texture's bank
    LDA #ACC_DXY
    STA $FE34                            ; -> shadow (no main reads >= $3000)
-   ; an odd first line: its pair's odd byte, alone
+   ; an odd first line: its pair's odd byte, alone; then the next pair's v
    TYA
    LSR A
    BCC @even
@@ -1877,23 +1873,37 @@ tr_screen:
    DEC t_n
    BEQ @done
    JSR tr_vstep
-   INY                                  ; (odd -> even: never the row's end
-   CPY #8                               ;  but at line 7)
+   INY                                  ; (odd -> even: the row's end only
+   CPY #8                               ;  at line 7)
    BNE @even
    LDY #0
    INC PTR+1
    INC PTR+1
 @even:
-   ; whole pairs from even line Y: the pair bodies, entered at Y's pair
+   ; whole pairs from even line Y: the unrolled bodies, entered so the
+   ; first pass does (pairs & 3) of them (or 4) and the rest run whole
+   ; blocks of four, one count per block
    LDA t_n
    LSR A
-   STA zw_np
+   STA tw_np
    ROR t_n                              ; (bit 7: an even last line remains)
-   LDA zw_np
+   LDA tw_np
    BEQ @tail
+   CLC
+   ADC #3
+   LSR A
+   LSR A
+   STA zw_np                            ; blocks = ceil(pairs / 4)
+   LDA tw_np
+   AND #3
+   ASL A
+   STA zw_ev
    TYA
-   TAX
-   JMP (tr_blk,X)
+   ASL A
+   ASL A
+   ORA zw_ev
+   TAX                                  ; Y * 4 + (pairs & 3) * 2
+   JMP (tr_ent,X)
 @tail:
    BIT t_n
    BPL @done
@@ -1906,18 +1916,17 @@ tr_screen:
    STA $FE30                            ; and the cascade's bank
    RTS
 
-; tb_end: the pairs are done (Y = the last odd line): an even last line,
-; if any, is the next line
+; tb_end: the blocks are done; Y = the last pair's odd line (PTR already on
+; the next character row if that was line 7). An even last line, if any,
+; is the next line, with the next pair's v.
 tb_end:
-   INY
-   CPY #8
-   BNE @tail
-   LDY #0
-   INC PTR+1
-   INC PTR+1
-@tail:
    BIT t_n
    BPL @done
+   INY
+   CPY #8
+   BNE :+
+   LDY #0
+:  JSR tr_vstep
    JSR tr_fetch
    STA (PTR),Y
 @done:
@@ -1928,23 +1937,23 @@ tb_end:
    RTS
 
 ; tr_fetch: the current pair's combined texel byte: X = it, A = it lit for
-; an even line
+; an even line (Y kept)
 tr_fetch:
+   STY tw_ly
    LDA zw_lvh                           ; row = (v >> 11) & (th - 1), * 8
    AND zw_rowm
-   TAX
-trl_rd:
-   LDA $FFFF,X                          ; (patched: left texel column)
+   TAY
+   LDA (zw_tl),Y
    ASL A
    ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
-   TAX
-trr_rd:
-   LDA $FFFF,X                          ; (patched: right texel column)
+   TAY
+   LDA (zw_tr),Y
    ORA zw_ev
    TAX
+   LDY tw_ly
    AND maskEven
    RTS
 
@@ -1966,29 +1975,51 @@ tr_vstep:
    STA zw_tvh
    RTS
 
-tr_blk:  .word tb_0, tb_2, tb_4, tb_6    ; JMP (tr_blk,X), X = Y = 0, 2, 4, 6
+; THE PAIR BODIES: four versions tv_0..tv_3, each four pairs unrolled (a
+; whole character row: version s's pairs are on lines 2s, 2s+2, ... mod 8,
+; PTR moving on a row after line 6's pair). Each body is
+;   [both v stepped]  te_sj:  [both texels read through zw_tl / zw_tr,
+;   combined; even line lit; odd line FLIP lit]
+; so entering at te_sj skips the step (the first pair's v is current) and
+; the last pair's step never runs. One count per block of four.
+tr_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
+   .word te_00, te_13, te_22, te_31   ; Y = 0: r = 0..3
+   .word te_10, te_23, te_32, te_01   ; Y = 2: r = 0..3
+   .word te_20, te_33, te_02, te_11   ; Y = 4: r = 0..3
+   .word te_30, te_03, te_12, te_21   ; Y = 6: r = 0..3
 
-; The pair bodies: the pair on lines K, K + 1 of the character row. Fetch
-; both strips' texels, write the even line lit and the odd line FLIP lit,
-; step both v, count the pair. tb_6 moves PTR on a character row (2 pages).
-.macro TB_PAIR K, tl, tr
+tv_0:
+   ; (pairs on lines 0, 2, 4, 6)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_00:
    LDA zw_lvh
    AND zw_rowm
-   TAX
-tl:
-   LDA $FFFF,X                          ; (patched: left texel column)
+   TAY
+   LDA (zw_tl),Y
    ASL A
    ASL A
    STA zw_ev
    LDA zw_tvh
    AND zw_rowm
-   TAX
-tr:
-   LDA $FFFF,X                          ; (patched: right texel column)
+   TAY
+   LDA (zw_tr),Y
    ORA zw_ev
    TAX
    AND maskEven
-   LDY #K
+   LDY #0
    STA (PTR),Y
    LDA mf_flip,X
    AND maskOdd
@@ -2008,22 +2039,547 @@ tr:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
-   DEC zw_np
-   BNE :+
-   JMP tb_end
-:
-.endmacro
-tb_0:
-   TB_PAIR 0, trl_0, trr_0
-tb_2:
-   TB_PAIR 2, trl_2, trr_2
-tb_4:
-   TB_PAIR 4, trl_4, trr_4
-tb_6:
-   TB_PAIR 6, trl_6, trr_6
+te_01:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_02:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_03:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   JMP tb_0
+   DEC zw_np
+   BEQ :+
+   JMP tv_0
+:  JMP tb_end
+tv_1:
+   ; (pairs on lines 2, 4, 6, 0)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_10:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_11:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_12:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_13:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   DEC zw_np
+   BEQ :+
+   JMP tv_1
+:  JMP tb_end
+tv_2:
+   ; (pairs on lines 4, 6, 0, 2)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_20:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_21:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_22:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_23:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   DEC zw_np
+   BEQ :+
+   JMP tv_2
+:  JMP tb_end
+tv_3:
+   ; (pairs on lines 6, 0, 2, 4)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_30:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_31:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_32:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+   CLC
+   LDA zw_tvl
+   ADC t_step
+   STA zw_tvl
+   LDA zw_tvh
+   ADC t_step+1
+   STA zw_tvh
+te_33:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA zw_tvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   DEC zw_np
+   BEQ :+
+   JMP tv_3
+:  JMP tb_end
 
 .segment "MB6C"
 

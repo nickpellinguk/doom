@@ -99,7 +99,7 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$CED4, **free $CED5–$DDFF (3.8K)**; BSS $DE00–$DFFF |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D1F5, **free $D1F6–$DDFF (3.0K)**; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B867: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
@@ -599,23 +599,31 @@ changes (no model change; byte-exact):
   2.119M → 2.054M (−3.0%): span loops −26K, wall set-up per run −26K
   (`tcol`), arithmetic −11K (`h63`). 18 poses: 34.4M → 33.3M.
 
-**5i. Wall write loop: four unrolled pair bodies. — DONE.** The wall
-texel loop was 27% of the frame at ~190 cycles per 4×2: per line it
-tested the parity, counted, and checked the character row's end.
-- *Pair bodies* `tb_0` / `tb_2` / `tb_4` / `tb_6`, one per pair of lines
-  in a character row, entered with `JMP (tr_blk,X)` (X = the starting
-  even Y). Each fetches both strips' texels, writes the even line lit and
-  the odd line FLIP lit with `LDY #K` / `INY`, steps both v and counts
-  the pair; `tb_6` moves PTR on a character row and jumps to `tb_0`. A
-  run's odd first line and even last line go through `tr_fetch` once.
-- *Zero page*: both strips' v, the row mask, the combined texel and the
-  pair count (`zw_*`): bytes no code in the MASTER link references
-  (`zp.inc` notes the reuse), and TP, dead while the loop runs. The two
-  texel columns are patched into the four bodies once per run.
-- *Cycles* (`tools/master_profile.py`): the pair body is ~113 cycles per
-  4×2 (~130 with each run's set-up); the loop 569K → 377K per frame; the
-  mean frame 2.054M → 1.862M (−9.3%). 18 poses: 33.3M → 30.6M.
-  Byte-exact (no model change).
+**5i. Wall write loop: unrolled pair bodies. — DONE.** The wall texel
+loop was 27% of the frame at ~190 cycles per 4×2: per line it tested the
+parity, counted, and checked the character row's end.
+- *Four versions, each four pairs unrolled* (`tv_0`..`tv_3`): a whole
+  character row, version s's pairs on lines 2s, 2s + 2, ... mod 8, with
+  PTR moved on a row after line 6's pair. One count per block of four
+  (`DEC zw_np`); the blocks loop on themselves.
+- *16 entry points* (`te_sj`, one `JMP (tr_ent,X)`, X = Y·4 +
+  (pairs & 3)·2): the version and position are chosen so the first pair
+  lands on the starting line and the first pass does pairs & 3 of them
+  (or 4), Duff's-device style.
+- *Each body is [v step] te_sj: [fetch, combine, write]*: an entry skips
+  its step (the first pair's v is current), so the last pair's step never
+  runs. A run's odd first line and even last line go through `tr_fetch`
+  once.
+- *Texel reads* through two zero-page pointers (`LDA (zw_tl),Y`,
+  `(zw_tr),Y`; Y the texel row, then `LDY #K` for the writes): nothing is
+  patched per run but the two pointers.
+- *Zero page*: both strips' v, the row mask, the texel pointers, the
+  combined texel and the block count (`zw_*`): bytes no code in the
+  MASTER link references (`zp.inc` notes the reuse), and TP, dead while
+  the loop runs.
+- *Cycles* (`tools/master_profile.py`): the loop 569K → 361K per frame
+  (~125 cycles per pair with each run's set-up); the mean frame 2.054M →
+  1.847M (−10%). Byte-exact (no model change).
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on
