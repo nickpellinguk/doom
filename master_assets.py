@@ -456,7 +456,7 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
             raise SystemExit('flats do not fit the bank regions')
         for f in unit:
             page = R.top // 256
-            sq = quantise_flat(scale_rgb(wad.pal[wad.flat(f)], FLAT_N, FLAT_N))
+            sq = wall_art.flat_tones(f, wad.pal[wad.flat(f)].astype(float))   # step 6b
             R.mem[page * 256:(page + 1) * 256] = bytes(tone_byte(t) for t in sq.ravel())
             R.top += 256
             fplace[f] = dict(bank=R.bank, ptr=R.start + page * 256)

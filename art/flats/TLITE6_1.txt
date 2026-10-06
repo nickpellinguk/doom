@@ -1,0 +1,17 @@
+# TLITE6_1 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: diamond light: white, pale yellow rim, dark purple ceiling)
+.MM.MM.MM...MMMM
+....M..M.......M
+.M...MMMM..M....
+M...M...M......M
+M...M..33M...MM.
+MMM..M3333.....M
+.MM..33ww33.M...
+M...33wwww33..M.
+...M33wwww33....
+.M...33ww33...MM
+..MMM.3333M..M..
+.MM....33.....M.
+M...M.......MMM.
+...............M
+.M....M..MM.M...
+.M....MM.M.MM.MM

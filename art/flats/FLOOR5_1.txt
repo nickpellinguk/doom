@@ -1,0 +1,17 @@
+# FLOOR5_1 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: rusty hex tiles: black joints, dark red, red lit edges, pale yellow centres)
+R33RRRRr....rRRR
+RRRRRRR.rrrr.RRR
+RRRRRR.rRRRRr.RR
+RRRRR.rRRRRRRr.R
+.....rRRR33RRRr.
+rrrrr.RRRRRRRR.r
+RRRRRr.RRRRRR.rR
+RRRRRRr.RRRR.rRR
+R33RRRRr....rRRR
+RRRRRRR.rrrr.RRR
+RRRRRR.rRRRRr.RR
+RRRRR.rRRRRRRr.R
+.....rRRR33RRRr.
+rrrrr.RRRRRRRR.r
+RRRRRr.RRRRRR.rR
+RRRRRRr.RRRR.rRR

@@ -1,0 +1,17 @@
+# FLAT20 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: small grey tiles: navy, blue bevels, black grout)
+bbb.bbb.bbb.bbb.
+bBB.bBB.bBB.bBB.
+bBB.bBB.bBB.bBB.
+................
+bbb.bbb.bbb.bbb.
+bBB.bBB.bBB.bBB.
+bBB.bBB.bBB.bBB.
+................
+bbb.bbb.bbb.bbb.
+bBB.bBB.bBB.bBB.
+bBB.bBB.bBB.bBB.
+................
+bbb.bbb.bbb.bbb.
+bBB.bBB.bBB.bBB.
+bBB.bBB.bBB.bBB.
+................

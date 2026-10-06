@@ -33,9 +33,8 @@ light (the demo is for texturing, not atmospherics). **Since step 6d**
 floors, ceilings and the sky cross-hatch again: a flat texel is one of
 20 *tones*, the 8 solid colours or one of 12 pairs (`master_assets.PAIRS`),
 black + a colour or white + a colour (a colour darkened or paled); the
-sky is cyan + white. Flats are a placeholder ramp over the tones per material
-(`TONE_RAMPS`, `quantise_flat`). Wall textures are hand-drawn pixel art
-(step 6b, `art/walls`), a colour family per material.
+sky is cyan + white. Walls and flats are hand-drawn pixel art (step 6b,
+`art/walls`, `art/flats`), a colour family per material.
 
 Steps 1–5 (Mode 1):
 
@@ -908,7 +907,7 @@ is otherwise identical.
   - the 18 poses 24.9M → 23.8M.
   HAZEL −256 B (`mf_flip`).
 
-**6b. Wall textures as pixel art. — DONE (walls).** All 29 wall
+**6b. Wall and flat textures as pixel art. — DONE.** All 29 wall
 textures are hand-drawn grids, `art/walls/NAME.txt` (one letter per
 texel, `.rgybmcw` = black red green yellow blue magenta cyan white), read
 by `wall_art.wall_texels` in place of the nearest-colour conversion; edit
@@ -930,8 +929,17 @@ wall + flat data fell from 25.1K to 17.7K, freeing 7.4K of bank 6
 ($8500–$A4FF). `wall_art.convert` (an art-directed converter: per texture
 a region ramp on the 3x3 mean brightness, local-contrast detail, hue
 accents, speck clean-up) remains as the seed for a new texture
-(`python3 wall_art.py` writes a grid for any texture without one). The
-flats are still the placeholder tone ramps.
+(`python3 wall_art.py` writes a grid for any texture without one).
+
+*Flats* (all 21) are hand-drawn too: `art/flats/NAME.txt`, 16x16 TONES
+(`wall_art.flat_tones`): `.rgybmcw` solid, `RGYBMC` black + a colour,
+`123456` white + a colour, cross-hatched on screen. Floors and ceilings sit
+back behind the walls: mostly dark black + colour tones (navy for grey,
+dark red for brown, dark purple for the dark ceilings), with solid colour
+only for features -- the ceiling lights (white diamonds and lamps with
+pale yellow rims, red lamps), the UAC logo, nukage (green with pale
+glints), hex-tile joints and lit edges (FLOOR4_8 grey, FLOOR5_1 rust,
+FLOOR5_2 raised ridges), the step's pale frame.
 
 **6c. Mode 1 control panel by raster split. — DONE.** The Mode 1 panel
 art read better than its Mode 2 redraw, so the panel (lines 136–159) is

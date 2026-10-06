@@ -1,0 +1,17 @@
+# FLOOR4_8 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: grey hex tiles: black joints, navy, blue lit edges, pale centres)
+B44BBBBb....bBBB
+BBBBBBB.bbbb.BBB
+BBBBBB.bBBBBb.BB
+BBBBB.bBBBBBBb.B
+.....bBBB44BBBb.
+bbbbb.BBBBBBBB.b
+BBBBBb.BBBBBB.bB
+BBBBBBb.BBBB.bBB
+B44BBBBb....bBBB
+BBBBBBB.bbbb.BBB
+BBBBBB.bBBBBb.BB
+BBBBB.bBBBBBBb.B
+.....bBBB44BBBb.
+bbbbb.BBBBBBBB.b
+BBBBBb.BBBBBB.bB
+BBBBBBb.BBBB.bBB

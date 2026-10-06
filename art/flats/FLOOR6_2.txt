@@ -1,0 +1,17 @@
+# FLOOR6_2 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: dark rock: navy, black and blue flecks)
+B.BBbbBB..bBBB.B
+BB.BBBBBBb..Bb..
+BBB.BBBBBBBB.bBB
+BBBBBB..bbBBBBB.
+BBBBBBBb.B.B...B
+BBBBBBBbBBB..Bbb
+BBB.bBBbBBBbBBBB
+Bb...BBBBBB....B
+BbBBbBBBBB..BBBB
+bBBbBB.....BBBBB
+B.B..B.B.BB.BBB.
+.BB..B..BB..BB..
+BB.BBBBBBBBbBBBB
+BBBBBBBBBBbbbbBB
+BBBBBB..BBBbBBbB
+BBBBBBBBBBBBBB.B

@@ -198,3 +198,39 @@ if __name__ == '__main__':
             save_grid(t['name'], convert(t['name'], rgb, t['height'], t['width']),
                       ' (seeded by wall_art.convert)')
             print('seeded', t['name'])
+
+
+# ── the flats (step 6b): hand-drawn tone grids, art/flats/NAME.txt ─────
+# A flat texel is a TONE (master_assets.TONES): a solid colour, black + a
+# colour, or white + a colour, cross-hatched on screen.
+FLAT_DIR = __import__('os').path.join(M.ROOT, 'art', 'flats')
+TCH = '.rgybmcw' + 'RGYBMC' + '123456'  # solids; K + r g y b m c; W + r g y b m c
+assert len(TCH) == len(M.TONES)
+
+
+def load_flat(name):
+    import os
+    p = os.path.join(FLAT_DIR, name + '.txt')
+    if not os.path.exists(p):
+        return None
+    rows = [l.rstrip('\n') for l in open(p) if l.strip() and not l.startswith('#')]
+    return np.array([[TCH.index(ch) for ch in r] for r in rows])
+
+
+def save_flat(name, q, note=''):
+    import os
+    os.makedirs(FLAT_DIR, exist_ok=True)
+    with open(os.path.join(FLAT_DIR, name + '.txt'), 'w') as f:
+        f.write(f'# {name} 16x16 tones: .rgybmcw solid, RGYBMC black+colour, '
+                f'123456 white+colour (r g y b m c){note}\n')
+        for r in q:
+            f.write(''.join(TCH[t] for t in r) + '\n')
+
+
+def flat_tones(name, rgb):
+    """A flat's tones: its hand-drawn grid, else the placeholder ramp."""
+    g = load_flat(name)
+    if g is not None:
+        assert g.shape == (M.FLAT_N, M.FLAT_N), f'{name}: grid {g.shape}'
+        return g
+    return M.quantise_flat(M.scale_rgb(rgb, M.FLAT_N, M.FLAT_N))

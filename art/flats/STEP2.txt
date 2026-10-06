@@ -1,0 +1,17 @@
+# STEP2 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: step: pale grey frame, dark red slats)
+4444444444444444
+4RRRRRRRRRRRRRR4
+4..............4
+4RRRRRRRRRRRRRR4
+4..............4
+4RRRRRRRRRRRRRR4
+4..............4
+w44w44w44w44w44w
+4444444444444444
+4RRRRRRRRRRRRRR4
+4..............4
+4RRRRRRRRRRRRRR4
+4..............4
+4RRRRRRRRRRRRRR4
+4..............4
+4444444444444444

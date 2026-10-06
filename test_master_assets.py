@@ -88,7 +88,7 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
 
     # ── flats ──
     for f in man['flats']:
-        q = M.quantise_flat(M.scale_rgb(wad.pal[wad.flat(f['name'])], M.FLAT_N, M.FLAT_N))
+        q = wall_art.flat_tones(f['name'], wad.pal[wad.flat(f['name'])].astype(float))
         got = A.flat_bytes(f['id'])
         check((got == np.vectorize(M.tone_byte)(q)).all(), f"{f['name']} reads back wrong")
         check(set(got.ravel().tolist()) <= ok_tones, f"{f['name']} uses a pair outside TONES")
