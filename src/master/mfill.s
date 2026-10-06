@@ -2236,8 +2236,11 @@ tr_screen:
    TAX                                  ; Y * 4 + (pairs & 3) * 2
    BIT tw_sh
    BMI :+
-   LDA zw_tvh                           ; the right strip's row in Y, as a
-   AND zw_rowm                          ;  step leaves it
+   LDA zw_lvh                           ; the left strip's row pushed and
+   AND zw_rowm                          ;  the right strip's in Y, as a step
+   PHA                                  ;  leaves them
+   LDA zw_tvh
+   AND zw_rowm
    TAY
    JMP (tr_ent,X)
 :  LDA zw_lvh                           ; (step 5n: one v, its row)
@@ -2389,8 +2392,9 @@ tr_vstep:
 ; so entering at te_sj skips the step (the first pair's v is current) and
 ; the last pair's step never runs. One count per block of four. The row
 ; mask is an immediate (RM_AND: rm_patch rewrites every one when the
-; texture's mask changes), and each step ends with the right strip's row
-; in Y (tr_screen sets it before jumping in), so its texel is read first.
+; texture's mask changes). Each step pushes the left strip's row and ends
+; with the right strip's in Y (tr_screen does the same before jumping in):
+; the pair reads the right texel, PLY, and ORs in the left one.
 rm_n .set 0
 .macro RM_AND
    .ident(.sprintf("rm_%d", rm_n)) = * + 1
@@ -2412,6 +2416,8 @@ tv_0:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2424,12 +2430,8 @@ tv_0:
 te_00:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2441,6 +2443,8 @@ te_00:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2453,12 +2457,8 @@ te_00:
 te_01:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2470,6 +2470,8 @@ te_01:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2482,12 +2484,8 @@ te_01:
 te_02:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2499,6 +2497,8 @@ te_02:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2511,12 +2511,8 @@ te_02:
 te_03:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2536,6 +2532,8 @@ tv_1:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2548,12 +2546,8 @@ tv_1:
 te_10:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2565,6 +2559,8 @@ te_10:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2577,12 +2573,8 @@ te_10:
 te_11:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2594,6 +2586,8 @@ te_11:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2606,12 +2600,8 @@ te_11:
 te_12:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2625,6 +2615,8 @@ te_12:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2637,12 +2629,8 @@ te_12:
 te_13:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2660,6 +2648,8 @@ tv_2:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2672,12 +2662,8 @@ tv_2:
 te_20:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2689,6 +2675,8 @@ te_20:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2701,12 +2689,8 @@ te_20:
 te_21:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2720,6 +2704,8 @@ te_21:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2732,12 +2718,8 @@ te_21:
 te_22:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2749,6 +2731,8 @@ te_22:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2761,12 +2745,8 @@ te_22:
 te_23:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2784,6 +2764,8 @@ tv_3:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2796,12 +2778,8 @@ tv_3:
 te_30:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2815,6 +2793,8 @@ te_30:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2827,12 +2807,8 @@ te_30:
 te_31:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2844,6 +2820,8 @@ te_31:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2856,12 +2834,8 @@ te_31:
 te_32:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
    INY
@@ -2873,6 +2847,8 @@ te_32:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
+   RM_AND
+   PHA                                  ; the left row, for the fetch
    CLC
    LDA zw_tvl
    ADC t_step
@@ -2885,12 +2861,8 @@ te_32:
 te_33:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
-   STA zw_ev
-   LDA zw_lvh
-   RM_AND
-   TAY
-   LDA (zw_tl),Y
-   ORA zw_ev
+   PLY                                  ; the left row
+   ORA (zw_tl),Y
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
    INY
