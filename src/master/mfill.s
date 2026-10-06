@@ -2154,7 +2154,10 @@ trun:
    LDX t_tid
    LDA mb6_tp_rowm,X
    STA zw_rowm
-   JMP tr_screen
+   CMP rm_cur
+   BEQ :+
+   JSR rm_patch                         ; a new mask: into the pair bodies
+:  JMP tr_screen
 
 .segment "MFILL"
 ; trun's screen side (HAZEL: it pages the texture's bank). X = t_tid.
@@ -2233,8 +2236,14 @@ tr_screen:
    TAX                                  ; Y * 4 + (pairs & 3) * 2
    BIT tw_sh
    BMI :+
+   LDA zw_tvh                           ; the right strip's row in Y, as a
+   AND zw_rowm                          ;  step leaves it
+   TAY
    JMP (tr_ent,X)
-:  JMP (ts_ent,X)                       ; (step 5n: one v)
+:  LDA zw_lvh                           ; (step 5n: one v, its row)
+   AND zw_rowm
+   TAY
+   JMP (ts_ent,X)
 @tail:
    BIT t_n
    BPL @done
@@ -2378,7 +2387,16 @@ tr_vstep:
 ;   [both v stepped]  te_sj:  [both texels read through zw_tl / zw_tr,
 ;   combined; even line lit; odd line FLIP lit]
 ; so entering at te_sj skips the step (the first pair's v is current) and
-; the last pair's step never runs. One count per block of four.
+; the last pair's step never runs. One count per block of four. The row
+; mask is an immediate (RM_AND: rm_patch rewrites every one when the
+; texture's mask changes), and each step ends with the right strip's row
+; in Y (tr_screen sets it before jumping in), so its texel is read first.
+rm_n .set 0
+.macro RM_AND
+   .ident(.sprintf("rm_%d", rm_n)) = * + 1
+   AND #$FF                             ; (patched: the row mask)
+   rm_n .set rm_n + 1
+.endmacro
 tr_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
    .word te_00, te_13, te_22, te_31   ; Y = 0: r = 0..3
    .word te_10, te_23, te_32, te_01   ; Y = 2: r = 0..3
@@ -2401,17 +2419,16 @@ tv_0:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_00:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
@@ -2431,17 +2448,16 @@ te_00:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_01:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
@@ -2461,17 +2477,16 @@ te_01:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_02:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
@@ -2491,17 +2506,16 @@ te_02:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_03:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
@@ -2529,17 +2543,16 @@ tv_1:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_10:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
@@ -2559,17 +2572,16 @@ te_10:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_11:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
@@ -2589,17 +2601,16 @@ te_11:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_12:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
@@ -2621,17 +2632,16 @@ te_12:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_13:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
@@ -2657,17 +2667,16 @@ tv_2:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_20:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
@@ -2687,17 +2696,16 @@ te_20:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_21:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
@@ -2719,17 +2727,16 @@ te_21:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_22:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
@@ -2749,17 +2756,16 @@ te_22:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_23:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
@@ -2785,17 +2791,16 @@ tv_3:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_30:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #6
    STA (PTR),Y                          ; both lines: the same byte
@@ -2817,17 +2822,16 @@ te_30:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_31:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #0
    STA (PTR),Y                          ; both lines: the same byte
@@ -2847,17 +2851,16 @@ te_31:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_32:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #2
    STA (PTR),Y                          ; both lines: the same byte
@@ -2877,17 +2880,16 @@ te_32:
    LDA zw_tvh
    ADC t_step+1
    STA zw_tvh
+   RM_AND                               ; the right row, ready
+   TAY
 te_33:
-   LDA zw_lvh
-   AND zw_rowm
-   TAY
-   LDA (zw_tl),Y
-   STA zw_ev
-   LDA zw_tvh
-   AND zw_rowm
-   TAY
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
+   STA zw_ev
+   LDA zw_lvh
+   RM_AND
+   TAY
+   LDA (zw_tl),Y
    ORA zw_ev
    LDY #4
    STA (PTR),Y                          ; both lines: the same byte
@@ -2899,8 +2901,8 @@ te_33:
 :  JMP tb_end
 
 ; Step 5n: the shared-v bodies (sv_0..sv_3, entries ts_sj), as tv_* but
-; with one v: the left strip's v steps alone and its row (Y) reads both
-; texel columns. The exit copies it to the right strip's for tb_end.
+; with one v: the left strip's v steps alone and its row (Y, made by the
+; step) reads both texel columns. The exit copies it to the right strip's for tb_end.
 ts_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
    .word ts_00, ts_13, ts_22, ts_31   ; Y = 0: r = 0..3
    .word ts_10, ts_23, ts_32, ts_01   ; Y = 2: r = 0..3
@@ -2916,10 +2918,9 @@ sv_0:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_00:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_00:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -2934,10 +2935,9 @@ ts_00:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_01:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_01:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -2952,10 +2952,9 @@ ts_01:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_02:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_02:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -2970,10 +2969,9 @@ ts_02:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_03:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_03:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -2996,10 +2994,9 @@ sv_1:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_10:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_10:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3014,10 +3011,9 @@ ts_10:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_11:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_11:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3032,10 +3028,9 @@ ts_11:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_12:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_12:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3052,10 +3047,9 @@ ts_12:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_13:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_13:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3076,10 +3070,9 @@ sv_2:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_20:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_20:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3094,10 +3087,9 @@ ts_20:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_21:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_21:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3114,10 +3106,9 @@ ts_21:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_22:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_22:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3132,10 +3123,9 @@ ts_22:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_23:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_23:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3156,10 +3146,9 @@ sv_3:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_30:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_30:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3176,10 +3165,9 @@ ts_30:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_31:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_31:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3194,10 +3182,9 @@ ts_31:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_32:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_32:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3212,10 +3199,9 @@ ts_32:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-ts_33:
-   LDA zw_lvh
-   AND zw_rowm
+   RM_AND                               ; the row, ready
    TAY
+ts_33:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
@@ -3227,6 +3213,18 @@ ts_33:
    BEQ :+
    JMP sv_3
 :  JMP ts_end
+
+; rm_patch: A = the row mask, into every RM_AND of the pair bodies (bank 6,
+; called by trun only when the mask changes: rm_cur holds the patched one)
+.segment "MB6C"
+rm_patch:
+   STA rm_cur
+.repeat rm_n, i
+   STA .ident(.sprintf("rm_%d", i))
+.endrepeat
+   RTS
+rm_cur:  .byte $FF                      ; the bodies' assembled mask
+.segment "MFILL"
 
 ts_end:
    LDA zw_lvl                           ; (tb_end steps and reads both)

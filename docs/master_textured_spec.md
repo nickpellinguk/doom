@@ -122,8 +122,8 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D782 (with `cyc_tab`, step 6e), **free $D783–$D7FF (125 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B4CF: the fill's cold set-up code (steps 5f–5h) and the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D74D (with `cyc_tab`, step 6e; 7c), **free $D74E–$D7FF (178 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B56C: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b) and `rm_patch` (7c), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1123,6 +1123,18 @@ the view, bottom centre, sitting on the panel's edge.
   itself is clean (checked: no view colours below line 135 over 120
   fields).
 
+**7c. Speed: the wall pair bodies' row mask. — DONE.** In the unrolled
+wall pair bodies (`tv_*` / `sv_*`) the row mask `(th - 1) * 8` is now an
+immediate (`RM_AND`: `AND #imm`, 48 sites) instead of `AND zw_rowm`.
+`trun` compares the texture's mask with `rm_cur` and only on a change
+calls `rm_patch` (bank 6: 48 unrolled `STA`s into HAZEL). And each v step
+now ends with its row ready -- `STA zw_tvh / AND #m / TAY` (the shared
+body: `zw_lvh`) -- so the pair reads that strip's texel first with no
+reload; `tr_screen` does the same AND + TAY before jumping into a body.
+Per pair: 94 -> 89 cycles (two strips), 58 -> 54 (shared v); HAZEL 54 B
+smaller. 18 poses 23,034,317 -> 22,974,247 (-0.26%), byte-exact.
+`tr_fetch` (odd first / last lines) keeps the zero-page mask.
+
 **7b. Speed: the gun as straight-line stores. — DONE.** 317 of the gun's
 361 bytes have no transparent pixel, so they need no read or mask: they
 are just written. `master_gun.py` (`cells()`, `source()`) now compiles the
@@ -1132,7 +1144,7 @@ bytes sorted by value, each value loaded once then stored (`LDA #d`,
 `STA abs` ...: 23 values, 4 cycles a byte), then the 44 edge bytes as
 `LDA abs / AND #m / [ORA #d] / STA abs`. `gun_draw` sets ACCCON X and
 calls the routine for DV_BACKHI. 29.6K -> 1.85K cycles a frame; 3.9K of
-code (two copies) for the 870 B table, bank 6 code now $9500-$B4CF.
+code (two copies) for the 870 B table, bank 6 code then $9500-$B4CF.
 `test_master_gun` unchanged (both buffers, byte-exact against
 `master_gun.apply`). Also fixed: `master_assets.py`'s previews indexed
 the 8-colour palette with the cycling colours 8-15 (now `palette16()`).
