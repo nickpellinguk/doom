@@ -30,12 +30,10 @@ Model B memory map are replaced. The Model B build is not maintained.
 
 **Since step 6a** (Mode 2): wall texels are solid colours; no sector
 light (the demo is for texturing, not atmospherics). **Since step 6d**
-floors and ceilings cross-hatch again: a flat texel is one of 18 *tones*,
-the 8 solid colours or one of 10 gentle pairs (`master_assets.PAIRS`),
-two colours one RGB bit apart in blue (luma gap 0.11: black+blue,
-red+magenta, green+cyan, yellow+white) or red (0.30: black+red,
-blue+magenta, green+yellow, cyan+white), plus red+green (an olive brown,
-0.29) and magenta+green (a mid grey, 0.17). Flats are a placeholder ramp over the tones per material
+floors, ceilings and the sky cross-hatch again: a flat texel is one of
+20 *tones*, the 8 solid colours or one of 12 pairs (`master_assets.PAIRS`),
+black + a colour or white + a colour (a colour darkened or paled); the
+sky is cyan + white. Flats are a placeholder ramp over the tones per material
 (`TONE_RAMPS`, `quantise_flat`). Textures
 are a placeholder conversion until each is redrawn as pixel art (step
 6b): per texture, its brightness (normalised to its own 5–95% range) is
@@ -71,7 +69,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 - **Floors and ceilings**: one texel per byte, a full byte (a tone: left
   pixel a, right b) on a pair's even line and `FLIP[B]` (b, a) on its odd
   line, a checkerboard (step 6d). A solid tone is its own FLIP.
-- **Sky** (F_SKY1): solid cyan, no texture.
+- **Sky** (F_SKY1): no texture; cyan + white cross-hatched (step 6d).
 - Drawing code runs from **HAZEL** and reaches the shadow buffers by setting
   **ACCCON X** for the duration of a draw. The E bit cannot be used: Master
   "VDU driver" shadow access only works while HAZEL is paged out (Y = 0);
@@ -130,7 +128,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D5F9, **free $D5FA–$D7FF (0.5K)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D6D9, **free $D6DA–$D7FF (294 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B7EC: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
@@ -965,27 +963,22 @@ the video ULA and palette mid-frame.
 - *Cost*: two interrupts a field, about 60 cycles each (well under 0.1% of
   a frame).
 
-**6d. Floor and ceiling cross-hatch. — DONE.** Floors and ceilings
+**6d. Floor, ceiling and sky cross-hatch. — DONE.** Floors and ceilings
 regain Mode 1's texture without its harshness: a flat texel is a TONE,
-a solid colour or a pair of colours whose brightness gap is gentle, and
-the odd line of each pair writes it with its pixels swapped.
-- *Tones* (`master_assets.TONES`): the 8 solids, then the pairs
-  - one RGB bit apart in **blue** (luma gap 0.11, nearly a flat tone):
-    black+blue, red+magenta, green+cyan, yellow+white;
-  - one bit apart in **red** (0.30, a calm texture): black+red,
-    blue+magenta, green+yellow, cyan+white;
-  - **red+green** (0.29): an olive brown for DOOM's floors;
-  - **magenta+green** (0.17): a mid grey, the one complementary pair (the
-    hues fight, but the brightness gap is small).
-
-  Green-bit pairs (gap 0.59) and the other complements (black+white,
-  blue+yellow, red+cyan) are left out: they read as a checkerboard.
+a solid colour or a pair of colours, and the odd line of each pair writes
+it with its pixels swapped.
+- *Tones* (`master_assets.TONES`): the 8 solids, then the 12 pairs
+  black + a colour (black+red, +green, +yellow, +blue, +magenta, +cyan)
+  and white + a colour (the same six): a colour darkened or paled, never
+  two hues fighting. (A first cut used gentle-luma pairs between hues,
+  e.g. red+magenta, red+green, magenta+green; they were dropped.)
 - *Flats* (placeholder until 6b): per flat, brightness normalised to its
   5–95% range, nearest tone by luma on its material's ramp
-  (`TONE_RAMPS`: grey K, K+B, B, M+G, C, C+W, W; blue K, K+B, B, B+M,
-  C, C+W, W; brown K, K+R,
-  R, R+G, Y, Y+W, W; green K, R+G, G, G+Y, Y, Y+W, W; red K, K+R, R,
-  R+M, M, W); vivid texels keep the nearest saturated solid.
+  (`TONE_RAMPS`: grey and blue K, K+B, B, K+C, C, W+C, W; brown K, K+R,
+  R, K+Y, Y, W+Y, W; green K, K+G, G, K+Y, Y, W+Y, W; red K, K+R, R, M,
+  W+M, W); vivid texels keep the nearest saturated solid.
+- *Sky* (F_SKY1): `SKY_BYTE` (cyan, white) on even lines, FLIP of it
+  ($3D / $3E) on odd.
 - *FLIP* (`flip`, HAZEL $CA00, page-aligned next to `hi16` / `lo16`):
   `((b << 1) & $AA) | ((b >> 1) & $55)`, generated by `.repeat`.
   - `sp_go2`: each body writes the even line, then `TAX / LDA flip,X`
@@ -993,16 +986,21 @@ the odd line of each pair writes it with its pixels swapped.
   - `sl_go` (one line): `sl_fb`, a `BRA` over the flip that `sl_draw`
     patches to 0 on an odd line.
   - `pl_wr1` (a partial line drawn on the spot): flips on an odd line.
-  - Walls, sky and the solid runs (`hz_run`) are unchanged: a solid is
-    its own FLIP.
+  - The sky's runs: `hz_run` hands a cyan run to `hz_sky` (HAZEL), whose
+    unrolled bodies (`h2`, 7 bytes: `LDY #k / STA (PTR),Y / EOR hz_x`)
+    alternate the two bytes; `HZ_DRIVE`'s SIZE-7 entry starts on the
+    entry line's byte. Other solid runs keep `h1` (no cost).
+  - Walls are unchanged.
 - *Models*: `tex_ref._compose` writes `FLIP[b]` for plane bytes on odd
-  lines; `textured_ref` likewise per pixel half.
+  lines, and treats the sky's solid cells as `SKY_BYTE`; `textured_ref`
+  likewise per pixel half.
 - *Gates*: `test_master_tex` byte-exact over the 18 poses (the first run
   caught `pl_wr1`); `test_master_assets` checks FLIP swaps every byte's
-  pixels, that every pair is one of the gentle set (10) and that every flat
-  byte is a tone.
-- *Cycles*: the mean frame 1.447M → 1.458M (+0.8%); the span loops 106K
-  → 110K. HAZEL +256 B (`flip`) and the patched code.
+  pixels, that every pair is black or white + a colour, the sky byte, and
+  that every flat byte is a tone.
+- *Cycles*: the mean frame 1.447M → 1.459M (+0.8%; the span loops 106K →
+  110K, the sky's EOR under 0.1K).
+  HAZEL +256 B (`flip`) + the sky bodies and driver.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

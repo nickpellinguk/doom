@@ -282,15 +282,19 @@ class TexRef(Fm.FillRef):
     def _compose(self):
         """The buffer bytes (Mode 2, step 6a: both lines of a wall texel row
         the same byte, no sector light; step 6d: a plane byte FLIP on odd
-        lines, the floors' cross-hatch). Below the view, the control panel
+        lines, the floors' cross-hatch; the sky's solid cells as SKY_BYTE,
+        cyan + white, likewise). Below the view, the control panel
         (master_panel)."""
         import master_panel
         fb = bytearray(10240)
         fb[master_panel.PANEL_OFFSET:] = master_panel.panel_bytes()
+        sky = ('b', M.wall_byte(Fm.SH_SKY))
         for y in range(Fm.LINES):
             row = self.grid[y]
             for k in range(64):
                 l, r = row[2 * k], row[2 * k + 1]
+                if l == sky:
+                    l = ('F', M.SKY_BYTE)           # the sky: cross-hatched
                 if l is not None and l[0] == 'F':
                     b = l[1]                        # a whole plane byte,
                     if y & 1:                       #  pixels swapped on a

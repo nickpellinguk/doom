@@ -116,13 +116,10 @@ def floor_byte(shade):
 
 # Floors and ceilings cross-hatch (step 6d): a flat texel is a byte of two
 # colours, written as is on a pair's even line and FLIP (the pixels
-# swapped) on its odd line, a checkerboard. Only pairs whose brightness gap
-# is gentle: one RGB bit apart, blue bit (luma 0.11) or red bit (0.30), plus
-# red + green (an olive brown) and magenta + green (a mid grey, 0.17), the
-# two pairs further apart in RGB.
-PAIRS = [(BLACK, BLUE), (RED, MAGENTA), (GREEN, CYAN), (YELLOW, WHITE),
-         (BLACK, RED), (BLUE, MAGENTA), (GREEN, YELLOW), (CYAN, WHITE),
-         (RED, GREEN), (MAGENTA, GREEN)]
+# swapped) on its odd line, a checkerboard. Only black + a colour and white
+# + a colour: a colour darkened or paled.
+HUES = [RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN]
+PAIRS = [(BLACK, c) for c in HUES] + [(WHITE, c) for c in HUES]
 TONES = [(c, c) for c in range(8)] + PAIRS      # tone t -> (left, right)
 
 
@@ -132,6 +129,7 @@ def flip(b):
 
 
 FLIP = bytes(flip(b) for b in range(256))
+SKY_BYTE = mode2_byte((CYAN, WHITE))  # the sky: cyan + white, cross-hatched
 
 
 def tone_byte(t):
@@ -268,12 +266,12 @@ def quantise_tex(rgb):
 
 # placeholder flat ramps over the tones (step 6b redraws each flat), dark
 # to light, one per material
-TONE_RAMPS = {
-    'grey':  [BLACK, 8, BLUE, 17, CYAN, 15, WHITE],         # (8 = K+B ..
-    'blue':  [BLACK, 8, BLUE, 13, CYAN, 15, WHITE],         #  17 = M+G)
-    'brown': [BLACK, 12, RED, 16, YELLOW, 11, WHITE],
-    'green': [BLACK, 16, GREEN, 14, YELLOW, 11, WHITE],
-    'red':   [BLACK, 12, RED, 9, MAGENTA, WHITE],
+TONE_RAMPS = {                          # (8..13 = K + R G Y B M C,
+    'grey':  [BLACK, 11, BLUE, 13, CYAN, 19, WHITE],    #  14..19 = W + ..)
+    'blue':  [BLACK, 11, BLUE, 13, CYAN, 19, WHITE],
+    'brown': [BLACK, 8, RED, 10, YELLOW, 16, WHITE],
+    'green': [BLACK, 9, GREEN, 10, YELLOW, 16, WHITE],
+    'red':   [BLACK, 8, RED, MAGENTA, 18, WHITE],
 }
 
 

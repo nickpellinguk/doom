@@ -67,7 +67,7 @@ class TexturedRef:
         for t in A.man['textures']:
             self.tex[t['name']] = (A.wall_bytes(t['id']), t['src_w'], t['src_h'])
         self.flat = {f['name']: A.flat_bytes(f['id']) for f in A.man['flats']}
-        self.sky_byte = M.floor_byte(M.CYAN)        # solid cyan
+        self.sky_byte = M.SKY_BYTE                  # cyan + white, hatched
         import doom_wireframe as dw
         self.dw = dw
 

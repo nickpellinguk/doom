@@ -49,6 +49,8 @@ ACC_DXY = $0D                           ;  ... plus X: CPU on the shadow buffers
 ; step-3 shades, in the RIGHT-strip ($33) position: wall_byte(shade) in
 ; master_assets.py, pixel 2 = colour a, pixel 3 = colour b
 WB_SKY   = $28                          ; Mode 2 left-pixel bytes: cyan
+SKY_EV   = $3D                          ; the sky's bytes (master_assets
+SKY_OD   = $3E                          ;  SKY_BYTE, FLIP of it): cyan + white
 WB_CEIL  = $20                          ;  blue
 WB_FLOOR = $02                          ;  red
 
@@ -219,6 +221,7 @@ r_ys:    .res 1
 r_ye:    .res 1
 r_part:  .res 1
 r_ev:    .res 1
+hz_x:    .res 1                         ; hz_sky: even line ^ odd line byte
 hz_n:    .res 1                         ; hz_run: lines, the first line's
 hz_a:    .res 1                         ;  place in its row, the last line
 hz_l:    .res 1                         ;  (from the row), rows after the
@@ -1274,6 +1277,12 @@ run:
 .ident(.concat(.string(S), "_call")):
  .if SIZE = 4
    LDA r_ev
+ .else                                  ; (h2: the entry line's byte, r_ev
+   TXA                                  ;  on an even line, r_ev ^ hz_x on
+   AND #2                               ;  an odd)
+   BEQ :+
+   LDA hz_x
+:  EOR r_ev
  .endif
    JMP (.ident(.concat(.string(S), "_tab")),X)
 .endmacro
@@ -1397,7 +1406,10 @@ split_irq:
 ; ============================================================================
 hz_run:
    LDA r_part
-   LSR A
+   CMP #WB_SKY
+   BNE :+
+   JMP hz_sky                           ; the sky: cross-hatched (HAZEL)
+:  LSR A
    ORA r_part                           ; shade | (shade >> 1): both pixels
    STA r_ev
    JSR ln_ptr                           ; PTR, Y for line r_ys
@@ -1436,6 +1448,42 @@ h1_tab:
 .repeat 8, K
    .word h1_b0 + 4 * K
 .endrepeat
+
+; hz_sky: hz_run for the sky (step 6d): cyan + white, the pixels swapped
+; on odd lines (SKY_BYTE, then flip[] of it), the h2 bodies EORing the
+; byte between lines
+hz_sky:
+   LDA #SKY_EV
+   STA r_ev
+   LDA #SKY_EV ^ SKY_OD
+   STA hz_x
+   JSR ln_ptr                           ; PTR, Y for line r_ys
+   SEC
+   LDA r_ye
+   SBC r_ys
+   INC A
+   STA hz_n                             ; line count
+   LDA #ACC_DXY
+   STA $FE34                            ; -> shadow (no main reads >= $3000)
+   HZ_DRIVE h2, 7                       ; A = the line's byte, EOR hz_x on
+
+h2_b0:
+.repeat 8, K
+   LDY #K
+   STA (PTR),Y
+   EOR hz_x                             ; (absolute: 7-byte bodies)
+.endrepeat
+h2_t:                                  ; body 8: the next character row
+   INC PTR+1
+   INC PTR+1
+   DEC hz_r
+   BNE h2_b0
+   RTS
+h2_tab:
+.repeat 8, K
+   .word h2_b0 + 7 * K
+.endrepeat
+.assert h2_t - h2_b0 = 56, error, "h2 bodies must be 7 bytes (hz_x absolute)"
 
 .segment "MB6C"
 

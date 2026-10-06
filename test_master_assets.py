@@ -54,11 +54,11 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
     for x in range(256):
         a, b = M.mode2_pixels(x)
         check(M.mode2_pixels(M.FLIP[x]) == [b, a], f'FLIP {x:02X}')
-    check(len(M.PAIRS) == 10 and len(set(M.TONES)) == 18, 'tone set')
+    check(len(M.PAIRS) == 12 and len(set(M.TONES)) == 20, 'tone set')
     for a, b in M.PAIRS:
-        check(a != b and ((a ^ b) in (1, 4) or {a, b} in ({M.RED, M.GREEN},
-                                                         {M.MAGENTA, M.GREEN})),
-              f'pair {a},{b} not one of the gentle pairs')
+        check(a in (M.BLACK, M.WHITE) and b not in (M.BLACK, M.WHITE),
+              f'pair {a},{b} is not black or white + a colour')
+    check(M.mode2_pixels(M.SKY_BYTE) == [M.CYAN, M.WHITE], 'sky byte')
     ok_tones = {M.tone_byte(t) for t in range(len(M.TONES))}
 
     # ── walls: every texel read back through the tables ──
