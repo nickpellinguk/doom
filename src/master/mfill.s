@@ -3713,8 +3713,8 @@ mf_planes:
 ; sp_go2 is Duff's device: four bytes unrolled (sf_lp), entered at one of
 ; four points (sf_eq, q = -n & 3) so the span's last byte ends a block.
 ; PTR points at the block's first column (+ the line within the character
-; row), so each body writes at fixed offsets (LDY #8c, INY) and only the
-; block end moves PTR on, by 32. Each body is [U, V stepped, Y = U] sf_eq:
+; row), so each body writes at fixed offsets (LDY #8c, INY; column 0:
+; STA (PTR), LDY #1) and only the block end moves PTR on, by 32. Each body is [U, V stepped, Y = U] sf_eq:
 ; [texel read, both lines written]: an entry skips its step, so the last
 ; byte's never runs. One count per block.
 sp_go2:
@@ -3753,9 +3753,8 @@ sf_e0:
    TAX
 sf_r0:
    LDA $FF00,X                          ; (patched: the flat's page)
-   LDY #0
-   STA (PTR),Y                          ; even line: whole byte
-   INY
+   STA (PTR)                            ; even line: whole byte (column 0)
+   LDY #1
    TAX
    LDA flip,X
    STA (PTR),Y                          ; odd line: FLIP
