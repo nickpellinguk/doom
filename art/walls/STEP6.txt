@@ -1,0 +1,17 @@
+# STEP6 32x16: .rgybmcw = K R G Y B M C W (seeded by wall_art.convert)
+....rrrry......rrrrrrrrr.....yr.
+.......r............r...........
+r..r..rrr.rr....rrrr.rr.......rr
+rrrryyryyyyyyyyyyyrrrrrrrrrrrrry
+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrryr
+rrrrrrrrrryrrrrrrrrrrrrrr.rrrrrr
+rrrrrrrrrryrrrrrrrrrrrrr..rrrrrr
+...rrrrrrrr......rrrrrr....rrrrr
+yyyyyyyrrryyyyyyyyyyrrryyyyyyryy
+rrrrrrrrrrr.....rrrrrrrrrrrrr..r
+r..rrrrrrrryyrrrrrrrrrrrrrrrrrrr
+rrrrrrrrrrr...rrrrrrrrrrrrrrrrrr
+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr

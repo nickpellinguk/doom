@@ -1,0 +1,17 @@
+# EXITSIGN 64x16: .rgybmcw = K R G Y B M C W (seeded by wall_art.convert)
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb............................bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb.rrrrrrrrrr....rrrrrrrrrrrrrbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb.rrrrrrrrrrrrrrrrrrrrrrrrrrrbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb.rrrrrrrrrrrrrrrrrrrrrrrrrrrbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb.rrrrrrrrrrrrrrr.rrr..rrr...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb.rrrrrrr..rrrrr..rrr..rrr....bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb..rrrrr.....rrr..rrr..rrr....bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb..rr.......rrrrr.rrr..rrr....bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb..rr......rr..rrrrrr..rrr....bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb..rrrrrr.r......r.r....r.....bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb.............................bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bb............................bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+bbb..........................bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+b.............................bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

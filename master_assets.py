@@ -371,7 +371,8 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
     tex_src = wad.textures()
     walls, exposure, flat_names = map_usage()
 
-    # 1. scale + quantise every wall texture
+    # 1. every wall texture's texels: its art/walls grid (wall_art)
+    import wall_art
     stacked = {t: (i, half) for i, pair in enumerate(STACKED) for half, t in enumerate(pair)}
     q, meta = {}, {}
     for t in walls:
@@ -379,7 +380,7 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
         h, w = img.shape
         th = SHORT_H if t in stacked else TEX_H
         tw = max(1, round(w * th / h))
-        q[t] = quantise_tex(scale_rgb(wad.pal[img], th, tw))
+        q[t] = wall_art.wall_texels(t, wad.pal[img].astype(float), th, tw)   # step 6b
         meta[t] = dict(src_w=w, src_h=h, height=th, width=tw)
         if t in stacked and exposure[t] > h:
             raise SystemExit(f'{t} is stacked but E1M1 can show {exposure[t]} '

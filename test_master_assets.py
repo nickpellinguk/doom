@@ -65,7 +65,9 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
     wad = M.Wad()
     src = wad.textures()
     for t in man['textures']:
-        q = M.quantise_tex(M.scale_rgb(wad.pal[M.clipped(t['name'], src[t['name']])], t['height'], t['width']))
+        import wall_art
+        q = wall_art.wall_texels(t['name'], wad.pal[M.clipped(t['name'], src[t['name']])].astype(float),
+                                 t['height'], t['width'])
         want = np.vectorize(M.wall_byte)(q)
         got = A.wall_bytes(t['id'])
         check(got.shape == want.shape and (got == want).all(), f"{t['name']} reads back wrong")

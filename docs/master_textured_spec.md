@@ -913,6 +913,23 @@ is otherwise identical.
   - the 18 poses 24.9M → 23.8M.
   HAZEL −256 B (`mf_flip`).
 
+**6b. Wall textures as pixel art. — IN PROGRESS.** Each wall texture is
+a hand-drawn grid, `art/walls/NAME.txt` (one letter per texel, `.rgybmcw`
+= black red green yellow blue magenta cyan white), read by
+`wall_art.wall_texels` in place of the nearest-colour conversion. Style,
+per material:
+- *tan / brown* (STARTAN, BROWN, wood): red, black seams, yellow rims;
+- *grey metal* (STARGR, doors, supports): blue, black seams, cyan rims,
+  white glints;
+- *green* (STARG, slime): blue panels with green rims, or green with
+  black and yellow.
+
+Drawn so far: STARTAN3, STARG3, STARGR1, BROWN1, DOOR3. The rest are
+seeded by `wall_art.convert` (art-directed: per texture a region ramp
+banded on the 3x3 mean brightness, dark / light detail from the local
+contrast, hue accents for lamps and stripes, lone specks removed) and are
+redrawn one at a time. `python3 wall_art.py` seeds any missing grid.
+
 **6c. Mode 1 control panel by raster split. — DONE.** The Mode 1 panel
 art read better than its Mode 2 redraw, so the panel (lines 136–159) is
 Mode 1 again and the 3D view stays Mode 2. A timer interrupt switches

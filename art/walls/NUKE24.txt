@@ -1,0 +1,17 @@
+# NUKE24 43x16: .rgybmcw = K R G Y B M C W (seeded by wall_art.convert)
+ggggggggggggggggggggggggggggggggggggggggggg
+rrrrrrrrrrrrrrrr.r.rrrrrrrrrrrrrrrrrrrrrrrr
+rrrrrrrrrrrrrrrr.r.....rrrrrrrrr.rrrrrrrrrr
+rrrrrrrrrr.rrrrr.r....rrrrrrrrr....rrrrrrrr
+rrrrrrrrrr.rrrrrrrrrr.rrrrrrrrr...rrrrrrrrr
+rrrrrrrrrr.rrrrrrrrrr.rrrrr.r...rrrrrrrrrrr
+rrrr...rrr..........r...rrr......rrrrrrrrrr
+r........................r.........r......r
+..........g.g........gg........g...........
+..g......gggg......ggggggg....ggg...ggg..gg
+..gg....ggggg....ggggggggg...gggggggggg.ggg
+gggggggggggggg..ggggggggggggggggggggggggggg
+ggggggggggggggggggggggggggggggggggggggggggg
+ggggggggggggggggggggggggggggggggggggggggggg
+gggggggggggggggggggggggyggggggggggggggggggg
+ggggggggggggggggggggggyyggggggggggggggggggg
