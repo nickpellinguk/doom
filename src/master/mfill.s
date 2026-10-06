@@ -67,8 +67,9 @@ TP  = RASTER_ZP_DX                      ; zp pair: the rasteriser's dx/dy, only
 ; while the loop runs.
 zw_lvl  = zp_plot_i                     ; left strip's v (5.11)
 zw_lvh  = zp_dcl_out
-zw_tvl  = zp_clr_save_x                 ; right strip's v
-zw_tvh  = zp_vs_cch
+zw_dh   = zp_clr_save_x                 ; right strip's v hi - left's (5.3,
+                                        ;  step 7d; 0 when the run shares)
+zw_tvl  = zw_dh                         ; (the span loops' sv)
 zw_rowm = zp_old_cur                    ; row mask (th - 1) * 8
 zw_tl   = TP                            ; left texel column pointer (2)
 zw_tr   = bca_boxp                      ; right texel column pointer (2)
@@ -2187,10 +2188,10 @@ tr_screen:
    STA zw_lvl
    LDA l_v+1
    STA zw_lvh
-   LDA t_v
-   STA zw_tvl
-   LDA t_v+1
-   STA zw_tvh
+   SEC                                  ; the right strip: a 5.3 delta
+   LDA t_v+1                            ;  from the left's v (t_v = l_v
+   SBC l_v+1                            ;  when the run shares: 0)
+   STA zw_dh
    LDA mb6_tp_bank,X                    ; (X = t_tid still)
    STA $FE30                            ; the texture's bank
    LDA #ACC_DXY
@@ -2239,7 +2240,9 @@ tr_screen:
    LDA zw_lvh                           ; the left strip's row pushed and
    AND zw_rowm                          ;  the right strip's in Y, as a step
    PHA                                  ;  leaves them
-   LDA zw_tvh
+   LDA zw_lvh
+   CLC
+   ADC zw_dh
    AND zw_rowm
    TAY
    JMP (tr_ent,X)
@@ -2357,7 +2360,9 @@ tr_fetch:
    TAY
    LDA (zw_tl),Y
    STA zw_ev
-   LDA zw_tvh
+   LDA zw_lvh                           ; the right row: v hi + delta
+   CLC
+   ADC zw_dh
    AND zw_rowm
    TAY
    LDA (zw_tr),Y
@@ -2366,7 +2371,7 @@ tr_fetch:
    LDY tw_ly
    RTS
 
-; tr_vstep: both strips' v on one pair
+; tr_vstep: the left strip's v on one pair (the right's is a delta)
 tr_vstep:
    CLC
    LDA zw_lvl
@@ -2375,13 +2380,6 @@ tr_vstep:
    LDA zw_lvh
    ADC l_step+1
    STA zw_lvh
-   CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
    RTS
 
 ; THE PAIR BODIES: four versions tv_0..tv_3, each four pairs unrolled (a
@@ -2394,7 +2392,9 @@ tr_vstep:
 ; mask is an immediate (RM_AND: rm_patch rewrites every one when the
 ; texture's mask changes). Each step pushes the left strip's row and ends
 ; with the right strip's in Y (tr_screen does the same before jumping in):
-; the pair reads the right texel, PLY, and ORs in the left one.
+; the pair reads the right texel, PLY, and ORs in the left one. Step 7d:
+; only the left v is stepped; the right row is its high byte plus zw_dh,
+; the 5.3 delta fixed at the run's first line (tex_ref).
 ; No CLC before the left step: texels only use the left pixel's bits
 ; ($AA), so the previous pair's LSR A left carry clear, and nothing after
 ; it (stores, INC / DEC, branches) touches it; the bodies are entered
@@ -2422,14 +2422,10 @@ tv_0:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_00:
    LDA (zw_tr),Y
@@ -2447,14 +2443,10 @@ te_00:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_01:
    LDA (zw_tr),Y
@@ -2473,14 +2465,10 @@ te_01:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_02:
    LDA (zw_tr),Y
@@ -2499,14 +2487,10 @@ te_02:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_03:
    LDA (zw_tr),Y
@@ -2533,14 +2517,10 @@ tv_1:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_10:
    LDA (zw_tr),Y
@@ -2559,14 +2539,10 @@ te_10:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_11:
    LDA (zw_tr),Y
@@ -2585,14 +2561,10 @@ te_11:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_12:
    LDA (zw_tr),Y
@@ -2613,14 +2585,10 @@ te_12:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_13:
    LDA (zw_tr),Y
@@ -2644,14 +2612,10 @@ tv_2:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_20:
    LDA (zw_tr),Y
@@ -2670,14 +2634,10 @@ te_20:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_21:
    LDA (zw_tr),Y
@@ -2698,14 +2658,10 @@ te_21:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_22:
    LDA (zw_tr),Y
@@ -2723,14 +2679,10 @@ te_22:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_23:
    LDA (zw_tr),Y
@@ -2755,14 +2707,10 @@ tv_3:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_30:
    LDA (zw_tr),Y
@@ -2783,14 +2731,10 @@ te_30:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_31:
    LDA (zw_tr),Y
@@ -2808,14 +2752,10 @@ te_31:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_32:
    LDA (zw_tr),Y
@@ -2834,14 +2774,10 @@ te_32:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_lvh
    CLC
-   LDA zw_tvl
-   ADC t_step
-   STA zw_tvl
-   LDA zw_tvh
-   ADC t_step+1
-   STA zw_tvh
-   RM_AND                               ; the right row, ready
+   ADC zw_dh                            ; the right row: + the 5.3 delta
+   RM_AND
    TAY
 te_33:
    LDA (zw_tr),Y
@@ -3164,11 +3100,7 @@ rm_cur:  .byte $FF                      ; the bodies' assembled mask
 .segment "MFILL"
 
 ts_end:
-   LDA zw_lvl                           ; (tb_end steps and reads both)
-   STA zw_tvl
-   LDA zw_lvh
-   STA zw_tvh
-   JMP tb_end
+   JMP tb_end                           ; (zw_dh = 0: one v for both)
 
 .segment "MB6C"
 

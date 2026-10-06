@@ -63,6 +63,10 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             seg s_lim = (384 * w - 1) // m (w its projected width, m the
             larger rise of its top and bottom lines; shared_limit), per
             run step <= s_lim. Nothing of the right strip's v is made.
+            Step 7d: a run that does NOT share keeps the right strip's v
+            only as a 5.3 delta from the left's, fixed at the run's first
+            line ys: dh = (vR(ys) >> 8) - (vL(ys) >> 8) (mod 256), and the
+            right row on every line is ((vL >> 8) + dh) mod 256 >> 3.
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines of the same
             byte; a pair moves 2 * step):
@@ -243,6 +247,13 @@ class TexRef(Fm.FillRef):
                         sr = (K // (Br - Tr)) & 0xFFFF if Br > Tr else 0
                     sslot[which] = (x, part, sl)
                     share = sl <= s_lim
+                    if not share:
+                        # step 7d: the right strip's row is the left v's
+                        # high byte plus a 5.3 delta, fixed at the run's
+                        # first line
+                        ys = max(y0, Bz, T)
+                        dh = ((self._v(part, ys, Tr, Br, sr) >> 8)
+                              - (self._v(part, ys, T, B_) >> 8)) & 0xFF
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
                     self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
                     if yb < T:
@@ -259,7 +270,7 @@ class TexRef(Fm.FillRef):
                         self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
                         self.grid[yb - Bz][c + 1] = ('t',) + (
                             self._texel(part, ur, yb, T, B_) if share
-                            else self._texel(part, ur, yb, Tr, Br, sr))
+                            else self._texel(part, ur, yb, T, B_, dh=dh))
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 
@@ -268,13 +279,21 @@ class TexRef(Fm.FillRef):
         ('c') or floor ('f') run: step 4 draws the solid shade."""
         return ('b', shade)
 
-    def _texel(self, pi, u, yb, T, B, step=None):
+    def _v(self, pi, yb, T, B, step=None):
+        """v (5.11) of line yb's pair, from lines T, B (or the given step)."""
         p = self.W.parts[pi]
-        tp = self.W.tparams[p['tid']]
         h = B - T
         if step is None:
             step = (p['K'] // h) & 0xFFFF if h > 0 else 0
-        v = (p['vtop'] + ((yb & ~1) - T) * step) & 0xFFFF
+        return (p['vtop'] + ((yb & ~1) - T) * step) & 0xFFFF
+
+    def _texel(self, pi, u, yb, T, B, step=None, dh=None):
+        """The texel at column u, line yb; with dh (step 7d), the row is
+        the high byte of the v from T, B plus dh (5.3), mod 256."""
+        tp = self.W.tparams[self.W.parts[pi]['tid']]
+        v = self._v(pi, yb, T, B, step)
+        if dh is not None:
+            v = (((v >> 8) + dh) & 0xFF) << 8
         row = (v >> 11) & (tp['th'] - 1)
         col = ((u & tp['mask']) >> tp['shift']) * tp['tw'] // tp['n']
         return int(self.tex[tp['name']][0][row, col]), row, col, tp['name']

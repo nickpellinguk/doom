@@ -642,7 +642,7 @@ LC_M_R0:                    .res 1 ; [clip]
 LC_M_R1:                    .res 1 ; [clip]
 zp_i_y1:                    .res 1 ; [clip]
 fw_rslot:                   .res 1 ; [clip]; span slot at run open
-zp_clr_save_x:              .res 1 ; [clip]; tighten X-save (tfr.s; the name [MASTER: zw_tvl; sv]
+zp_clr_save_x:              .res 1 ; [clip]; tighten X-save (tfr.s; the name [MASTER: zw_dh; sv]
 FW_SIDE:                    .res 1 ; [clip]; 0 top / $80 bot
 zp_mul_b:                   .res 1 ; [bsp+clip]
 zp_prod_l:                  .res 1 ; [bsp+clip]
@@ -656,7 +656,7 @@ zp_tmp0:                    .res 3 ; [bsp+clip]; umul8 scratch (matches
                                    ; tmp0/1 and tmp1/2 are pointer PAIRS.
 zp_tmp1 = zp_tmp0+1
 zp_tmp2 = zp_tmp0+2
-zp_vs_cch:                  .res 1 ; [bsp]; vsx_expl clamp copy of ch (doubled [MASTER: zw_tvh]
+zp_vs_cch:                  .res 1 ; [bsp]; vsx_expl clamp copy of ch (doubled [MASTER: free since step 7d]
                                   ; for H2 mover-jamb entries, 2026-08-25)
 VX1:                        .res 26 ; [bsp+clip]; the TWO vertex structs
                                    ; (VX2 = VX1+VX_STRIDE).  ONE reservation:
