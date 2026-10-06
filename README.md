@@ -122,7 +122,7 @@ B + SWRAM, no Master required.
 progress, docs/master_textured_spec.md): textured walls, floors and
 ceilings in shadow Mode 2 (8 colours; the textures are a placeholder
 conversion until they are redrawn as pixel art), a 136-line view and a
-static DOOM status bar. Boot it on a Master 128 (or jsbeeb's Master
+static DOOM status bar in Mode 1 (a timer-interrupt raster split). Boot it on a Master 128 (or jsbeeb's Master
 model) with SHIFT+BREAK; cursor keys to turn and move. Rebuild it with
 `python3 tools/build_master_ssd.py` (needs DOOM1.WAD).
 

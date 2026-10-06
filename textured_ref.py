@@ -296,15 +296,22 @@ _LUT = None
 
 
 def to_rgb(fb, palette):
-    """Buffer image -> (160, 256, 3) uint8, as the display shows it."""
+    """Buffer image -> (160, 256, 3) uint8, as the display shows it: the
+    view Mode 2, the control panel (lines 136+) Mode 1 in the split's
+    palette (master_panel, step 6c)."""
     global _LUT
     import master_assets as M
+    import master_panel as P
     if _LUT is None:
-        _LUT = np.array([[palette[c & 7] for c in M.mode2_pixels(b) for _ in (0, 1)]
-                         for b in range(256)], np.uint8)         # 2 screen px per pixel
+        _LUT = (np.array([[palette[c & 7] for c in M.mode2_pixels(b) for _ in (0, 1)]
+                          for b in range(256)], np.uint8),        # 2 screen px per pixel
+                np.array([[P.SPLIT_RGB[c] for c in P.mode1_pixels(b)]
+                          for b in range(256)], np.uint8))
     a = np.frombuffer(fb, np.uint8).reshape(20, 64, 8)       # char row, column, line
     a = a.transpose(0, 2, 1).reshape(160, 64)                # line y, byte column
-    return _LUT[a].reshape(160, 256, 3)
+    out = _LUT[0][a].reshape(160, 256, 3)
+    out[P.VIEW_LINES:] = _LUT[1][a[P.VIEW_LINES:]].reshape(-1, 256, 3)
+    return out
 
 
 def to_png(fb, path, palette):

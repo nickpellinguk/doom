@@ -106,6 +106,7 @@ RAWY_MAX = $0490        ;  1168
 .import obj_key
 .if ::MASTER
 .import ok_flip
+.import split_init
 .endif
 .import fb_clr0
 .import fb_clr1
@@ -395,6 +396,8 @@ vxinit:
     JSR ok_flip                     ; MASTER: billboard objects OFF -- they
                                     ; apply span lines outside any seg's
                                     ; fill window (no sprites yet)
+    JSR split_init                  ; MASTER: the Mode 2 / Mode 1 panel
+                                    ; raster split (its IRQ; CLI)
 .else
     LDA #BANK_C
     STA $FE30   ; the clears live in bank C

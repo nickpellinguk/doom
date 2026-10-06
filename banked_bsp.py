@@ -243,8 +243,13 @@ def build_banked(flatr, master=False):
 
     # --- sqr tables: lo pages -> $1C00, HI pages -> $0200 (banked
     # SQRH_BASE, 2026-07-27 — $1E00 is the LCODE island now) ---
+    if master:                          # the Master's: HAZEL (MSQR, master/mfill.s)
+        from symmap import sym as _sq
+        sqr_at = _sq('sqr_quad_m', banked=2)
+    else:
+        sqr_at = abi.SQR_MIR_LO
     for i in range(0x600):
-        bm[abi.SQR_MIR_LO + i] = fmem[abi.SQR_MIR_LO + i]   # $0200-$07FF quad+mirrors, identical maps
+        bm[sqr_at + i] = fmem[abi.SQR_MIR_LO + i]   # $0200-$07FF quad+mirrors
     # (LV1 K planes + DBOUND moved ABOVE define_bank(BANK_L0) 2026-08-28:
     #  define_bank COPIES, so writes here were DEAD. DBOUND was shipping
     #  as ZEROS in every banked build/disc — the banded backface's bound

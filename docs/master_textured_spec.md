@@ -8,6 +8,9 @@ Model B memory map are replaced. The Model B build is not maintained.
 
 ## 1. Display
 
+- **Since step 6c** the control panel (lines 136–159) is **Mode 1**: a
+  timer interrupt switches the video ULA and palette at its first line and
+  back at vsync (see 6c).
 - **Since step 6a: Mode 2** (shadow MODE 130), 128×160, the **8 solid
   colours** (black, red, green, yellow, blue, magenta, cyan, white;
   logical = physical, the default palette). A byte is 2 pixels: the left
@@ -117,7 +120,8 @@ All writes are whole bytes; each texel row writes byte `B` to lines 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16`, page-aligned at $C800, $C900; texel and span loops, `mf_frame`, sky map) $C800–$D403, **free $D404–$DDFF (2.5K)**; BSS $DE00–$DFFF |
+| Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16`, page-aligned at $C800, $C900; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D4E3, **free $D4E4–$D7FF (0.8K)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B7EC: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
@@ -901,6 +905,56 @@ is otherwise identical.
   - the span loops 127K → 106K;
   - the 18 poses 24.9M → 23.8M.
   HAZEL −256 B (`mf_flip`).
+
+**6c. Mode 1 control panel by raster split. — DONE.** The Mode 1 panel
+art read better than its Mode 2 redraw, so the panel (lines 136–159) is
+Mode 1 again and the 3D view stays Mode 2. A timer interrupt switches
+the video ULA and palette mid-frame.
+- *Timer*: the User VIA's T1, free-running, locked once to the vsync edge
+  (`split_init`). Its two latches alternate:
+  - `SPLIT_VP` = 14,520 µs, vsync → the end of line 135's picture;
+  - `SPLIT_PV` = 19,964 − `SPLIT_VP`, back to vsync.
+
+  Each period is the latch + 2 µs, so the pair is exactly the 312-line
+  field. The VIA counts the same 1 MHz clock as the CRTC, so it never
+  drifts.
+- *Handler* (`split_irq`, HAZEL):
+  - At the panel event it writes the ULA control register (Mode 1, $D8)
+    and then palette entries 1–6.
+  - At the vsync event it writes Mode 2 ($F4) and those entries back.
+  - The panel's logical colours are chosen (`master_panel.split_palette`)
+    so only entries 1–6 differ between the modes: black 0 (ULA indices
+    0, 1, 4, 5) and white 1 (2, 3, 6, 7). Red 2 (8, 9, 12, 13) and cyan 3
+    (10, 11, 14, 15) sit in entries the Mode 2 view never uses, set once.
+  - That makes 7 writes (~21 µs), which fit the 32 µs horizontal blank.
+  - The panel bytes are Mode 1 art re-encoded to those logical colours.
+- *The IRQ path*:
+  - The MOS 3.20 entry ($E59E) is `STA $FC / PLA / PHA / AND #$10 / BNE /
+    JMP ($0204)`. It is outside HAZEL, and $FC is free.
+  - On the Master, page 2 held the quarter-square quad, so the quad moved
+    to HAZEL: `sqr_quad_m`, a linker-placed MSQR segment at $D800.
+    `abi.inc` resolves `SQR_MIR_LO` to it under MASTER for the engine link
+    (asmbuild defines `ENGINE`), and the rig copies it there. Model B keeps
+    $0200; its builds are byte-identical.
+  - The handler sits in HAZEL, which is paged for the whole run, so it
+    works whatever ACCCON X or ROMSEL hold when it lands.
+  - Every other IRQ source is masked: both VIAs' IER (the engine polls
+    their flags) and the ACIA (master reset).
+- *Timing* was found on jsbeeb by sweeping `SPLIT_VP`:
+  - 14,500 is early in 24 of 50 fields (line 135's right end decoded as
+    Mode 1);
+  - 14,548 is late in every field (line 136's left end decoded as Mode 2);
+  - the clean window is about 14,504–14,536, the horizontal blank, and
+    14,520 is its centre (about ±16 µs for interrupt-latency jitter).
+- *Gates*:
+  - `test_master_disc` samples 50 fields after the engine has run.
+    Line 135 must keep its Mode 2 colours out to the same pixel (not
+    early), and line 136 must show none (not late). The check fails at
+    both 14,500 and 14,548.
+  - `test_master_tex` compares the panel bytes.
+  - `to_png` decodes lines 136+ as Mode 1 in the split palette.
+- *Cost*: two interrupts a field, about 60 cycles each (well under 0.1% of
+  a frame).
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

@@ -146,7 +146,16 @@ with open('src/abi.inc', 'w') as f:
     f.write('.ifndef MASTER\nMASTER = 0\n.endif\n'
             '.ifdef BANKED\nRASTERHW = ::BANKED .and (.not ::MASTER)\n.endif\n')
     for name, bank, flat, comment in ABI:
-        if flat is None or flat == bank:
+        if name == 'SQR_MIR_LO':
+            # the MASTER build's quad lives in HAZEL, linker-placed (the
+            # MSQR segment, master/mfill.s), so page 2 keeps the MOS IRQ1V
+            # for the panel raster split
+            # (ENGINE: defined by asmbuild for the engine link only -- the
+            # boot block and HAZEL boot code also include this file)
+            f.write(f'.if ::MASTER .and .defined(::ENGINE)\n.global sqr_quad_m\n'
+                    f'{name} = sqr_quad_m\n.else\n'
+                    f'{name} = {fmt_val(bank, "$")}'.ljust(40) + f'; {comment}\n.endif\n')
+        elif flat is None or flat == bank:
             f.write(f'{name} = {fmt_val(bank, "$")}'.ljust(40) + f'; {comment}\n')
         else:
             f.write(f'.if ::BANKED\n{name} = {fmt_val(bank, "$")}'.ljust(40)

@@ -180,6 +180,39 @@ async function engineMode() {
         return bad;
     });
     if (out.panel_bad.some((b) => b)) fails.push(`control panel differs: ${out.panel_bad} bytes`);
+    // the raster split (step 6c): over 50 fields, line 135 (the view's
+    // last) keeps its Mode 2 colours out to the same pixel -- an early
+    // switch would decode its right end as Mode 1 -- and line 136 (the
+    // panel's first) shows none -- a late one would decode its left end as
+    // Mode 2, or show Mode 1 pixels through the view's palette entries
+    {
+        const W = 1024, VIEW_ONLY = ["255,255,0", "0,255,0", "0,0,255", "255,0,255"];
+        const rowM2 = (fb, y) => {
+            let lo = -1, hi = -1;
+            for (let x = 0; x < W; x++) {
+                const o = (y * W + x) * 4;
+                if (VIEW_ONLY.includes(`${fb[o]},${fb[o + 1]},${fb[o + 2]}`)) {
+                    if (lo < 0) lo = x;
+                    hi = x;
+                }
+            }
+            return [lo, hi];
+        };
+        const TOP = 188;                       // line 0 in the frame buffer (2 rows a line)
+        const y135 = TOP + 2 * 135, y136 = TOP + 2 * 136;
+        let ref = null, early = 0, late = 0;
+        for (let f = 0; f < 50; f++) {
+            await s.runFrames(1);
+            const fb = new Uint8Array(s._completeFb8);
+            const a = rowM2(fb, y135)[1], b = rowM2(fb, y136)[0];
+            if (ref === null) ref = a;
+            if (a !== ref) early++;
+            if (b >= 0) late++;
+        }
+        out.split = { line135_right: ref, early, late };
+        if (ref < 0) fails.push("split check: line 135 has no Mode 2 colours to test");
+        if (early || late) fails.push(`raster split off: ${early} early, ${late} late of 50 fields`);
+    }
     // screen content: palette only, and the HUD row lit
     const fb = new Uint8Array(s._completeFb8);
     const W = 1024, H = 625, cols = new Set();

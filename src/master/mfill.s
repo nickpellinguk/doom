@@ -85,7 +85,7 @@ HZ_PAIR = HZ_LINE / 2                   ; its pair (34); the rows per side
 VIEW_PAIRS = VIEW_LINES / 2             ; line pairs in the view (68)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
-.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame
+.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame, split_init
 
 ; ----------------------------------------------------------------------------
 ; Step 4 wall tables: filled by the image builders from master_walls.py
@@ -155,6 +155,9 @@ pc_uc:        .res VIEW_PAIRS                   ;  U, dU, V, dV (4.4): U, V at b
 pc_du:        .res VIEW_PAIRS                   ;  column 32
 pc_vc:        .res VIEW_PAIRS
 pc_dv:        .res VIEW_PAIRS
+
+.segment "MSQR"                         ; HAZEL $D800 (engine_master.cfg HZQ)
+sqr_quad_m: .res $600                   ; SQR_MIR_LO on the Master (abi.inc)
 
 .segment "MFILLBSS"
 mf_lo:   .res 1                         ; clamped [lo, hi) of the seg
@@ -292,6 +295,7 @@ tw_lh:   .res 1                         ;  texel column addresses
 tw_rl:   .res 1
 tw_rh:   .res 1
 tw_np:   .res 1                         ; whole pairs in the run
+sp_phase: .res 1                        ; the split: $80 after the panel event
 tw_slim: .res 2                         ; step 5n: the seg's shared-v limit,
 tw_sh:   .res 1                         ;  and this run shares ($80) or not
 tw_ly:   .res 1                         ; tr_fetch: the caller's Y                         ; c_tr / c_br made for this byte
@@ -1268,6 +1272,118 @@ run:
    JMP (.ident(.concat(.string(S), "_tab")),X)
 .endmacro
 
+.segment "MFILL"                        ; (HAZEL: paged for the whole run)
+; ============================================================================
+; THE PANEL RASTER SPLIT (step 6c). The 3D view is Mode 2; the control
+; panel, lines 136..159, is Mode 1 art (master_panel.py). The User VIA's T1
+; runs free, phase-locked to vsync, alternating two periods that add up to
+; the 312-line field (19968us): at the panel's first line the handler
+; switches the video ULA to Mode 1 and the panel's palette, and in the
+; blank around vsync back to Mode 2. The panel's logical colours are chosen
+; (master_panel.split_palette) so a switch rewrites only palette entries
+; 1..6: entries 8..15, which the Mode 2 view never uses, hold the panel's
+; red and cyan for good. The handler is reached through the MOS IRQ entry
+; ($E59E: STA $FC / ... / JMP (IRQ1V)) -- page 2 is free on the Master
+; since the quarter-square quad moved to HAZEL (SQR_MIR_LO_M) -- and lives
+; here in HAZEL, which is paged for the whole run, so it runs whatever
+; ACCCON X or ROMSEL hold when it lands.
+; ============================================================================
+SPLIT_VP = 14520                        ; T1 latch: vsync -> the panel switch
+SPLIT_PV = 19964 - SPLIT_VP             ;  and back (each period is latch + 2)
+ULA_MODE1 = $D8                         ; video ULA control: Mode 1, Mode 2
+ULA_MODE2 = $F4
+
+; split_init: the driver's last init step (SEI held, HAZEL in)
+split_init:
+   LDX #8                               ; palette 8..15: the panel's red
+:  TXA                                  ;  (8, 9, 12, 13) and cyan (10, 11,
+   ASL A                                ;  14, 15), for good
+   ASL A
+   ASL A
+   ASL A
+   STA sp_phase
+   TXA
+   AND #2
+   BEQ :+
+   LDA #6 ^ 7                           ; cyan
+   BRA :++
+:  LDA #1 ^ 7                           ; red
+:  ORA sp_phase
+   STA $FE21
+   INX
+   CPX #16
+   BNE :---
+   LDA #$7F                             ; every other IRQ source off: both
+   STA $FE4E                            ;  VIAs (the engine polls its flags)
+   STA $FE6E
+   LDA #3
+   STA $FE08                            ;  and the ACIA (master reset)
+   LDA #<split_irq
+   STA $0204                            ; IRQ1V (the MOS's own vector: fixed,
+   LDA #>split_irq                      ;  like the hardware it serves)
+   STA $0205
+   LDA $FE6B                            ; User VIA T1: continuous, PB7 off
+   AND #$3F
+   ORA #$40
+   STA $FE6B
+   STZ sp_phase                         ; the next event: the panel
+   LDA #2
+   STA $FE4D                            ; lock to the next vsync edge
+:  LDA $FE4D
+   AND #2
+   BEQ :-
+   LDA #<SPLIT_VP
+   STA $FE64
+   LDA #>SPLIT_VP
+   STA $FE65                            ; T1 starts: vsync -> panel
+   LDA #<SPLIT_PV
+   STA $FE66
+   LDA #>SPLIT_PV
+   STA $FE67                            ; then panel -> vsync
+   LDA #$C0
+   STA $FE6E                            ; User VIA T1 IRQ on
+   CLI
+   RTS
+
+; split_irq: IRQ1V (A is in $FC; X, Y untouched)
+split_irq:
+   LDA $FE6D
+   AND #$40
+   BEQ @out                             ; not T1
+   LDA sp_phase
+   EOR #$80
+   STA sp_phase
+   BPL @top
+   LDA #ULA_MODE1                       ; the panel's first line: Mode 1,
+   STA $FE20                            ;  then entries 1..6 (black, white)
+.repeat 6, K
+   LDA #((K + 1) << 4) | ((((K + 1) & 2) * 7 / 2) ^ 7)
+   STA $FE21
+.endrepeat
+   LDA #<SPLIT_VP                       ; the period after the next event
+   STA $FE66
+   LDA #>SPLIT_VP
+   STA $FE67
+   BRA @ack
+@top:
+   LDA #ULA_MODE2                       ; vsync: Mode 2, entries 1..6 back
+   STA $FE20                            ;  to their colours
+.repeat 6, K
+   LDA #((K + 1) << 4) | ((K + 1) ^ 7)
+   STA $FE21
+.endrepeat
+   LDA #<SPLIT_PV
+   STA $FE66
+   LDA #>SPLIT_PV
+   STA $FE67
+@ack:
+   LDA #$40
+   STA $FE6D                            ; T1's flag down
+@out:
+   LDA $FC
+   RTI
+
+.segment "MB6C"
 ; ============================================================================
 ; hz_run: byte column mf_x >> 2, screen lines [r_ys, r_ye], shade r_part
 ; (a left-pixel byte): the WHOLE byte (both pixels the shade) on every

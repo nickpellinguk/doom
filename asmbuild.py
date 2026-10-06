@@ -158,7 +158,8 @@ def _build_locked(asm, banked, c02, defs, dflags, key, objdir, _marker, _stamp):
     for src in _SOURCES:
         name = os.path.basename(src).replace('.s', '')
         obj = os.path.join(objdir, f'{name}_b{banked}c{c02}.o')
-        text += _run(['ca65', '-g', '-D', f'C02={c02}', '-D', f'BANKED={min(banked, 1)}',
+        text += _run(['ca65', '-g', '-D', 'ENGINE=1', '-D', f'C02={c02}',
+                      '-D', f'BANKED={min(banked, 1)}',
                       '-D', f'MASTER={int(banked == 2)}']
                      + dflags + ['-l', os.path.join(objdir, f'{name}_b{banked}c{c02}.lst'),
                       os.path.join(_ROOT, src), '-o', obj])
