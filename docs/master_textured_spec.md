@@ -34,13 +34,8 @@ floors, ceilings and the sky cross-hatch again: a flat texel is one of
 20 *tones*, the 8 solid colours or one of 12 pairs (`master_assets.PAIRS`),
 black + a colour or white + a colour (a colour darkened or paled); the
 sky is cyan + white. Flats are a placeholder ramp over the tones per material
-(`TONE_RAMPS`, `quantise_flat`). Textures
-are a placeholder conversion until each is redrawn as pixel art (step
-6b): per texture, its brightness (normalised to its own 5–95% range) is
-cut into four levels of a ramp for its material, found from its mean
-colour: grey black/blue/cyan/white, brown black/red/yellow/white, green
-black/green/yellow/white, red black/red/magenta/white; strongly coloured
-pixels (lights, nukage) take the nearest saturated colour.
+(`TONE_RAMPS`, `quantise_flat`). Wall textures are hand-drawn pixel art
+(step 6b, `art/walls`), a colour family per material.
 
 Steps 1–5 (Mode 1):
 
@@ -913,22 +908,30 @@ is otherwise identical.
   - the 18 poses 24.9M → 23.8M.
   HAZEL −256 B (`mf_flip`).
 
-**6b. Wall textures as pixel art. — IN PROGRESS.** Each wall texture is
-a hand-drawn grid, `art/walls/NAME.txt` (one letter per texel, `.rgybmcw`
-= black red green yellow blue magenta cyan white), read by
-`wall_art.wall_texels` in place of the nearest-colour conversion. Style,
-per material:
-- *tan / brown* (STARTAN, BROWN, wood): red, black seams, yellow rims;
-- *grey metal* (STARGR, doors, supports): blue, black seams, cyan rims,
-  white glints;
-- *green* (STARG, slime): blue panels with green rims, or green with
-  black and yellow.
+**6b. Wall textures as pixel art. — DONE (walls).** All 29 wall
+textures are hand-drawn grids, `art/walls/NAME.txt` (one letter per
+texel, `.rgybmcw` = black red green yellow blue magenta cyan white), read
+by `wall_art.wall_texels` in place of the nearest-colour conversion; edit
+a grid and rebuild (`master_assets.py`) to change a texture. Style, per
+material, flat colour areas with hard rims rather than shading:
+- *tan / brown* (STARTAN1/3, SW1STRTN, BROWN1/96/144, BIGDOOR4, STEP1/6,
+  TEKWALL4, EXITDOOR): red, black seams and grain, yellow rims, nails and
+  traces;
+- *grey metal* (STARGR1, DOOR3, BIGDOOR2, SUPPORT2, DOORSTOP, DOORTRAK,
+  COMPTALL, COMPUTE2, COMPSPAN, COMPTILE, PLANET1, EXITSIGN): blue, black
+  seams, cyan rims, white glints;
+- *green* (STARG3: blue panels, green rims; BROWNGRN, SLADWALL, NUKE24:
+  green, black, yellow);
+- *accents* keep DOOM's signals: red lamps, yellow/black hazard stripes,
+  green circuit boards and screen text, the red EXIT, white light tubes.
 
-Drawn so far: STARTAN3, STARG3, STARGR1, BROWN1, DOOR3. The rest are
-seeded by `wall_art.convert` (art-directed: per texture a region ramp
-banded on the 3x3 mean brightness, dark / light detail from the local
-contrast, hue accents for lamps and stripes, lone specks removed) and are
-redrawn one at a time. `python3 wall_art.py` seeds any missing grid.
+Clean art also dedups far better (columns are stored once per texture):
+wall + flat data fell from 25.1K to 17.7K, freeing 7.4K of bank 6
+($8500–$A4FF). `wall_art.convert` (an art-directed converter: per texture
+a region ramp on the 3x3 mean brightness, local-contrast detail, hue
+accents, speck clean-up) remains as the seed for a new texture
+(`python3 wall_art.py` writes a grid for any texture without one). The
+flats are still the placeholder tone ramps.
 
 **6c. Mode 1 control panel by raster split. — DONE.** The Mode 1 panel
 art read better than its Mode 2 redraw, so the panel (lines 136–159) is
