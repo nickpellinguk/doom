@@ -37,8 +37,8 @@ os.environ['DOOM_CPU'] = '65c02'
 
 OFFMAP = {(192, -2368, 99), (3648, -2368, 35), (1500, -3700, 0), (3648, -4800, 131)}
 BANK6_CODE = ('MB6C', 'MFILLV')
-ARITH = {'mf_mul8', 'mul16', 'div32', 'divq16', 'dq_set', 'dq_core', 'd8_byte', 'kbmul',
-         'mul8x32', 'pl_prod', 'q_a_h', 'neg_ah', 'h63', 'tx_dat'}
+ARITH = {'mf_mul8', 'mul16', 'div32', 'divq16', 'dq_set', 'dq_core', 'd8_byte',
+         'mul8x32', 'pl_prod', 'q_a_h', 'neg_ah', 'tx_dat'}
 JOBS = [
     ('wall texel loop', ['tr_screen', 'tr_fetch', 'tr_vstep', 'tr_ent', 'tb_end']
                         + [f'tv_{v}' for v in range(4)]
@@ -52,7 +52,7 @@ JOBS = [
     ('partial/second-run cells', ['pl_line', 'pl_pair', 'pl_cell', 'pc_go', 'pc_rd', 'pl_wr1']),
     ('plane spans set-up', ['mk_spans', 'mk_close', 'sp_setup', 'pp_slot', 'sl_draw', 'pe_init',
                             'pe_kind', 'pe_clr', 'pd_flush', 'mf_flush', 'prun', 'pl_part',
-                            'ceil_run', 'floor_run', 'pl_seg', 'mf_planes']),
+                            'ceil_run', 'floor_run', 'pl_seg', 'mf_planes', 'uvat']),
     ('plane rows', ['pl_rowc', 'pl_row', 'pl_zrow']),
     ('wall set-up per seg', ['tx_seg', 'at', 'l16t', 'ld_dress', 'set_cur']),
     ('wall set-up per byte/run', ['trun', 'tv_div', 'tv_v0', 'tcol', 'tx_getd', 'tr_lines',
@@ -66,7 +66,7 @@ JOBS = [
                                     'dv_l0', 'dv_end']),
 ]
 INCLUSIVE = ['mf_fill', 'mf_snap', 'band', 'wall_run', 'tv_div', 'tv_v0', 'tcol', 'tx_getd',
-             'tx_seg', 'at', 'pl_pair', 'mk_spans', 'sp_setup', 'pl_rowc', 'kbmul', 'st_step',
+             'tx_seg', 'at', 'pl_pair', 'mk_spans', 'sp_setup', 'pl_rowc', 'uvat', 'st_step',
              'st_val', 'st_peek', 'div32', 'divq16', 'mul16', 'mul8x32']
 LOOP_HEADS = ['sl_lp', 'trun', 'sp_go2', 'sl_go', 'mf_fill', 'col', 'band', 'tx_getd']
 WALL_PAIR_LABELS = [f'te_{v}{j}' for v in range(4) for j in range(4)]

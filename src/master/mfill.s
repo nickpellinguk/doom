@@ -76,15 +76,11 @@ zw_tr   = bca_boxp                      ; right texel column pointer (2)
 zw_ev   = zp_save2                      ; the combined texel byte (scratch)
 zw_np   = zp_bca_p1_h                   ; blocks of four pairs left
 ; The span loops' zero page (sp_go2 / sl_go, leaves; tr_screen reloads
-; all of the above per run, so they share it): U, V (4.12), dU, dV
-su_l    = zw_lvl
-su_h    = zw_lvh
-sv_l    = zw_tvl
-sv_h    = zw_tvh
-sdu_l   = zw_tr
-sdu_h   = zw_tr+1
-sdv_l   = zw_rowm
-sdv_h   = zw_ev
+; all of the above per run, so they share it): U, V, dU, dV (4.4)
+su      = zw_lvl
+sv      = zw_tvl
+sdu     = zw_tr
+sdv     = zw_rowm
 sf_nb   = zw_np                         ; sp_go2: blocks of four bytes left
 NONE = $FF                              ; no texture (master_walls.NONE)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
@@ -155,14 +151,10 @@ pe_fb:   .res 64
 sp_start: .res 80                       ; MakeSpans: per pair, its span's start
 pc_ep:        .res 80                   ; per line pair p: the frame epoch and
 pc_d:         .res 80                   ;  plane height D it was computed for,
-pc_u0l:       .res 80                   ;  U0 / dU / V0 / dV (4.12, mod 2^16)
-pc_u0h:       .res 80
-pc_dul:       .res 80
-pc_duh:       .res 80
-pc_v0l:       .res 80
-pc_v0h:       .res 80
-pc_dvl:       .res 80
-pc_dvh:       .res 80
+pc_uc:        .res 80                   ;  U, dU, V, dV (4.4): U, V at byte
+pc_du:        .res 80                   ;  column 32
+pc_vc:        .res 80
+pc_dv:        .res 80
 
 .segment "MFILLBSS"
 mf_lo:   .res 1                         ; clamped [lo, hi) of the seg
@@ -331,8 +323,10 @@ pl_p:    .res 1
 pl_p0:   .res 1
 pl_p1:   .res 1
 pl_kb:   .res 1
-pl_u:    .res 2
-pl_v:    .res 2
+pl_u:    .res 1
+pl_v:    .res 1
+pl_uc:   .res 2                         ; pl_row: U, V at column 32 (4.12)
+pl_vc:   .res 2
 pl_k0:   .res 1                         ; the seg's byte columns
 pl_k1:   .res 1
 pl_y:    .res 1
@@ -2752,10 +2746,11 @@ ln_ptrk:                                ; (A = byte column k)
 ; STEP 5: FLOORS AND CEILINGS (plane_ref.py is the executable spec). ONE
 ; texel read per 4x2 fat pixel: a plane byte is the 16x16 flat's byte at
 ; the byte column's centre and the line PAIR's centre, written whole (FLIP
-; on the pair's odd line). 4.12 fixed point: along a line pair a plane is
-; affine, so per pair the row maths gives U0, dU, V0, dV (pl_row, cached
-; per frame in pc_*), and along a HORIZONTAL SPAN U += dU, V += dV per byte
-; column (see PLANES AS HORIZONTAL SPANS below).
+; on the pair's odd line). Along a line pair a plane is affine, so per
+; pair the row maths (4.12) gives U, V at byte column 32 and dU, dV, each
+; rounded to 4.4 (pl_row, cached per frame in pc_*), and along a
+; HORIZONTAL SPAN U += dU, V += dV per byte column, in 8 bits (see PLANES
+; AS HORIZONTAL SPANS below).
 ; ============================================================================
 
 .segment "MFILL"                        ; (HAZEL: entered with bank 7 paged)
@@ -2904,7 +2899,7 @@ floor_run:
 ; (pe_*: one interval per kind per column). After the seg's last column
 ; (mf_planes) a MakeSpans sweep (DOOM's R_MakeSpans, on pairs) turns them
 ; into horizontal pair spans, drawn by sp_draw: per byte U += dU, V += dV
-; (4.12), one texel read, two whole-byte writes (even line lit, odd line
+; (4.4), one texel read, two whole-byte writes (even line lit, odd line
 ; FLIP lit). Lines that are not a whole pair at a run's ends, a run on the
 ; wrong side of the horizon (its shade) and the rare second run of a kind
 ; in one column are drawn on the spot, a byte at a time.
@@ -3042,35 +3037,9 @@ pl_shade:
 ; pl_cell: A = the texel byte at pair pl_p, byte column pl_kb (X clear)
 pl_cell:
    JSR pl_rowc
-   LDX pl_p
-   LDA pc_dul,X                         ; U = U0 + kb * dU
-   STA m_a
-   LDA pc_duh,X
-   STA m_a+1
-   JSR kbmul
-   LDX pl_p
-   CLC
-   LDA m_p
-   ADC pc_u0l,X
-   STA pl_u
-   LDA m_p+1
-   ADC pc_u0h,X
-   STA pl_u+1
-   LDA pc_dvl,X                         ; V = V0 + kb * dV
-   STA m_a
-   LDA pc_dvh,X
-   STA m_a+1
-   JSR kbmul
-   LDX pl_p
-   CLC
-   LDA m_p
-   ADC pc_v0l,X
-   STA pl_v
-   LDA m_p+1
-   ADC pc_v0h,X
-   STA pl_v+1
-   LDX pl_u+1                           ; texel (V >> 12) * 16 + (U >> 12)
-   LDA pl_v+1
+   JSR uvat
+   LDX pl_u                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDA pl_v
    AND #$F0
    ORA hi16,X
    TAY
@@ -3195,26 +3164,20 @@ sp_go2:
    ORA sf_q
    ASL A
    TAX                                  ; X = (s * 4 + q) * 2
-   LDA sv_h                             ; (A = V's high byte at an entry)
+   LDA sv                               ; (A = V at an entry)
    JMP (sf_ent,X)
 sf_0:
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_00:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r00:
@@ -3230,22 +3193,16 @@ sf_r00:
    EOR #$09                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_01:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r01:
@@ -3261,22 +3218,16 @@ sf_r01:
    EOR #$19                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_02:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r02:
@@ -3292,22 +3243,16 @@ sf_r02:
    EOR #$09                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_03:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r03:
@@ -3332,22 +3277,16 @@ sf_r03:
 :  JMP sf_end
 sf_1:
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_10:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r10:
@@ -3367,22 +3306,16 @@ sf_r10:
    INC PTR+1                            ;  (next page at column 31 mod 32)
 :
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_11:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r11:
@@ -3398,22 +3331,16 @@ sf_r11:
    EOR #$09                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_12:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r12:
@@ -3429,22 +3356,16 @@ sf_r12:
    EOR #$19                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_13:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r13:
@@ -3465,22 +3386,16 @@ sf_r13:
 :  JMP sf_end
 sf_2:
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_20:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r20:
@@ -3496,22 +3411,16 @@ sf_r20:
    EOR #$09                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_21:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r21:
@@ -3531,22 +3440,16 @@ sf_r21:
    INC PTR+1                            ;  (next page at column 31 mod 32)
 :
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_22:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r22:
@@ -3562,22 +3465,16 @@ sf_r22:
    EOR #$09                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_23:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r23:
@@ -3598,22 +3495,16 @@ sf_r23:
 :  JMP sf_end
 sf_3:
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_30:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r30:
@@ -3629,22 +3520,16 @@ sf_r30:
    EOR #$19                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_31:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r31:
@@ -3660,22 +3545,16 @@ sf_r31:
    EOR #$09                             ; the next column, within four
    TAY
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_32:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r32:
@@ -3695,22 +3574,16 @@ sf_r32:
    INC PTR+1                            ;  (next page at column 31 mod 32)
 :
    CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
 sf_33:
-   AND #$F0                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDX su_h
+   AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
+   LDX su
    ORA hi16,X
    TAX
 sf_r33:
@@ -3746,8 +3619,8 @@ sl_go:
    LDA #ACC_DXY
    STA $FE34
 sl_lp:
-   LDX su_h                             ; texel (V >> 12) * 16 + (U >> 12)
-   LDA sv_h
+   LDX su                               ; texel (V >> 4) * 16 + (U >> 4)
+   LDA sv
    AND #$F0
    ORA hi16,X
    TAX
@@ -3766,19 +3639,13 @@ sl_mk:
    BCC :+
    INC PTR+1
 :  CLC
-   LDA su_l
-   ADC sdu_l
-   STA su_l
-   LDA su_h
-   ADC sdu_h
-   STA su_h
+   LDA su
+   ADC sdu
+   STA su
    CLC
-   LDA sv_l
-   ADC sdv_l
-   STA sv_l
-   LDA sv_h
-   ADC sdv_h
-   STA sv_h
+   LDA sv
+   ADC sdv
+   STA sv
    DEC sp_n
    BNE sl_lp
    LDA #ACC_DY
@@ -3788,21 +3655,28 @@ sl_mk:
    RTS
 
 .segment "MB6C"
-; kbmul: m_p (16) = m_a * pl_kb (mod 2^16; kb < 64: six shift-add steps)
-kbmul:                                  ; m_p = m_a * pl_kb (mod 2^16)
+; uvat: pl_u, pl_v = U, V (4.4) at byte column pl_kb of pair pl_p's row:
+; Uc + (kb - 32) * dU (mod 2^8), one 8 x 8 multiply each
+uvat:
    LDA pl_kb
+   SEC
+   SBC #32
    STA mq_b
-   LDA m_a+1
+   LDX pl_p
+   LDA pc_du,X
    JSR mf_mul8
-   LDA mq_l
-   STA m_p+1
-   LDA m_a
-   JSR mf_mul8
+   LDX pl_p
    CLC
-   ADC m_p+1
-   STA m_p+1
    LDA mq_l
-   STA m_p
+   ADC pc_uc,X
+   STA pl_u
+   LDA pc_dv,X
+   JSR mf_mul8
+   LDX pl_p
+   CLC
+   LDA mq_l
+   ADC pc_vc,X
+   STA pl_v
    RTS
 
 ; pl_prod: pl_q (5) = pl_e * A, or pl_e << 8 when X (unity) is non-zero
@@ -4202,27 +4076,6 @@ q_a_h:
    ROL pl_h+1
    RTS
 
-; h63: pl_h = 63 * pl_h = (pl_h << 6) - pl_h (mod 2^16); X preserved
-h63:                                    ; pl_h = 63 * pl_h (mod 2^16) =
-   LDA pl_h                             ;  (h << 6) - h, h << 6 being
-   STA pl_q+1                           ;  (h << 8) >> 2: a byte move and
-   STZ pl_q                             ;  two shifts of [h_hi : h_lo : 0]
-   LDA pl_h+1
-   LSR A
-   ROR pl_q+1
-   ROR pl_q
-   LSR A
-   ROR pl_q+1
-   ROR pl_q
-   SEC
-   LDA pl_q
-   SBC pl_h
-   STA pl_h
-   LDA pl_q+1
-   SBC pl_h+1
-   STA pl_h+1
-   RTS
-
 ; 2^20 // k for k = 2j + 1, j = 0..39 (the depth of a pair k lines off the
 ; horizon, 1024 * depth / D), three byte planes
 pl_zk0:
@@ -4278,7 +4131,8 @@ zs3:     .res 40
 ;   Zk << 8), made once per frame per j (zr_*): the same integers as
 ;   (D * Zk) * |c|, one multiply per term
 ;   A = +-(Pc >> 8), hV = +-(Pc >> 14), Bs = +-(Ps >> 8), hU = +-(Ps >> 14)
-;   U0 = Up + A - 63 hU, dU = 2 hU, V0 = Vp - Bs - 63 hV, dV = 2 hV
+;   at byte column 32: U = Up + A + hU, V = Vp - Bs + hV; dU = 2 hU,
+;   dV = 2 hV; all four rounded to 4.4 (the high byte, + low >= $80)
 pl_row:
    LDA pl_p
    SEC
@@ -4306,28 +4160,30 @@ pl_row:
    LDA pl_cn
    JSR neg_ah
    LDX pl_p
-   ; V0 = Vp - Bs - 63 hV (Bs below), dV = 2 hV; A, hV now
-   LDA pl_h
+   ; at column 32 (U0 + 32 dU): Uc = Up + A + hU, Vc = Vp - Bs + hV;
+   ; dU = 2 hU, dV = 2 hV; each rounded to 4.4 (its high byte)
+   LDA pl_h                             ; dV
    ASL A
-   STA pc_dvl,X
+   TAY
    LDA pl_h+1
    ROL A
-   STA pc_dvh,X
-   JSR h63                              ; pl_h = 63 * hV
-   CLC                                  ; U0 starts as Up + A
+   CPY #$80
+   ADC #0
+   STA pc_dv,X
+   CLC                                  ; Uc starts as Up + A
    LDA pl_up
    ADC pl_a
-   STA pc_u0l,X
+   STA pl_uc
    LDA pl_up+1
    ADC pl_a+1
-   STA pc_u0h,X
-   SEC                                  ; V0 starts as Vp - 63 hV
+   STA pl_uc+1
+   CLC                                  ; Vc starts as Vp + hV
    LDA pl_vp
-   SBC pl_h
-   STA pc_v0l,X
+   ADC pl_h
+   STA pl_vc
    LDA pl_vp+1
-   SBC pl_h+1
-   STA pc_v0h,X
+   ADC pl_h+1
+   STA pl_vc+1
    ; sin: Ps = D * ZS[j] -> Bs, hU
    LDX pl_j
    LDA zs0,X
@@ -4344,27 +4200,38 @@ pl_row:
    LDA pl_sn
    JSR neg_ah
    LDX pl_p
-   LDA pl_h
+   LDA pl_h                             ; dU
    ASL A
-   STA pc_dul,X
+   TAY
    LDA pl_h+1
    ROL A
-   STA pc_duh,X
-   JSR h63                              ; pl_h = 63 * hU
-   SEC                                  ; U0 -= 63 hU
-   LDA pc_u0l,X
-   SBC pl_h
-   STA pc_u0l,X
-   LDA pc_u0h,X
-   SBC pl_h+1
-   STA pc_u0h,X
-   SEC                                  ; V0 -= Bs
-   LDA pc_v0l,X
+   CPY #$80
+   ADC #0
+   STA pc_du,X
+   CLC                                  ; Uc += hU
+   LDA pl_uc
+   ADC pl_h
+   STA pl_uc
+   LDA pl_uc+1
+   ADC pl_h+1
+   STA pl_uc+1
+   LDA pl_uc                            ; rounded: + (low byte >= $80)
+   CMP #$80
+   LDA pl_uc+1
+   ADC #0
+   STA pc_uc,X
+   SEC                                  ; Vc -= Bs
+   LDA pl_vc
    SBC pl_a
-   STA pc_v0l,X
-   LDA pc_v0h,X
+   STA pl_vc
+   LDA pl_vc+1
    SBC pl_a+1
-   STA pc_v0h,X
+   STA pl_vc+1
+   LDA pl_vc
+   CMP #$80
+   LDA pl_vc+1
+   ADC #0
+   STA pc_vc,X
    LDA mf_ep
    STA pc_ep,X
    LDA pl_d
@@ -4489,37 +4356,16 @@ mk_close:
 ; PTR / Y for line pl_y, the flat's page patched and its bank paged
 sp_setup:
    JSR pl_rowc
-   LDX pl_p
-   LDA pc_dul,X                         ; U, V at the span's first column
-   STA m_a
-   STA sdu_l                            ; and dU, dV for the loops
-   LDA pc_duh,X
-   STA m_a+1
-   STA sdu_h
-   JSR kbmul
-   LDX pl_p
-   CLC
-   LDA m_p
-   ADC pc_u0l,X
-   STA su_l
-   LDA m_p+1
-   ADC pc_u0h,X
-   STA su_h
-   LDA pc_dvl,X
-   STA m_a
-   STA sdv_l
-   LDA pc_dvh,X
-   STA m_a+1
-   STA sdv_h
-   JSR kbmul
-   LDX pl_p
-   CLC
-   LDA m_p
-   ADC pc_v0l,X
-   STA sv_l
-   LDA m_p+1
-   ADC pc_v0h,X
-   STA sv_h
+   JSR uvat                             ; U, V at the span's first column
+   LDA pl_u
+   STA su
+   LDA pl_v
+   STA sv
+   LDX pl_p                             ; and dU, dV for the loops
+   LDA pc_du,X
+   STA sdu
+   LDA pc_dv,X
+   STA sdv
    ; screen: PTR lo 0, Y = (kb * 8 + line & 7) & $FF, PTR hi = the page
    LDA pl_kb
    ASL A

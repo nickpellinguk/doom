@@ -99,13 +99,13 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D582, **free $D583–$DDFF (2.1K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B88B: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C6AF (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D4B6, **free $D4B7–$DDFF (2.3K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B7E9: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
 | Main $6D38–$6FE9 | Cold per-seg wall and plane set-up |
-| Main $4FB1–$5592 | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
+| Main $4FB1–$55AA | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
@@ -369,7 +369,7 @@ side is `src/master/mfill.s`, byte-exact against it in
   (`zp_seg_bot_dlt` / `zp_seg_top_dlt`): the same heights the walls'
   floor and ceiling lines come from, so the texture meets them. It also
   moves with the movers. Hence `E = D·(2²⁰ // k)`, from a 40-entry table.
-- *4.12 fixed point*: u and v are in texels (4 world units each), 16
+- *4.12 fixed point* (4.4 since step 5k): u and v are in texels (4 world units each), 16
   bits, wrapping at 16 texels for free. Along a line pair a plane is
   affine. With c and s the engine's 8-bit cos and sin magnitudes (unity
   256) and their signs, Pc = E·|c| and Ps = E·|s|:
@@ -534,7 +534,7 @@ u and its own v (its own T and B lines, step and fractional v stepping):
   560.
 - *Memory*: the span sweep, `sp_setup` and `pl_part` are in HAZEL with
   the loops; the pending-plane logic, the row maths and their tables
-  (`pp_all` 256 B, ZC/ZS 360 B) in main $4FB1–$5592.
+  (`pp_all` 256 B, ZC/ZS 360 B) in main $4FB1–$5592 ($55AA since step 5k).
 
 **5f. Bank 6 holds the fill's cold code. — DONE.** HAZEL is for the hot
 loops; most of the fill's code is set-up that runs while bank 6 (BANK_C)
@@ -636,8 +636,8 @@ and patched 16-bit U, V steps on every byte.
   to the next column with one EOR (#$09 or #$19, clearing the odd line's
   bit). One count per block.
 - *Each body is [U, V stepped] sf_sq: [texel read, both lines written]*:
-  an entry skips its step, so the last byte's step never runs. V's high
-  byte is left in A for the texel index.
+  an entry skips its step, so the last byte's step never runs. V (its high
+  byte, before step 5k) is left in A for the texel index.
 - *Zero page*: U, V and dU, dV (`su_*`, `sv_*`, `sdu_*`, `sdv_*`) and
   the block count share the wall loop's `zw_*` bytes. Both loops are
   leaves, and `tr_screen` reloads its own per run. `sl_go` uses them too,
@@ -647,6 +647,33 @@ and patched 16-bit U, V steps on every byte.
 - *Cycles* (`tools/master_profile.py`): the span loops 239K → 205K per
   frame (~93 cycles per pair byte with each span's set-up); the mean frame
   1.847M → 1.812M (−1.8%). Byte-exact (no model change). HAZEL +0.6K.
+
+**5k. Floors and ceilings in 4.4. — DONE.** Floors are low value, so
+their u and v drop from 4.12 to 4.4: one byte each, 1/16 texel, wrapping
+at 16 texels for free.
+- *Model* (`plane_ref.row`): the row maths stays 4.12. It is taken at
+  byte column 32 (U0 + 32·dU), so `Uc = Up + A + hU` and
+  `Vc = Vp − Bs + hV`, with no 63·h terms. Uc, Vc, dU and dV are each
+  rounded to 4.4 (the high byte, plus one if the low byte is ≥ $80).
+  Byte column kb has u = Uc + (kb − 32)·dU (mod 2⁸), the same whatever
+  span it is in.
+- *Accuracy*: a rounded step is off by at most 1/32 texel a column.
+  Anchored at the centre, that stays within one texel at the screen's
+  edges (anchored at column 0, it would reach two). Against a float
+  evaluation of the same geometry, 99.99% of plane cells are within one
+  texel (100.00% in 4.12); the gate is 99%.
+- *6502*:
+  - `pl_row` stores the four bytes, and the row cache halves (`pc_uc`,
+    `pc_du`, `pc_vc`, `pc_dv`: 320 B of HAZEL freed). `h63` is gone.
+  - `uvat` starts a span or cell with one 8×8 multiply per axis
+    (`mf_mul8`, low byte of (kb − 32)·d), replacing the two 16-bit
+    `kbmul`s.
+  - The loops step u and v with two 8-bit adds, and the texel is
+    `(v & $F0) | hi16[u]`. U, V, dU and dV are one zero-page byte each.
+- *Cycles* (`tools/master_profile.py`): the span loops 205K → 167K per
+  frame, arithmetic 410K → 365K. The mean frame is 1.812M → 1.730M
+  (−4.6%), and the 18 poses 29.8M → 28.2M. Byte-exact against the
+  revised model.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

@@ -4,7 +4,7 @@
 
   - coverage unchanged: every on-map pose filled completely (the off-map
     poses are the known four)
-  - the 4.12 integer maths is right: every plane cell's texel is, within
+  - the 4.4 integer maths is right: every plane cell's texel is, within
     one texel on both axes (16-texel wrap), the texel a float evaluation
     of the SAME geometry gives -- the engine's prescaled plane heights
     (the ones its floor and ceiling lines come from), exact trig, the
@@ -105,10 +105,10 @@ for pose in C.POSITIONS:
           f'{100 * ne / max(n, 1):.1f}%, exact {100 * ex / max(n, 1):.1f}%')
 pn, pe = 100 * NEAR / N, 100 * EXACT / N
 ps = 100 * SOK / SN
-print(f'4.12 maths vs float of the same geometry: {SN} plane cells, within one texel {ps:.2f}%')
+print(f'4.4 maths vs float of the same geometry: {SN} plane cells, within one texel {ps:.2f}%')
 print(f'vs the world-height reference (info): {N} cells, within one texel {pn:.2f}%, exact {pe:.2f}%')
 if ps < 99.0:
-    fails.append(f'4.12 maths within one texel {ps:.2f}% < 99%')
+    fails.append(f'4.4 maths within one texel {ps:.2f}% < 99%')
 for f in fails[:20]:
     print('FAIL:', f)
 print('PLANEREF: FAIL' if fails else 'PLANEREF: PASS')
