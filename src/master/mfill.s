@@ -1311,7 +1311,7 @@ run:
 ; here in HAZEL, which is paged for the whole run, so it runs whatever
 ; ACCCON X or ROMSEL hold when it lands.
 ; ============================================================================
-SPLIT_VP = 14520                        ; T1 latch: vsync -> the panel switch
+SPLIT_VP = 14161                        ; T1 latch: vsync -> the panel switch
 SPLIT_PV = 19964 - SPLIT_VP             ;  and back (each period is latch + 2)
 ULA_MODE1 = $D8                         ; video ULA control: Mode 1, Mode 2
 ULA_MODE2 = $F4

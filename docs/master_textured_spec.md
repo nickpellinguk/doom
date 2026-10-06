@@ -947,7 +947,8 @@ Mode 1 again and the 3D view stays Mode 2. A timer interrupt switches
 the video ULA and palette mid-frame.
 - *Timer*: the User VIA's T1, free-running, locked once to the vsync edge
   (`split_init`). Its two latches alternate:
-  - `SPLIT_VP` = 14,520 µs, vsync → the end of line 135's picture;
+  - `SPLIT_VP` = 14,161 µs, vsync → the end of line 135's picture (14,520
+    until the 2026-10-06 fix below);
   - `SPLIT_PV` = 19,964 − `SPLIT_VP`, back to vsync.
 
   Each period is the latch + 2 µs, so the pair is exactly the 312-line
@@ -990,6 +991,22 @@ the video ULA and palette mid-frame.
   - `to_png` decodes lines 136+ as Mode 1 in the split palette.
 - *Cost*: two interrupts a field, about 60 cycles each (well under 0.1% of
   a frame).
+- *Fix, 2026-10-06: the split was 5 lines late.* The sweep and gates above
+  read the frame buffer at row 188 + 2 * line; poking a line's bytes and
+  diffing shows screen line L is row **176** + 2L. So "line 135 / 136" were
+  really lines 141 / 142, and 14,520 put the Mode 1 switch at line 141 --
+  the first panel lines showed Mode 1 bytes decoded as Mode 2 (reported on
+  jsbeeb 2.3.2, both boot routes). Read off the CRTC (`vertCounter`,
+  `scanlineCounter`, `horizCounter`) as the handler writes: the switch must
+  come after line 135's visible part (character 64 on) and the panel's
+  last palette write (entry 15, ~84 characters / 42 µs later) before line
+  137 (line 136 is all zero bytes, black in either mode). 14,161 puts the
+  switch at 135:117-121 (`*RUN`; SHIFT-BREAK 5 later) and the last
+  palette write at 136:73-77 -- about 25 µs of margin each side.
+  `tools/master_rig.mjs` now uses row 176 and fails unless every field's
+  switch and last palette write fall in that window (content-independent;
+  the old reference-pixel "early" check is information only, since the
+  real line 135 moves with the view). It fails the old 14,520 disc.
 
 **6d. Floor, ceiling and sky cross-hatch. — DONE.** Floors and ceilings
 regain Mode 1's texture without its harshness: a flat texel is a TONE,
@@ -1118,10 +1135,10 @@ the view, bottom centre, sitting on the panel's edge.
   generates, and `gun_draw` on a random back buffer (both buffers) leaves
   exactly `master_gun.apply`'s bytes and touches nothing else; in
   `run_regression`. The jsbeeb disc test's hole check passes with it.
-- *Note*: a jsbeeb `screenshotActive` resamples 625 rows to 600, blending
-  the view's last lines into the panel's first text row; the frame buffer
-  itself is clean (checked: no view colours below line 135 over 120
-  fields).
+- *Note* (withdrawn 2026-10-06): this blamed `screenshotActive`'s
+  resampling for view colours in the panel's first text row. They were
+  real: the split was 5 lines late, hidden by a frame-buffer row offset
+  error in the check (6c, fix).
 
 **7c. Speed: the wall pair bodies' row mask. — DONE.** In the unrolled
 wall pair bodies (`tv_*` / `sv_*`) the row mask `(th - 1) * 8` is now an
