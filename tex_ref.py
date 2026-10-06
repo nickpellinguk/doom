@@ -56,15 +56,6 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             band kind and part on the previous byte):
                 stepR = stepL + ((stepL - stepL_prev) >> 1)   (s16)
             else it is exact, K // (Br - Tr).
-            Step 5j: down a run v steps per line PAIR as the 6502's unrolled
-            blocks of four pairs do (run_vs): a leading odd line, then the
-            pairs, the first block entered at position j = (4 - (pairs &
-            3)) & 3; positions 1-3 add s8 = round(S / 256) to v's HIGH
-            byte only (5.3), position 0 adds C = 4S - 3 * 256 * s8 (all
-            16 bits), so the blocks do not drift; the run starts at v + d -
-            j * e (e = S - 256 * s8, d = (3e) >> 1) so a block's four pairs
-            err by +-1.5e at most, centred; a trailing even line is a
-            position 0. S = the pair step, 2 * step.
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines: the byte,
             then FLIP of it; a pair moves 2 * step):
@@ -85,40 +76,6 @@ import master_walls as MW
 import master_assets as M
 
 ROOT = Fm.ROOT
-
-
-def run_vs(vtop, step, T, ys, ye):
-    """{line: v} down one strip's wall run, lines ys..ye (biased, the
-    filler's T alike), as the 6502's wall loop steps it (step 5j)."""
-    out = {}
-    S = (2 * step) & 0xFFFF                     # the pair step
-    v = (vtop + ((ys & ~1) - T) * step) & 0xFFFF
-    y = ys
-    if y & 1:                                   # a leading odd line, alone
-        out[y] = v
-        if y == ye:
-            return out
-        y += 1
-        v = (v + S) & 0xFFFF
-    n = ye - y + 1
-    P, tail = n >> 1, n & 1
-    if P:
-        s8 = ((S + 0x80) >> 8) & 0xFF
-        e = (S - (s8 << 8)) & 0xFFFF
-        e -= 0x10000 if e & 0x8000 else 0
-        C = (4 * S - 3 * (s8 << 8)) & 0xFFFF
-        j = (4 - (P & 3)) & 3
-        v = (v + ((3 * e) >> 1) - j * e) & 0xFFFF   # centred: errors +-1.5e
-        for i in range(P):
-            if i:
-                v = (v + (C if (i + j) & 3 == 0 else s8 << 8)) & 0xFFFF
-            out[y] = out[y + 1] = v
-            y += 2
-        if tail:
-            out[y] = (v + C) & 0xFFFF
-    elif tail:
-        out[y] = v
-    return out
 
 
 def cross_t(vy_clip, vy_other, near):
@@ -251,9 +208,7 @@ class TexRef(Fm.FillRef):
                 part = p_mid if solid else (p_up if which == 'up' else
                                             p_lo if which == 'lo' else MW.NONE)
                 sr = None                       # the right strip's step
-                vl = vr = None                  # {line: v} down the run
-                wy0, wy1 = max(y0, Bz, T), min(y1, Bz + Fm.LINES - 1, B_)
-                if part != MW.NONE and wy0 <= wy1:
+                if part != MW.NONE and max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_):
                     K = W.parts[part]['K']
                     sl = (K // (B_ - T)) & 0xFFFF if B_ > T else 0
                     pv = sslot.get(which)
@@ -264,9 +219,6 @@ class TexRef(Fm.FillRef):
                     else:
                         sr = (K // (Br - Tr)) & 0xFFFF if Br > Tr else 0
                     sslot[which] = (x, part, sl)
-                    vt = W.parts[part]['vtop']
-                    vl = run_vs(vt, sl, T, wy0, wy1)
-                    vr = run_vs(vt, sr, Tr, wy0, wy1)
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
                     self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
                     if yb < T:
@@ -280,8 +232,8 @@ class TexRef(Fm.FillRef):
                     elif part == MW.NONE:
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
-                        self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_, v=vl[yb])
-                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br, sr, vr[yb])
+                        self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
+                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br, sr)
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 
@@ -290,14 +242,13 @@ class TexRef(Fm.FillRef):
         ('c') or floor ('f') run: step 4 draws the solid shade."""
         return ('b', shade)
 
-    def _texel(self, pi, u, yb, T, B, step=None, v=None):
+    def _texel(self, pi, u, yb, T, B, step=None):
         p = self.W.parts[pi]
         tp = self.W.tparams[p['tid']]
         h = B - T
         if step is None:
             step = (p['K'] // h) & 0xFFFF if h > 0 else 0
-        if v is None:
-            v = (p['vtop'] + ((yb & ~1) - T) * step) & 0xFFFF
+        v = (p['vtop'] + ((yb & ~1) - T) * step) & 0xFFFF
         row = (v >> 11) & (tp['th'] - 1)
         col = ((u & tp['mask']) >> tp['shift']) * tp['tw'] // tp['n']
         return int(self.tex[tp['name']][0][row, col]), row, col, tp['name']
