@@ -656,7 +656,7 @@ zp_tmp0:                    .res 3 ; [bsp+clip]; umul8 scratch (matches
                                    ; tmp0/1 and tmp1/2 are pointer PAIRS.
 zp_tmp1 = zp_tmp0+1
 zp_tmp2 = zp_tmp0+2
-zp_vs_cch:                  .res 1 ; [bsp]; vsx_expl clamp copy of ch (doubled [MASTER: free since step 7d]
+zp_vs_cch:                  .res 1 ; [bsp]; vsx_expl clamp copy of ch (doubled [MASTER: zw_ddh]
                                   ; for H2 mover-jamb entries, 2026-08-25)
 VX1:                        .res 26 ; [bsp+clip]; the TWO vertex structs
                                    ; (VX2 = VX1+VX_STRIDE).  ONE reservation:

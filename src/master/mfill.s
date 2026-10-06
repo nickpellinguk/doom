@@ -70,6 +70,7 @@ zw_lvh  = zp_dcl_out
 zw_dh   = zp_clr_save_x                 ; right strip's v hi - left's (5.3,
                                         ;  step 7d; 0 when the run shares)
 zw_tvl  = zw_dh                         ; (the span loops' sv)
+zw_ddh  = zp_vs_cch                     ; zw_dh's step per character row (5.3)
 zw_rowm = zp_old_cur                    ; row mask (th - 1) * 8
 zw_tl   = TP                            ; left texel column pointer (2)
 zw_tr   = bca_boxp                      ; right texel column pointer (2)
@@ -2140,9 +2141,11 @@ trun:
    STA ss_sl,Y
    LDA t_sl+1
    STA ss_sh,Y
+   STZ zw_ddh                           ; (shared: no delta step)
    BIT tw_sh
    BMI :+
    JSR tv_v0
+   JSR tr_ddh
 :  LDA tx_dr
    STA q_d
    LDA tx_dr+1
@@ -2211,6 +2214,10 @@ tr_screen:
    LDY #0
    INC PTR+1
    INC PTR+1
+   CLC                                  ; a new character row: the delta
+   LDA zw_dh                            ;  steps
+   ADC zw_ddh
+   STA zw_dh
 @even:
    ; whole pairs from even line Y: the unrolled bodies, entered so the
    ; first pass does (pairs & 3) of them (or 4) and the rest run whole
@@ -2272,6 +2279,10 @@ tb_end:
    CPY #8
    BNE :+
    LDY #0
+   CLC                                  ; (PTR moved in the body): the
+   LDA zw_dh                            ;  delta steps
+   ADC zw_ddh
+   STA zw_dh
 :  JSR tr_vstep
    JSR tr_fetch
    STA (PTR),Y
@@ -2394,7 +2405,9 @@ tr_vstep:
 ; with the right strip's in Y (tr_screen does the same before jumping in):
 ; the pair reads the right texel, PLY, and ORs in the left one. Step 7d:
 ; only the left v is stepped; the right row is its high byte plus zw_dh,
-; the 5.3 delta fixed at the run's first line (tex_ref).
+; a 5.3 delta exact at the run's first line and stepped by zw_ddh in the
+; step of each line-0 pair (a new character row; inline at the two other
+; crossings: an odd first line 7, tb_end's last line) -- tex_ref.
 ; No CLC before the left step: texels only use the left pixel's bits
 ; ($AA), so the previous pair's LSR A left carry clear, and nothing after
 ; it (stores, INC / DEC, branches) touches it; the bodies are entered
@@ -2422,9 +2435,12 @@ tv_0:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
-   LDA zw_lvh
+   LDA zw_dh                            ; a new character row: the delta
+   CLC                                  ;  steps
+   ADC zw_ddh
+   STA zw_dh
    CLC
-   ADC zw_dh                            ; the right row: + the 5.3 delta
+   ADC zw_lvh                           ; the right row: + the 5.3 delta
    RM_AND
    TAY
 te_00:
@@ -2585,9 +2601,12 @@ te_12:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
-   LDA zw_lvh
+   LDA zw_dh                            ; a new character row: the delta
+   CLC                                  ;  steps
+   ADC zw_ddh
+   STA zw_dh
    CLC
-   ADC zw_dh                            ; the right row: + the 5.3 delta
+   ADC zw_lvh                           ; the right row: + the 5.3 delta
    RM_AND
    TAY
 te_13:
@@ -2658,9 +2677,12 @@ te_21:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
-   LDA zw_lvh
+   LDA zw_dh                            ; a new character row: the delta
+   CLC                                  ;  steps
+   ADC zw_ddh
+   STA zw_dh
    CLC
-   ADC zw_dh                            ; the right row: + the 5.3 delta
+   ADC zw_lvh                           ; the right row: + the 5.3 delta
    RM_AND
    TAY
 te_22:
@@ -2731,9 +2753,12 @@ te_30:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
-   LDA zw_lvh
+   LDA zw_dh                            ; a new character row: the delta
+   CLC                                  ;  steps
+   ADC zw_ddh
+   STA zw_dh
    CLC
-   ADC zw_dh                            ; the right row: + the 5.3 delta
+   ADC zw_lvh                           ; the right row: + the 5.3 delta
    RM_AND
    TAY
 te_31:
@@ -3103,6 +3128,27 @@ ts_end:
    JMP tb_end                           ; (zw_dh = 0: one v for both)
 
 .segment "MB6C"
+
+; tr_ddh: step 7d, the right strip's delta step per character row (8
+; lines, 5.3): zw_ddh = (t_step - l_step + 32) >> 6 of the PAIR steps
+tr_ddh:
+   SEC
+   LDA t_step
+   SBC l_step
+   TAX
+   LDA t_step+1
+   SBC l_step+1
+   STA zw_ddh
+   TXA
+   CLC
+   ADC #32
+   BCC :+
+   INC zw_ddh
+:  ASL A
+   ROL zw_ddh
+   ASL A
+   ROL zw_ddh
+   RTS
 
 ; ---- tvstep: the run's v. In: q_t, q_b (s16 T, B), t_kk (K), t_vt (Vtop),
 ; r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
