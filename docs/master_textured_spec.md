@@ -123,7 +123,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D782 (with `cyc_tab`, step 6e), **free $D783–$D7FF (125 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$ABDF: the fill's cold set-up code (steps 5f–5h) and the gun overlay (`gun_draw` + `gun_tab`, step 6f), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B4CF: the fill's cold set-up code (steps 5f–5h) and the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1106,7 +1106,7 @@ the view, bottom centre, sitting on the panel's edge.
 - *Spec*: `master_gun.py` -- `table()` (per grid row, one line: the line,
   the first byte column, the count, and per byte a mask (the screen bits
   of its transparent pixels) and data), `apply(fb)`, and `source()`, which
-  writes `src/master/mgun_tab.s` (870 B).
+  writes `src/master/mgun_tab.s` (870 B; compiled to code in step 7b).
 - *6502*: `gun_draw` (bank 6, MB6C) walks `gun_tab` and writes each byte
   as (screen AND mask) OR data on its line, into the back
   buffer (DV_BACKHI) with ACCCON X; the driver calls it after
@@ -1122,6 +1122,20 @@ the view, bottom centre, sitting on the panel's edge.
   the view's last lines into the panel's first text row; the frame buffer
   itself is clean (checked: no view colours below line 135 over 120
   fields).
+
+**7b. Speed: the gun as straight-line stores. — DONE.** 317 of the gun's
+361 bytes have no transparent pixel, so they need no read or mask: they
+are just written. `master_gun.py` (`cells()`, `source()`) now compiles the
+table into code, one routine per screen buffer with absolute addresses
+(`gun_b0` at MSCREEN0, `gun_b1` at MSCREEN1, in `mgun_tab.s`): the opaque
+bytes sorted by value, each value loaded once then stored (`LDA #d`,
+`STA abs` ...: 23 values, 4 cycles a byte), then the 44 edge bytes as
+`LDA abs / AND #m / [ORA #d] / STA abs`. `gun_draw` sets ACCCON X and
+calls the routine for DV_BACKHI. 29.6K -> 1.85K cycles a frame; 3.9K of
+code (two copies) for the 870 B table, bank 6 code now $9500-$B4CF.
+`test_master_gun` unchanged (both buffers, byte-exact against
+`master_gun.apply`). Also fixed: `master_assets.py`'s previews indexed
+the 8-colour palette with the cycling colours 8-15 (now `palette16()`).
 
 **7a. Speed, phase 1: exact. — DONE.** Profiled first: on jsbeeb a
 walking frame is ~1.80M cycles, 97% of it the renderer (gun 31K, movement

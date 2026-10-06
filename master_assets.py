@@ -637,7 +637,7 @@ def previews(out, A):
     Z = 2                                  # screen pixel -> 2x2 preview pixels; BBC pixels are 2:1
     def put(surf, x, y, byte, wide):
         for k, c in enumerate(mode2_pixels(byte)[:1 if not wide else 2]):
-            surf.fill(PALETTE[c], (x + k * 4 * Z, y, 4 * Z, Z))
+            surf.fill(palette16()[c], (x + k * 4 * Z, y, 4 * Z, Z))
     texs = A.man['textures']
     rowh = [t['height'] * 2 * Z + 18 for t in texs]
     W = max(t['width'] * 4 * Z for t in texs) + 8

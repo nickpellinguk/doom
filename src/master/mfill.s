@@ -222,11 +222,6 @@ r_ye:    .res 1
 r_part:  .res 1
 r_ev:    .res 1
 hz_x:    .res 1                         ; hz_sky: even line ^ odd line byte
-gd_n:    .res 1                         ; gun_draw: bytes left in the row,
-gd_t:    .res 1                         ;  the row's table index, the
-gd_s:    .res 1                         ;  screen offset, and the byte's
-gd_m:    .res 1                         ;  mask and data
-gd_d:    .res 1
 hz_n:    .res 1                         ; hz_run: lines, the first line's
 hz_a:    .res 1                         ;  place in its row, the last line
 hz_l:    .res 1                         ;  (from the row), rows after the
@@ -1541,74 +1536,21 @@ h2_tab:
 ; ============================================================================
 ; gun_draw (step 6f): the gun overlay into the back buffer, after the frame
 ; and before the flip (the driver calls it, bank 6 paged). master_gun.py is
-; the spec: per row of gun_tab (one line), per byte, (screen AND mask) OR
-; data -- the art's transparent pixels keep the view.
+; the spec, and compiles it into gun_b0 / gun_b1 (mgun_tab.s): straight-line
+; stores to the buffer's absolute addresses, opaque bytes simply written,
+; edge bytes (screen AND mask) OR data -- the art's transparent pixels keep
+; the view.
 ; ============================================================================
 gun_draw:
    LDA #ACC_DXY
    STA $FE34                            ; -> shadow
-   LDA #<gun_tab
-   STA TP
-   LDA #>gun_tab
-   STA TP+1
-@row:
-   LDY #0
-   LDA (TP),Y                           ; the row's line; $FF: done
-   CMP #$FF
-   BEQ @done
-   PHA
-   AND #7
-   STA gd_s                             ; the line within its character row
-   PLA
-   LSR A
-   LSR A
-   LSR A
-   ASL A                                ; (line >> 3) * 2: 512 B a row
-   CLC
-   ADC DV_BACKHI
-   STA PTR+1
-   INY
-   LDA (TP),Y                           ; first byte column * 8
-   ASL A
-   ASL A
-   ASL A
-   STA PTR
-   BCC :+
-   INC PTR+1
-:  INY
-   LDA (TP),Y
-   STA gd_n
-   LDA #3
-   STA gd_t
-@byte:
-   LDY gd_t
-   LDA (TP),Y
-   STA gd_m
-   INY
-   LDA (TP),Y
-   STA gd_d
-   INY
-   STY gd_t
-   LDY gd_s
-   LDA (PTR),Y
-   AND gd_m
-   ORA gd_d
-   STA (PTR),Y
-   TYA
-   CLC
-   ADC #8                               ; the next byte column
-   STA gd_s
-   DEC gd_n
-   BNE @byte
-   CLC                                  ; the next row
-   LDA TP
-   ADC gd_t
-   STA TP
-   BCC @row
-   INC TP+1
-   BRA @row
-@done:
-   LDA #ACC_DY
+   LDA DV_BACKHI
+   CMP #>MSCREEN1
+   BEQ :+
+   JSR gun_b0
+   BRA :++
+:  JSR gun_b1
+:  LDA #ACC_DY
    STA $FE34
    RTS
 
