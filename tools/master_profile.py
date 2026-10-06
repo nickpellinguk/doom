@@ -15,7 +15,8 @@ given as  px py ab) and attributes every cycle:
              plane flushes its tail call (pe_init) can trigger.
   arithmetic to the nearest non-arithmetic caller on the stack
   loop heads executions of each label's first instruction (wall pairs =
-             the 16 pair bodies' te_* labels, sp_lp / sl_lp = span bytes)
+             the 16 pair bodies' te_* labels, span pairs = the 16 span
+             bodies' sf_r* texel reads, sl_lp = line-span bytes)
 
 The fill's routines are also summed by job. Figures are means per frame.
 
@@ -42,9 +43,11 @@ JOBS = [
     ('wall texel loop', ['tr_screen', 'tr_fetch', 'tr_vstep', 'tr_ent', 'tb_end']
                         + [f'tv_{v}' for v in range(4)]
                         + [f'te_{v}{j}' for v in range(4) for j in range(4)]),
-    ('span loops (pair, line)', ['sp_go2', 'sp_lp', 'sp_rd', 'sp_adul', 'sp_aduh', 'sp_advl',
-                                 'sp_advh', 'sl_go', 'sl_lp', 'sl_rd', 'sl_fl', 'sl_mk',
-                                 'sl_adul', 'sl_aduh', 'sl_advl', 'sl_advh']),
+    ('span loops (pair, line)', ['sp_go2', 'sf_end', 'sf_ent', 'sl_go', 'sl_lp', 'sl_rd',
+                                 'sl_fl', 'sl_mk']
+                                + [f'sf_{v}' for v in range(4)]
+                                + [f'sf_{v}{q}' for v in range(4) for q in range(4)]
+                                + [f'sf_r{v}{q}' for v in range(4) for q in range(4)]),
     ('solid fills', ['hz_run', 'run', 'pl_shade']),
     ('partial/second-run cells', ['pl_line', 'pl_pair', 'pl_cell', 'pc_go', 'pc_rd', 'pl_wr1']),
     ('plane spans set-up', ['mk_spans', 'mk_close', 'sp_setup', 'pp_slot', 'sl_draw', 'pe_init',
@@ -65,8 +68,9 @@ JOBS = [
 INCLUSIVE = ['mf_fill', 'mf_snap', 'band', 'wall_run', 'tv_div', 'tv_v0', 'tcol', 'tx_getd',
              'tx_seg', 'at', 'pl_pair', 'mk_spans', 'sp_setup', 'pl_rowc', 'kbmul', 'st_step',
              'st_val', 'st_peek', 'div32', 'divq16', 'mul16', 'mul8x32']
-LOOP_HEADS = ['sp_lp', 'sl_lp', 'trun', 'sp_go2', 'sl_go', 'mf_fill', 'col', 'band', 'tx_getd']
+LOOP_HEADS = ['sl_lp', 'trun', 'sp_go2', 'sl_go', 'mf_fill', 'col', 'band', 'tx_getd']
 WALL_PAIR_LABELS = [f'te_{v}{j}' for v in range(4) for j in range(4)]
+SPAN_PAIR_LABELS = [f'sf_r{v}{q}' for v in range(4) for q in range(4)]
 
 
 def _kv(line):
@@ -215,7 +219,8 @@ class Profiler:
                   f'calls {c / n:7.1f}  each {self.incl[k] / max(c, 1):7.0f}')
         print('\n== loop heads (executions per frame) ==')
         pairs = sum(self.hits[k] for k in WALL_PAIR_LABELS)
-        print(f'  wall pairs {pairs / n:.0f}  '
+        spans = sum(self.hits[k] for k in SPAN_PAIR_LABELS)
+        print(f'  wall pairs {pairs / n:.0f}  span pairs {spans / n:.0f}  '
               + '  '.join(f'{k} {self.hits[k] / n:.0f}' for k in LOOP_HEADS))
 
 

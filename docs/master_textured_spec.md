@@ -99,8 +99,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D1F5, **free $D1F6–$DDFF (3.0K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B867: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C7EF; the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D582, **free $D583–$DDFF (2.1K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B88B: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -624,6 +624,29 @@ parity, counted, and checked the character row's end.
 - *Cycles* (`tools/master_profile.py`): the loop 569K → 361K per frame
   (~125 cycles per pair with each run's set-up); the mean frame 2.054M →
   1.847M (−10%). Byte-exact (no model change).
+
+**5j. Floor and ceiling pair loop: Duff's device. — DONE.** The span
+pair loop (`sp_go2`, ~2,070 bytes a frame) paid a count, a page-carry test
+and patched 16-bit U, V steps on every byte.
+- *Four versions, four bytes each* (`sf_0`..`sf_3`), entered at one of 16
+  points (`sf_sq`, one `JMP (sf_ent,X)`). The position q = −n & 3 makes
+  the span's last byte end a block. The version s = (q − kb) & 3 puts each
+  body on a known column mod 4, so only the column 3 mod 4 body adds
+  (Y + 7, and `INC PTR+1` past column 31 mod 32). The other three move Y
+  to the next column with one EOR (#$09 or #$19, clearing the odd line's
+  bit). One count per block.
+- *Each body is [U, V stepped] sf_sq: [texel read, both lines written]*:
+  an entry skips its step, so the last byte's step never runs. V's high
+  byte is left in A for the texel index.
+- *Zero page*: U, V and dU, dV (`su_*`, `sv_*`, `sdu_*`, `sdv_*`) and
+  the block count share the wall loop's `zw_*` bytes. Both loops are
+  leaves, and `tr_screen` reloads its own per run. `sl_go` uses them too,
+  so neither loop's steps are patched any more.
+- *The flat's page* is patched into the 16 texel reads only when it changes
+  (`sf_page`, from `sp_setup`).
+- *Cycles* (`tools/master_profile.py`): the span loops 239K → 205K per
+  frame (~93 cycles per pair byte with each span's set-up); the mean frame
+  1.847M → 1.812M (−1.8%). Byte-exact (no model change). HAZEL +0.6K.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on
