@@ -70,6 +70,8 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
                                  t['height'], t['width'])
         want = np.vectorize(M.wall_byte)(q)
         got = A.wall_bytes(t['id'])
+        check(((got & 1) == 0).all(), f"{t['name']}: a texel byte with bit 0 set "
+              '(the wall pair bodies rely on LSR A clearing carry)')
         check(got.shape == want.shape and (got == want).all(), f"{t['name']} reads back wrong")
         ptr, bank, width, rowoff, _ = A.texture_header(t['id'])
         load, data = A.banks[bank]

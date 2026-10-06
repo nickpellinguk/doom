@@ -2395,6 +2395,11 @@ tr_vstep:
 ; texture's mask changes). Each step pushes the left strip's row and ends
 ; with the right strip's in Y (tr_screen does the same before jumping in):
 ; the pair reads the right texel, PLY, and ORs in the left one.
+; No CLC before the left step: texels only use the left pixel's bits
+; ($AA), so the previous pair's LSR A left carry clear, and nothing after
+; it (stores, INC / DEC, branches) touches it; the bodies are entered
+; only past their first step (te_sj), and their starts only from the loop.
+; The line-0 pair stores with STA (PTR), then LDY #1.
 rm_n .set 0
 .macro RM_AND
    .ident(.sprintf("rm_%d", rm_n)) = * + 1
@@ -2409,8 +2414,7 @@ tr_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
 
 tv_0:
    ; (pairs on lines 0, 2, 4, 6)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2432,12 +2436,10 @@ te_00:
    LSR A                                ; the right pixel: one shift
    PLY                                  ; the left row
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2463,8 +2465,7 @@ te_01:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2490,8 +2491,7 @@ te_02:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2525,8 +2525,7 @@ te_03:
 :  JMP tb_end
 tv_1:
    ; (pairs on lines 2, 4, 6, 0)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2552,8 +2551,7 @@ te_10:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2579,8 +2577,7 @@ te_11:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2608,8 +2605,7 @@ te_12:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2631,9 +2627,8 @@ te_13:
    LSR A                                ; the right pixel: one shift
    PLY                                  ; the left row
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
    DEC zw_np
    BEQ :+
@@ -2641,8 +2636,7 @@ te_13:
 :  JMP tb_end
 tv_2:
    ; (pairs on lines 4, 6, 0, 2)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2668,8 +2662,7 @@ te_20:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2697,8 +2690,7 @@ te_21:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2720,12 +2712,10 @@ te_22:
    LSR A                                ; the right pixel: one shift
    PLY                                  ; the left row
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2757,8 +2747,7 @@ te_23:
 :  JMP tb_end
 tv_3:
    ; (pairs on lines 6, 0, 2, 4)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2786,8 +2775,7 @@ te_30:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2809,12 +2797,10 @@ te_31:
    LSR A                                ; the right pixel: one shift
    PLY                                  ; the left row
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2840,8 +2826,7 @@ te_32:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2883,8 +2868,7 @@ ts_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
 
 sv_0:
    ; (pairs on lines 0, 2, 4, 6)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2896,12 +2880,10 @@ ts_00:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2917,8 +2899,7 @@ ts_01:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2934,8 +2915,7 @@ ts_02:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2959,8 +2939,7 @@ ts_03:
 :  JMP ts_end
 sv_1:
    ; (pairs on lines 2, 4, 6, 0)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2976,8 +2955,7 @@ ts_10:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -2993,8 +2971,7 @@ ts_11:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3012,8 +2989,7 @@ ts_12:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3025,9 +3001,8 @@ ts_13:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
    DEC zw_np
    BEQ :+
@@ -3035,8 +3010,7 @@ ts_13:
 :  JMP ts_end
 sv_2:
    ; (pairs on lines 4, 6, 0, 2)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3052,8 +3026,7 @@ ts_20:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3071,8 +3044,7 @@ ts_21:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3084,12 +3056,10 @@ ts_22:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3111,8 +3081,7 @@ ts_23:
 :  JMP ts_end
 sv_3:
    ; (pairs on lines 6, 0, 2, 4)
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3130,8 +3099,7 @@ ts_30:
    STA (PTR),Y
    INC PTR+1                            ; the next character row
    INC PTR+1
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3143,12 +3111,10 @@ ts_31:
    LDA (zw_tr),Y
    LSR A                                ; the right pixel: one shift
    ORA (zw_tl),Y
-   LDY #0
-   STA (PTR),Y                          ; both lines: the same byte
-   INY
+   STA (PTR)                            ; line 0: no index
+   LDY #1
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
@@ -3164,8 +3130,7 @@ ts_32:
    STA (PTR),Y                          ; both lines: the same byte
    INY
    STA (PTR),Y
-   CLC
-   LDA zw_lvl
+   LDA zw_lvl                           ; (C clear: LSR A of a texel)
    ADC l_step
    STA zw_lvl
    LDA zw_lvh
