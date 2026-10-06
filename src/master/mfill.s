@@ -5024,54 +5024,67 @@ mf_mul8:
    SBC SQR_HI,Y
    RTS
 
-; ---- dq_set / dq_core: the 16-step divide, divisor m_b patched into the
-; immediates. In: remainder seed m_r (lo), A (hi) < m_b; dividend lo word
-; m_p. Out: quotient m_p (16), remainder m_r. X, Y used. ----------------
-dq_set:
-   LDA m_b
-   STA dq_cl+1
-   STA dq_sl+1
-   LDA m_b+1
-   STA dq_ch+1
-   STA dq_sh+1
-   RTS
+; ---- dq_core: the 16-step divide (step 7f: unrolled, in bank 6 -- every
+; caller has it paged: div32 already reaches d8_byte there). In: remainder
+; seed m_r (lo), A (hi) < m_b; dividend lo word m_p. Out: quotient m_p
+; (16), remainder m_r. X, Y used. The dividend, the remainder's lo byte
+; and the divisor work in zero page the wall / span loops own (dead in the
+; set-up code, the only callers): 5-cycle shifts, no counter, no patching.
+dq_d0 = zw_lvl                          ; dividend lo word, quotient in
+dq_d1 = zw_lvh
+dq_r0 = zw_dh                           ; remainder lo (A: hi)
+dq_b0 = zw_ddh                          ; divisor
+dq_b1 = zw_rowm
+.segment "MB6C"
 dq_core:
-   LDX #16
-dq_lp:
-   ASL m_p
-   ROL m_p+1
-   ROL m_r
+   LDX m_p
+   STX dq_d0
+   LDX m_p+1
+   STX dq_d1
+   LDX m_r
+   STX dq_r0
+   LDX m_b
+   STX dq_b0
+   LDX m_b+1
+   STX dq_b1
+.repeat 16
+.scope
+   ASL dq_d0
+   ROL dq_d1
+   ROL dq_r0
    ROL A
-   BCS dq_sub                           ; past 16 bits: certainly >= m_b
-dq_ch:
-   CMP #0                               ; (patched: m_b hi)
-   BCC dq_nx
-   BNE dq_sub
-   LDY m_r
-dq_cl:
-   CPY #0                               ; (patched: m_b lo)
-   BCC dq_nx
-dq_sub:                                 ; (C = 1 on every way in)
+   BCS sub                              ; past 16 bits: certainly >= m_b
+   CMP dq_b1
+   BCC nx
+   BNE sub
+   LDY dq_r0
+   CPY dq_b0
+   BCC nx
+sub:                                    ; (C = 1 on every way in)
    TAY
-   LDA m_r
-dq_sl:
-   SBC #0                               ; (patched: m_b lo)
-   STA m_r
+   LDA dq_r0
+   SBC dq_b0
+   STA dq_r0
    TYA
-dq_sh:
-   SBC #0                               ; (patched: m_b hi)
-   INC m_p                              ; quotient bit (ASL freed it)
-dq_nx:
-   DEX
-   BNE dq_lp
+   SBC dq_b1
+   INC dq_d0                            ; quotient bit (ASL freed it)
+nx:
+.endscope
+.endrepeat
    STA m_r+1
+   LDA dq_r0
+   STA m_r
+   LDA dq_d0
+   STA m_p
+   LDA dq_d1
+   STA m_p+1
    RTS
+.segment "MARITH"
 
 ; ---- divq16: m_p (32) / m_b (16) -> m_p (16), when the quotient < 2^16
 ; (m_p hi word < m_b): 16 steps, the remainder seeded with the hi word ----
 divq16:
    PHY
-   JSR dq_set
    LDA m_p+2
    STA m_r
    LDA m_p+3
@@ -5218,7 +5231,6 @@ dv_w16:
    LDA m_p+3
    SBC m_b+1
    BCS dv_slj
-   JSR dq_set
    LDA m_p+2
    STA m_r
    LDA m_p+3

@@ -482,7 +482,7 @@ zp_seg_bot_dlt:             .res 1 ; [bsp]; s8 fh - vz (height delta for bottom 
 zp_save0:                   .res 1 ; [clip]; DCL line-clip scratch (also
 LC_OX1_LO:                 .res 1 ; ROTATED IN (zprotate): 27.8 vs fwl_pend's 3.9
 zp_save2:                   .res 1 ; [clip] [MASTER: zw_ev]
-zp_old_cur:                 .res 1 ; [clip]; tighten cursor scratch (tfr.s) [MASTER: zw_rowm; the span loops' sdv]
+zp_old_cur:                 .res 1 ; [clip]; tighten cursor scratch (tfr.s) [MASTER: zw_rowm; the span loops' sdv; dq_b1]
 zp_ox0:                     .res 1 ; [clip]; subspan extent scratch (dcl+tfr)
 zp_ox1:                     .res 1 ; [clip]
 RASTER_ZP_SCRSTRT:          .res 1 ; [clip]
@@ -537,7 +537,7 @@ zp_br_pxraw_h = zp_br_pxraw_l+1
 zp_br_pyraw_l = zp_br_pxraw_l+2
 zp_br_pyraw_h = zp_br_pxraw_l+3
 DCLS_FIRST:                .res 1 ; ROTATED IN (zprotate): 24.7 vs fw_top1's 4.8
-zp_plot_i:                  .res 1 ; [clip]; plot_h byte-index scratch [MASTER: the wall loop's zw_lvl, the span loops' su (no MASTER reference)]
+zp_plot_i:                  .res 1 ; [clip]; plot_h byte-index scratch [MASTER: the wall loop's zw_lvl, the span loops' su, dq_d0 (no MASTER reference)]
 zp_seg_hdr_p:               .res 2 ; [bsp]; persistent seg-header ptr (advances
                                    ; +12/seg).  ONE reservation: it is used as
                                    ; (zp_seg_hdr_p),Y, so the pair must stay
@@ -549,7 +549,7 @@ zp_pyc_idx:                 .res 1 ; [bsp]; projection-cache probe index (X save
 bca_pys:                    .res 2 ; [ang]; py sign-extended (s16) ; w=2 (BOTH bytes: the hi byte used to hide in a pad marked FREE)
 zp_br_px_x:                 .res 1 ; [bsp]; s16 player int x HIGH byte (px_h is lo)
 zp_br_py_x:                 .res 1 ; [bsp]; s16 player int y HIGH byte (py_h is lo)
-zp_dcl_out:                 .res 1 ; [clip]; per-line outcome accumulator [MASTER: zw_lvh]
+zp_dcl_out:                 .res 1 ; [clip]; per-line outcome accumulator [MASTER: zw_lvh; dq_d1]
                                   ; (clipper-feedback abort, 2026-08-14):
                                   ; $80 = saw off-top reject, $40 = saw
                                   ; off-bottom, $01 = real recorded segment
@@ -642,7 +642,7 @@ LC_M_R0:                    .res 1 ; [clip]
 LC_M_R1:                    .res 1 ; [clip]
 zp_i_y1:                    .res 1 ; [clip]
 fw_rslot:                   .res 1 ; [clip]; span slot at run open
-zp_clr_save_x:              .res 1 ; [clip]; tighten X-save (tfr.s; the name [MASTER: zw_dh; sv]
+zp_clr_save_x:              .res 1 ; [clip]; tighten X-save (tfr.s; the name [MASTER: zw_dh; sv; dq_r0]
 FW_SIDE:                    .res 1 ; [clip]; 0 top / $80 bot
 zp_mul_b:                   .res 1 ; [bsp+clip]
 zp_prod_l:                  .res 1 ; [bsp+clip]
@@ -656,7 +656,7 @@ zp_tmp0:                    .res 3 ; [bsp+clip]; umul8 scratch (matches
                                    ; tmp0/1 and tmp1/2 are pointer PAIRS.
 zp_tmp1 = zp_tmp0+1
 zp_tmp2 = zp_tmp0+2
-zp_vs_cch:                  .res 1 ; [bsp]; vsx_expl clamp copy of ch (doubled [MASTER: zw_ddh]
+zp_vs_cch:                  .res 1 ; [bsp]; vsx_expl clamp copy of ch (doubled [MASTER: zw_ddh; dq_b0]
                                   ; for H2 mover-jamb entries, 2026-08-25)
 VX1:                        .res 26 ; [bsp+clip]; the TWO vertex structs
                                    ; (VX2 = VX1+VX_STRIDE).  ONE reservation:
