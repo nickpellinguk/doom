@@ -117,12 +117,83 @@ def panel_pixels():
     return np.where(body, RED, out)
 
 
+# The panel's own font: 3 x 5 capitals and digits (M 5 wide), white on
+# black. ('#' lit; rows top to bottom.)
+FONT = {
+    'A': ['.#.', '#.#', '###', '#.#', '#.#'], 'B': ['##.', '#.#', '##.', '#.#', '##.'],
+    'C': ['.##', '#..', '#..', '#..', '.##'], 'E': ['###', '#..', '##.', '#..', '###'],
+    'H': ['#.#', '#.#', '###', '#.#', '#.#'], 'K': ['#.#', '#.#', '##.', '#.#', '#.#'],
+    'L': ['#..', '#..', '#..', '#..', '###'], 'O': ['.#.', '#.#', '#.#', '#.#', '.#.'],
+    'R': ['##.', '#.#', '##.', '#.#', '#.#'], 'S': ['.##', '#..', '.#.', '..#', '##.'],
+    'T': ['###', '.#.', '.#.', '.#.', '.#.'], 'U': ['#.#', '#.#', '#.#', '#.#', '###'],
+    'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#'],
+    '/': ['..#', '..#', '.#.', '#..', '#..'],
+    '0': ['###', '#.#', '#.#', '#.#', '###'], '1': ['.#.', '##.', '.#.', '.#.', '###'],
+    '2': ['###', '..#', '###', '#..', '###'], '3': ['###', '..#', '###', '..#', '###'],
+    '4': ['#.#', '#.#', '###', '..#', '..#'], '5': ['###', '#..', '###', '..#', '###'],
+    '6': ['###', '#..', '###', '#.#', '###'], '7': ['###', '..#', '..#', '..#', '..#'],
+    '8': ['###', '#.#', '###', '#.#', '###'], '9': ['###', '#.#', '###', '..#', '###'],
+}
+
+
+def text_width(t):
+    return sum(len(FONT[c][0]) + 1 for c in t) - 1
+
+
+def _text(px, t, x, y, colour=WHITE):
+    """Draw t with its top-left at (x, y), one blank column between glyphs."""
+    for c in t:
+        g = FONT[c]
+        for r, row in enumerate(g):
+            for i, b in enumerate(row):
+                if b == '#':
+                    px[y + r, x + i] = colour
+        x += len(g[0]) + 1
+
+
+def _box(px, x0, y0, x1, y1):
+    px[y0:y1 + 1, x0:x1 + 1] = BLACK
+
+
+# The section labels: (text, the source label's columns) -- centred where
+# DOOM's are, on lines 18..22, in a black box covering the old label too
+LABELS = [('AMMO', 8, 37), ('HEALTH', 55, 94), ('ARMS', 106, 137), ('ARMOR', 188, 223)]
+LABEL_Y = 18
+# The ammo table: black from x 199, a row every 6 lines from line 1
+AMMO = [('BULL', 50, 200), ('SHEL', 0, 50), ('RCKT', 0, 50), ('CELL', 0, 300)]
+AMMO_X = 199
+
+
+def lettering(px):
+    """The panel's small text, drawn over panel_pixels' conversion: the
+    section labels, the arms numbers (the pistol's white, the rest red, as
+    DOOM's yellow and grey) and the ammo table, all on black."""
+    for t, a, b in LABELS:
+        w = text_width(t)
+        x = (a + b + 1) * 4 // 10 - w // 2             # the source centre * 0.8
+        _box(px, min(x, a * 4 // 5) - 1, LABEL_Y - 1,
+             max(x + w - 1, b * 4 // 5 + 1) + 1, LABEL_Y + 5)
+        _text(px, t, x, LABEL_Y)
+    _box(px, 87, 2, 112, 15)                            # the arms numbers
+    for i, wp in enumerate(range(2, 8)):
+        _text(px, str(wp), 89 + (i % 3) * 9, 3 + (i // 3) * 7,
+              WHITE if wp == 2 else RED)
+    _box(px, AMMO_X, 0, 255, PANEL_LINES - 1)
+    for r, (t, have, most) in enumerate(AMMO):
+        y = 1 + 6 * r
+        _text(px, t, AMMO_X + 2, y)
+        _text(px, str(have), 233 - text_width(str(have)), y)
+        _text(px, '/', 235, y)
+        _text(px, str(most), 255 - text_width(str(most)), y)
+    return px
+
+
 @functools.lru_cache(None)
 def panel_bytes():
     """The panel as it sits in a buffer: 1536 bytes, character rows 17..19
     (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 1 byte
     per four pixels."""
-    px = panel_pixels()
+    px = lettering(panel_pixels())
     out = bytearray(PANEL_SIZE)
     for y in range(PANEL_LINES):
         for k in range(64):

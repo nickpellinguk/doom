@@ -781,8 +781,12 @@ focal lengths and all wall and flat maths are unchanged).
     - the big numbers (`STTNUM`, `STTPRCNT`) are their red body only, pure
       red, with a 1-pixel black outline (its 8 neighbours) at screen
       resolution;
-    - anything coloured (the face, the small yellow numbers) takes the
-      nearest palette colour.
+    - anything coloured (the face) takes the nearest palette colour;
+    - the small text is the panel's own 3×5 font (M 5 wide), white on
+      black boxes (`lettering`): the section labels centred where DOOM's
+      are (lines 18–22), the arms numbers (the owned pistol white, the
+      rest red, for DOOM's yellow and grey) and the ammo table (a row
+      every 6 lines from x 199).
   - 1,536 bytes (`MPANEL` on the disc).
 - *Boot*:
   - The loader parks `MPANEL` in buffer 1's panel rows (shadow
