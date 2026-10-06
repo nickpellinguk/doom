@@ -200,7 +200,12 @@ async function engineMode() {
         };
         const TOP = 188;                       // line 0 in the frame buffer (2 rows a line)
         const y135 = TOP + 2 * 135, y136 = TOP + 2 * 136;
-        let ref = null, early = 0, late = 0;
+        // the panel below its black top line (lines 137..159) shows only its
+        // four colours, red and cyan included: the IRQ rewrote entries 8..15,
+        // which the view cycles (step 6e), in time
+        const PANEL_OK = ["0,0,0", "255,255,255", "255,0,0", "0,255,255"];
+        let ref = null, early = 0, late = 0, panelOdd = 0, panelRC = 0;
+        const cyc = new Set();
         for (let f = 0; f < 50; f++) {
             await s.runFrames(1);
             const fb = new Uint8Array(s._completeFb8);
@@ -208,8 +213,20 @@ async function engineMode() {
             if (ref === null) ref = a;
             if (a !== ref) early++;
             if (b >= 0) late++;
+            const seen = new Set();
+            for (let y = 137; y < 160; y++) for (let x = 0; x < W; x++) {
+                const o = ((TOP + 2 * y) * W + x) * 4;
+                seen.add(`${fb[o]},${fb[o + 1]},${fb[o + 2]}`);
+            }
+            if ([...seen].some((c) => !PANEL_OK.includes(c))) panelOdd++;
+            if (seen.has("255,0,0") && seen.has("0,255,255")) panelRC++;
+            await s.runFor(10000);              // 5 ms into the field: the view's palette
+            cyc.add(Array.from(s._machine.processor.video.actualPal.slice(8, 16)).join(","));
         }
-        out.split = { line135_right: ref, early, late };
+        out.split = { line135_right: ref, early, late, panel_odd: panelOdd, panel_rc: panelRC,
+                      cycle_states: cyc.size };
+        if (panelOdd || panelRC < 50) fails.push(`panel colours wrong: ${panelOdd} fields odd, ${panelRC}/50 with red + cyan`);
+        if (cyc.size < 3) fails.push(`colour cycle not running: ${cyc.size} palette states for 8..15 over 50 fields`);
         if (ref < 0) fails.push("split check: line 135 has no Mode 2 colours to test");
         if (early || late) fails.push(`raster split off: ${early} early, ${late} late of 50 fields`);
     }

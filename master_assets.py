@@ -122,6 +122,39 @@ HUES = [RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN]
 PAIRS = [(BLACK, c) for c in HUES] + [(WHITE, c) for c in HUES]
 TONES = [(c, c) for c in range(8)] + PAIRS      # tone t -> (left, right)
 
+# Colour cycling (step 6e): logical colours 8-15 -- unused by the view --
+# are cycled by the raster-split IRQ at vsync, one phase every CYC_FIELDS
+# fields, so they animate at 50 Hz whatever the frame rate. CYCLE is the
+# spec: master/mfill.s's cyc_tab is generated from the same rules.
+CYC_N = 8                         # nukage n o p q, lamp halo h, glint t, blinks z x
+CYC_PHASES = 8
+CYC_FIELDS = 8                    # fields a phase (6.25 phases a second)
+NUKE_WAVE = [BLACK, GREEN, GREEN, YELLOW]
+
+
+def cycle_colour(entry, phase):
+    """The physical colour logical colour `entry` (8-15) shows at `phase`."""
+    k = entry - 8
+    if k < 4:
+        return NUKE_WAVE[(k + phase) & 3]          # 8-11: the nukage wave
+    if k == 4:
+        return RED if (phase & 3) < 2 else BLACK   # 12: lamp halo, pulsing
+    if k == 5:
+        return WHITE if (phase & 3) == 0 else RED  # 13: lamp glint
+    if k == 6:
+        return YELLOW if phase % 2 == 0 else BLACK # 14: blink A
+    return RED if phase % 2 else BLACK             # 15: blink B
+
+
+def palette16(phase=0):
+    """The view's 16 logical colours (RGB) at a cycle phase."""
+    return list(PALETTE) + [PALETTE[cycle_colour(e, phase)] for e in range(8, 16)]
+
+
+CYC_SOLIDS = [(c, c) for c in range(8, 16)]
+NUKE_PAIRS = [(8 + k, 8 + (k + 1) % 4) for k in range(4)]   # adjacent wave phases
+TONES = TONES + CYC_SOLIDS + NUKE_PAIRS
+
 
 def flip(b):
     """A Mode 2 byte with its two pixels swapped."""

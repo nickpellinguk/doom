@@ -1,4 +1,4 @@
-# COMPUTE2 37x32: .rgybmcw = K R G Y B M C W (drawn: control bank: blue, black displays, lamps, vents)
+# COMPUTE2 37x32: .rgybmcw = K R G Y B M C W, nopqhtzx = cycling 8-15 (drawn: control bank, blinking lamps)
 ccccccccccccccccccccccccccccccccccccc
 bbbbbbbb.....................bbbbbbbb
 bbbbbbbb.wwwwwwwwwwwwwwwwwww.bbbbbbbb
@@ -9,8 +9,8 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 ccccccccccccccccccccccccccccccccccccc
 bbccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 bbc....cbb........................bbb
-bbcc.cccbb.y..y..y..y..y..y..y..y.bbb
-bbc....cbb..r..r..r..r..r..r..r..rbbb
+bbcc.cccbb.z..x..z..x..z..x..z..x.bbb
+bbc....cbb..z..x..z..x..z..x..z..rbbb
 bbcc.cccbb........................bbb
 bbccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

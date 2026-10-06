@@ -308,7 +308,9 @@ def to_rgb(fb, palette):
     import master_assets as M
     import master_panel as P
     if _LUT is None:
-        _LUT = (np.array([[palette[c & 7] for c in M.mode2_pixels(b) for _ in (0, 1)]
+        if len(palette) < 16:                               # logical 8-15: the
+            palette = list(palette) + M.palette16(0)[8:]      #  cycle at phase 0
+        _LUT = (np.array([[palette[c] for c in M.mode2_pixels(b) for _ in (0, 1)]
                           for b in range(256)], np.uint8),        # 2 screen px per pixel
                 np.array([[P.SPLIT_RGB[c] for c in P.mode1_pixels(b)]
                           for b in range(256)], np.uint8))

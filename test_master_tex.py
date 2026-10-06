@@ -100,6 +100,12 @@ for pose in poses:
 print(f'total {tot:,} cycles over {len(poses)} poses; {gap_segs} reference-gap seg(s)')
 if gap_segs > MAX_GAP_SEGS:
     fails.append(f'{gap_segs} segs differ from the reference geometry (cap {MAX_GAP_SEGS})')
+# the colour cycle (step 6e): cyc_tab as master_assets.cycle_colour has it
+ct = _S('cyc_tab')
+want_ct = [((8 + k) << 4) | (M.cycle_colour(8 + k, p) ^ 7) for p in range(M.CYC_PHASES) for k in range(8)]
+got_ct = [mem[ct + i] for i in range(64)]
+if got_ct != want_ct:
+    fails.append(f'cyc_tab differs from master_assets.cycle_colour: {got_ct} vs {want_ct}')
 for f in fails[:20]:
     print('FAIL:', f)
 print('MASTERTEX: FAIL' if fails else 'MASTERTEX: PASS')

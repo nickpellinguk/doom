@@ -1,17 +1,17 @@
-# NUKAGE3 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: nukage: dark green, green, pale green glints)
-GGGGGGggGGgGGGGG
-GGGGGGggGGGggGgG
-GGGGgGggGGGggggg
-gGggGGGggGGggGGG
-GGGgGGGGggGGgGGG
-GGGGGGGGGGGGGGGG
-GggGGGGGGGGGGGGG
-gggGGGggGGGGGGGG
-GGGGGGgGGGGggGGG
-GGGGGGGGGGgggGGG
-GGGgGGGGGGGgGGGG
-GGGgGGGGGGGgGGGG
-GGGGGGGgGGGgGGGg
-GGGGgGGgggggGGgg
-GGGGggGGGggGGGgG
-GGGGGgggggGGGGGG
+# NUKAGE3 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c), nopqhtzx cycling 8-15, NOPQ nukage wave pairs (drawn: nukage, cycling: the wave rings out of the bubbles)
+NOpOOOQPonOONOON
+pppoOONNoNNNNopp
+OpoNqOPPoooqqqpp
+NppqOnnPnpOPQnnN
+NpppooopnNNoOOoo
+NoOooooOONOOOooo
+pqqONnppOoOOonno
+PqqNNOPPOpoONNNO
+NoOoNOQppppqNOON
+NNNOOOOnnOqONpOo
+OooooooooOpNpnnO
+OppppNNooooqONnO
+OONOpooPNNNqoNNP
+pNNOPooPNNPPNoNp
+ONNOPPooonnOnNNp
+NOpooqqPqnONOooN

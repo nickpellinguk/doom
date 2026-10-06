@@ -1,17 +1,17 @@
-# NUKE24 43x16: .rgybmcw = K R G Y B M C W (drawn: nukage edge: red dirt, black, green glow, yellow sparks)
+# NUKE24 43x16: .rgybmcw = K R G Y B M C W, nopqhtzx = cycling 8-15 (drawn: nukage edge: red dirt, black, the cycling wave)
 rrrrrr.rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
 rrrrrrrrr.rrrrrrrrrrrrrrrrrrrrrrrrrrrr..rrr
 rrrrrrr..rrrrrrrrrrrrrrrr.r.rrrr.rrrrrrrrrr
 rrrrrrrrrrrrrrrrrrrr.rrrrrrrrrrrr.rrrr.rrrr
 rrrrrrrrrrrrrrrrrrrrrrrrrrrrrr.rrrrrr.rrrrr
 rrrrrrrrr.rrr.rrrrrrrrr..rrrrrrrrrrrr..rrrr
-rrrrrrrr.g.r.g.rrrrrrr.gg.....rrrrrrrgg.rr.
-.rrrrrr.ggg.gggrrr.rrrgggg.ggrrrr.rr.ggg..g
-grr...rggyggggg.r.g...ggygggg.rr.g..ggggggg
-g..ggg.ggggggygg.ggggggygggggg..ggggggggggg
-gggggggggggggggggggggggyyggyggggggggggggggy
-yggygygggygggygggyyggyggggygggggygygyyggygg
-gyyggggyyyggygyggggggggygyggggyggyygygyygyg
-gggggggggyggygggygggggggggggggggggygygyyggy
-ggggggggygygyggggggggygygggygygygyyyggyyygg
-yygygggyyyyygyyyggyygggygygygggggygygygygyy
+rrrrrrrr.o.r.n.rrrrrrr.on.....rrrrrrrnn.rr.
+.rrrrrr.npo.nonrrr.rrropon.oorrrr.rr.ooo..n
+nrr...rnoqpoopo.r.n...pqponpp.rr.o..npppooo
+o..ooo.opnqppqpo.oonnoqnqpoqqo..npoooqqqppp
+pnnpppnpqonqqnqpoppoopnonqpnnpnnoqpppnnnqqq
+qooqqqoqnponnonqpqqppqoponqooqoopnqqqooonnn
+nppnnnpnoqpooponqnnqqnpqponppnppqonnnpppooo
+oqqoooqopnqppqponoonnoqnqpoqqoqqnpoooqqqppp
+pnnpppnpqonqqnqpoppoopnonqpnnpnnoqpppnnnqqq
+qooqqqoqnponnonqpqqppqoponqooqoopnqqqooonnn

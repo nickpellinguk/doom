@@ -298,6 +298,7 @@ tw_lh:   .res 1                         ;  texel column addresses
 tw_rl:   .res 1
 tw_rh:   .res 1
 tw_np:   .res 1                         ; whole pairs in the run
+sp_tick:  .res 1                        ; split_irq: fields, for the colour cycle
 sp_phase: .res 1                        ; the split: $80 after the panel event
 tw_slim: .res 2                         ; step 5n: the seg's shared-v limit,
 tw_sh:   .res 1                         ;  and this run shares ($80) or not
@@ -1360,19 +1361,53 @@ split_init:
    CLI
    RTS
 
+; cyc_tab: the colour cycle (step 6e), 8 phases x logical 8..15, palette
+; register values; master_assets.cycle_colour is the spec (test_master_tex
+; compares). 8-11 the nukage wave (black green green yellow, entry k at
+; phase p showing step (k + p) & 3), 12 the lamp halo (red red black black),
+; 13 the lamp glint (white red red red), 14 / 15 two blinks (yellow / red
+; on alternate phases).
+cyc_tab:
+.repeat 8, P
+.repeat 4, K                            ; 8-11: black green green yellow
+   .byte ((8 + K) << 4) | ((2 * (((K + P) & 3) = 1) + 2 * (((K + P) & 3) = 2) + 3 * (((K + P) & 3) = 3)) ^ 7)
+.endrepeat
+   .byte (12 << 4) | ((((P & 3) < 2) * 1) ^ 7)          ; halo: red, black
+   .byte (13 << 4) | ((1 + 6 * ((P & 3) = 0)) ^ 7)      ; glint: white, red
+   .byte (14 << 4) | ((3 * ((P & 1) = 0)) ^ 7)          ; blink: yellow
+   .byte (15 << 4) | ((1 * ((P & 1) = 1)) ^ 7)          ; blink: red
+.endrepeat
+
 ; split_irq: IRQ1V (A is in $FC; X, Y untouched)
 split_irq:
    LDA $FE6D
    AND #$40
-   BEQ @out                             ; not T1
+   BNE @t1
+   LDA $FC                              ; not T1
+   RTI
+@t1:
    LDA sp_phase
    EOR #$80
    STA sp_phase
-   BPL @top
+   BMI @panel
+   JMP @top
+@panel:
    LDA #ULA_MODE1                       ; the panel's first line: Mode 1,
-   STA $FE20                            ;  then entries 1..6 (black, white)
-.repeat 6, K
-   LDA #((K + 1) << 4) | ((((K + 1) & 2) * 7 / 2) ^ 7)
+   STA $FE20                            ;  then black (1, 4, 5): line 136
+   LDA #(1 << 4) | 7                    ;  is all black (entries 0 1 4 5),
+   STA $FE21                            ;  so the rest can land during it:
+   LDA #(4 << 4) | 7                    ;  white (2, 3, 6), red (8 9 12 13)
+   STA $FE21                            ;  and cyan (10 11 14 15), which
+   LDA #(5 << 4) | 7                    ;  the view cycles (step 6e)
+   STA $FE21
+   LDA #(2 << 4) | 0
+   STA $FE21
+   LDA #(3 << 4) | 0
+   STA $FE21
+   LDA #(6 << 4) | 0
+   STA $FE21
+.repeat 8, K
+   LDA #((8 + K) << 4) | ((((K & 2) / 2) * 5 + 1) ^ 7)
    STA $FE21
 .endrepeat
    LDA #<SPLIT_VP                       ; the period after the next event
@@ -1387,6 +1422,16 @@ split_irq:
    LDA #((K + 1) << 4) | ((K + 1) ^ 7)
    STA $FE21
 .endrepeat
+   PHX                                  ; entries 8..15: the colour cycle's
+   INC sp_tick                          ;  phase, one every 8 fields
+   LDA sp_tick
+   AND #$38                             ; phase * 8
+   TAX
+.repeat 8, K
+   LDA cyc_tab + K,X
+   STA $FE21
+.endrepeat
+   PLX
    LDA #<SPLIT_PV
    STA $FE66
    LDA #>SPLIT_PV
@@ -1394,7 +1439,6 @@ split_irq:
 @ack:
    LDA #$40
    STA $FE6D                            ; T1's flag down
-@out:
    LDA $FC
    RTI
 

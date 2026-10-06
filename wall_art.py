@@ -152,7 +152,7 @@ def convert(name, rgb, th, tw):
 
 # ── the hand-drawn grids (art/walls/NAME.txt): the art source ─────────
 ART_DIR = __import__('os').path.join(M.ROOT, 'art', 'walls')
-CH = '.rgybmcw'                         # K R G Y B M C W, one per texel
+CH = '.rgybmcw' + 'nopqhtzx'            # K R G Y B M C W; cycling 8-15 (step 6e)
 
 
 def grid_path(name):
@@ -171,7 +171,8 @@ def load_grid(name):
 
 def save_grid(name, q, note=''):
     with open(grid_path(name), 'w') as f:
-        f.write(f'# {name} {q.shape[1]}x{q.shape[0]}: {CH} = K R G Y B M C W{note}\n')
+        f.write(f'# {name} {q.shape[1]}x{q.shape[0]}: .rgybmcw = K R G Y B M C W, '
+                f'nopqhtzx = cycling 8-15{note}\n')
         for r in q:
             f.write(''.join(CH[c] for c in r) + '\n')
 
@@ -204,7 +205,8 @@ if __name__ == '__main__':
 # A flat texel is a TONE (master_assets.TONES): a solid colour, black + a
 # colour, or white + a colour, cross-hatched on screen.
 FLAT_DIR = __import__('os').path.join(M.ROOT, 'art', 'flats')
-TCH = '.rgybmcw' + 'RGYBMC' + '123456'  # solids; K + r g y b m c; W + r g y b m c
+TCH = ('.rgybmcw' + 'RGYBMC' + '123456'    # solids; K + r g y b m c; W + r g y b m c
+       + 'nopqhtzx' + 'NOPQ')                 # cycling solids; nukage wave pairs (6e)
 assert len(TCH) == len(M.TONES)
 
 
@@ -222,7 +224,8 @@ def save_flat(name, q, note=''):
     os.makedirs(FLAT_DIR, exist_ok=True)
     with open(os.path.join(FLAT_DIR, name + '.txt'), 'w') as f:
         f.write(f'# {name} 16x16 tones: .rgybmcw solid, RGYBMC black+colour, '
-                f'123456 white+colour (r g y b m c){note}\n')
+                f'123456 white+colour (r g y b m c), nopqhtzx cycling 8-15, '
+                f'NOPQ nukage wave pairs{note}\n')
         for r in q:
             f.write(''.join(TCH[t] for t in r) + '\n')
 

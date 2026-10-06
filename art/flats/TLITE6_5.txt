@@ -1,17 +1,17 @@
-# TLITE6_5 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c) (drawn: four red lamps: red, pink glint, dark red halo, dark purple ceiling)
+# TLITE6_5 16x16 tones: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour (r g y b m c), nopqhtzx cycling 8-15, NOPQ nukage wave pairs (drawn: four red lamps, cycling halo and glint, dark purple ceiling)
 .MM.MM.MM...MMMM
 ....M..M.......M
-.M.RRMMMM..RR...
-M.R1rR..M.R1rR.M
-M.RrrR...MRrrRM.
-MMMRRM.....RR..M
+.M.hhMMMM..hh...
+M.htrh..M.htrh.M
+M.hrrh...MhrrhM.
+MMMhhM.....hh..M
 .MM...M.M...M...
 M.....MM.M.M..M.
 ...M..M.M..M....
 .M.....M.M....MM
-..MRR.M...MRRM..
-.MR1rR.M..R1rRM.
-M.RrrR....RrrRM.
-...RR......RR..M
+..Mhh.M...MhhM..
+.Mhtrh.M..htrhM.
+M.hrrh....hrrhM.
+...hh......hh..M
 .M....M..MM.M...
 .M....MM.M.MM.MM

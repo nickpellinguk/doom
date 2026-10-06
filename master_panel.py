@@ -276,7 +276,8 @@ def panel_bytes():
     (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 1 byte
     per four pixels."""
     px = face(lettering(panel_pixels()))
-    out = bytearray(PANEL_SIZE)
+    px[0, :] = BLACK                     # a black top edge: the split IRQ
+    out = bytearray(PANEL_SIZE)          #  rewrites the palette during it (6e)
     for y in range(PANEL_LINES):
         for k in range(64):
             out[(y >> 3) * 512 + k * 8 + (y & 7)] = mode1_byte(

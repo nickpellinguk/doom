@@ -33,7 +33,7 @@ OFFMAP = {(192, -2368, 99), (3648, -2368, 35), (1500, -3700, 0),
 R = T.TexturedRef()
 out = os.path.join(T.ROOT, 'build', 'master', 'ref')
 os.makedirs(out, exist_ok=True)
-# every pixel one of the 8 solid colours (bit 3, the flashing half, clear)
+# logical colours 8-15 (bit 3) are the colour cycle's (step 6e): only from art
 fails, kinds = [], set()
 for pose in POSES:
     fb = R.render(*pose)
@@ -56,9 +56,10 @@ for pose in POSES:
             if b2 != want:
                 fails.append(f'{pose}: line {y + 1} col {k} is not line {y} (planes FLIPped)')
                 break
-            if b & 0xC0:
-                fails.append(f'{pose}: byte ${b:02X} at line {y} col {k} has a flashing colour')
-                break
+            for c, m in ((2 * k, 0xAA), (2 * k + 1, 0x55)):
+                v = R.cell[y >> 1][c]
+                if b & m & 0xC0 and v is None:
+                    fails.append(f'{pose}: byte ${b:02X} at line {y} col {k}: a cycling colour outside the art')
     if hole and pose not in OFFMAP:
         fails.append(f'{pose}: {hole} undrawn cells on an on-map pose')
     if not hole and pose in OFFMAP:

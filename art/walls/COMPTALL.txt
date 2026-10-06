@@ -1,4 +1,4 @@
-# COMPTALL 64x32: .rgybmcw = K R G Y B M C W (drawn: computer wall: blue panels, vents, boards, hazard, monitor)
+# COMPTALL 64x32: .rgybmcw = K R G Y B M C W, nopqhtzx = cycling 8-15 (drawn: computer wall, blinking lamps)
 cccccccc.ccccccccccccccc.ccccccccccccccc.ccccccc.ccccccccccccccc
 bbbbbbbb.cbbbbbbbbbbbbbb.cbbbbbbbbbbbbbb.cbbbbbb.cb...........bb
 bb.....b.cb............b.cb...........bb.c.....b.cb...........bb
@@ -19,7 +19,7 @@ cccccccccccccccc.ccccccccccccccc.ccccccccccccccc.ccc.cccc.cccccc
 bbbbbbbbbbbbbbbb.cbbbbbbbbbbbbbb.cbbbbbbbbbbbbbb.cbb......bbbbbb
 bbb............b.cbbbbbbbbbbbbbb................................
 bbb.wwwggggggg.b.cbbb.....bbbbbb.cccb..........b...............b
-bbb..g...g...g.b.cbbbbbbbbbbbbbb.c.cb.y.y.y.y..b...ww.ww.ww.ww.b
+bbb..g...g...g.b.cbbbbbbbbbbbbbb.c.cb.z.x.z.x..b...ww.ww.ww.ww.b
 bbb..g..www..g.b.cbbb.....bbbbbb.cccb..........b...............b
 bbb.gggwwggggw.b.cbbbbbbbbbbbbbb.cbbbbbbbbbbbbbb..bbbbbbbbbbbbbb
 bbb..g...g...g.b.cbbb.....bbbbbb................................
