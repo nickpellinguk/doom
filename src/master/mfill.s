@@ -3714,7 +3714,7 @@ mf_planes:
 ; four points (sf_eq, q = -n & 3) so the span's last byte ends a block.
 ; PTR points at the block's first column (+ the line within the character
 ; row), so each body writes at fixed offsets (LDY #8c, INY) and only the
-; block end moves PTR on, by 32. Each body is [U, V stepped] sf_eq:
+; block end moves PTR on, by 32. Each body is [U, V stepped, Y = U] sf_eq:
 ; [texel read, both lines written]: an entry skips its step, so the last
 ; byte's never runs. One count per block.
 sp_go2:
@@ -3743,13 +3743,13 @@ sp_go2:
    LDA PTR+1
    SBC #0
    STA PTR+1
-   LDA sv                               ; (A = V at an entry)
+   LDY su                               ; (Y = U, A = V at an entry, as a
+   LDA sv                               ;  step leaves them)
    JMP (sf_ent,X)
 sf_lp:
 sf_e0:
    AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
+   ORA hi16,Y                           ; (Y = U: the step leaves it)
    TAX
 sf_r0:
    LDA $FF00,X                          ; (patched: the flat's page)
@@ -3763,14 +3763,14 @@ sf_r0:
    LDA su
    ADC sdu
    STA su
+   TAY                                  ; U, for the next texel
    CLC
    LDA sv
    ADC sdv
    STA sv
 sf_e1:
    AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
+   ORA hi16,Y                           ; (Y = U: the step leaves it)
    TAX
 sf_r1:
    LDA $FF00,X                          ; (patched: the flat's page)
@@ -3784,14 +3784,14 @@ sf_r1:
    LDA su
    ADC sdu
    STA su
+   TAY                                  ; U, for the next texel
    CLC
    LDA sv
    ADC sdv
    STA sv
 sf_e2:
    AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
+   ORA hi16,Y                           ; (Y = U: the step leaves it)
    TAX
 sf_r2:
    LDA $FF00,X                          ; (patched: the flat's page)
@@ -3805,14 +3805,14 @@ sf_r2:
    LDA su
    ADC sdu
    STA su
+   TAY                                  ; U, for the next texel
    CLC
    LDA sv
    ADC sdv
    STA sv
 sf_e3:
    AND #$F0                             ; texel (V >> 4) * 16 + (U >> 4)
-   LDX su
-   ORA hi16,X
+   ORA hi16,Y                           ; (Y = U: the step leaves it)
    TAX
 sf_r3:
    LDA $FF00,X                          ; (patched: the flat's page)
@@ -3834,6 +3834,7 @@ sf_r3:
    LDA su
    ADC sdu
    STA su
+   TAY                                  ; U, for the next texel
    CLC
    LDA sv
    ADC sdv
