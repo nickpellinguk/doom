@@ -1123,6 +1123,29 @@ the view, bottom centre, sitting on the panel's edge.
   itself is clean (checked: no view colours below line 135 over 120
   fields).
 
+**7a. Speed, phase 1: exact. — DONE.** Profiled first: on jsbeeb a
+walking frame is ~1.80M cycles, 97% of it the renderer (gun 31K, movement
+16K, flip 2K), so only the renderer matters. Exact changes only (the
+byte-exact gate unchanged):
+- *Edge steppers*: a stepper now holds y itself (y0 +/- q) with its
+  remainder, stepping r += R, y += Qs (+/-Q), r >= W: r -= W, y += inc
+  (+/-1); a negative slope reads y - (r != 0). A constant edge is y0 with
+  W = $FFFF (its step never moves it), so no flag. The six steps per
+  column are inlined (`ST_STEP` macro, absolute operands); `st_val` is a
+  load and, when negative, one conditional decrement. Column walk + span
+  edges 260K -> 173K a frame.
+- *`mul8x32`*: the multiplier's quarter-square table offsets are patched
+  once (f(e + A) at SQR_LO+A, f(|e - A|) at SQR_LO-A: the mirror page
+  below SQR_LO serves e < A) and each byte is four indexed reads (238
+  cycles a call, from ~340).
+- Tried and dropped: the same for `mul16` (two products per multiplier:
+  the set-up cost eats the gain, measured +0.05%); unrolled divides (16
+  patched immediates per call, or zero page, which is full). The floor
+  row maths were already cached per row per frame (step 5, P3).
+- *Result*: mean frame (14 poses) 1.457M -> 1.401M (-3.8%); the 18
+  test poses 23.99M -> 23.03M (-4.0%); jsbeeb 7 -> 8 frames in 400
+  fields.
+
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on
 textured output.

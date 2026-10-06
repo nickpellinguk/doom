@@ -794,6 +794,44 @@ adv:
    LDA c_ob
    STA b_y1
    JSR band
+; ST_STEP B: advance stepper B (a constant offset) by four pixels, inline
+.macro ST_STEP B
+.local done
+   CLC                                  ; r += R
+   LDA st_f+B+4
+   ADC st_f+B+10
+   STA st_f+B+4
+   LDA st_f+B+5
+   ADC st_f+B+11
+   STA st_f+B+5
+   CLC                                  ; y += Qs
+   LDA st_f+B+0
+   ADC st_f+B+8
+   STA st_f+B+0
+   LDA st_f+B+1
+   ADC st_f+B+9
+   STA st_f+B+1
+   LDA st_f+B+4                         ; r >= W: r -= W, y += inc
+   CMP st_f+B+6
+   LDA st_f+B+5
+   SBC st_f+B+7
+   BCC done
+   LDA st_f+B+4
+   SBC st_f+B+6                         ; (C = 1 from the compare)
+   STA st_f+B+4
+   LDA st_f+B+5
+   SBC st_f+B+7
+   STA st_f+B+5
+   CLC
+   LDA st_f+B+0
+   ADC st_f+B+12
+   STA st_f+B+0
+   LDA st_f+B+1
+   ADC st_f+B+13
+   STA st_f+B+1
+done:
+.endmacro
+
 next_col:
    LDA mf_x
    CLC
@@ -822,24 +860,20 @@ next_col:
    LDA tx_den+1
    ADC tx_dden+1
    STA tx_den+1
-   LDX #ST_T
-   JSR st_step
-   LDX #ST_B
-   JSR st_step
+   ST_STEP ST_T                         ; (inline: phase 1)
+   ST_STEP ST_B
    LDA mf_oi
-   BMI @no_o
-   LDX #ST_OT
-   JSR st_step
-   LDX #ST_OB
-   JSR st_step
-@no_o:
+   BPL :+
+   JMP nc_no_o
+:  ST_STEP ST_OT
+   ST_STEP ST_OB
+nc_no_o:
    LDA mf_ns
-   BMI @no_n
-   LDX #ST_NT
-   JSR st_step
-   LDX #ST_NB
-   JSR st_step
-@no_n:
+   BPL :+
+   JMP nc_no_n
+:  ST_STEP ST_NT
+   ST_STEP ST_NB
+nc_no_n:
    JMP col
 
 ; ============================================================================
@@ -887,26 +921,43 @@ st_init8:
    LDX si_x
    ; fall into st_init
 
-; st_init: si_y0, si_d (|D|), si_neg, si_w, si_k  -> stepper X
+; st_init: si_y0, si_d (|D|), si_neg, si_w, si_k  -> stepper X. A stepper
+; holds y itself (phase 1 speed-up): y = y0 + q (y0 - q when negative),
+; remainder r, and steps by r += R, y += Qs (+/-Q); r >= W: r -= W, y +=
+; inc (+/-1). A negative slope reads y - (r != 0). A constant (W = 0) is
+; y0 with W = $FFFF and Qs = R = 0: its step never moves it.
 st_init:
    STX si_x
-   LDA si_y0
-   STA st_f+0,X
-   LDA si_y0+1
-   STA st_f+1,X
    LDA si_neg
+   BEQ :+
+   LDA #$FF                             ; inc: -1
    STA st_f+12,X
-   LDA si_w
+   STA st_f+13,X
+   BRA :++
+:  LDA #1                               ; inc: +1
+   STA st_f+12,X
+   STZ st_f+13,X
+:  LDA si_w
    STA st_f+6,X
    LDA si_w+1
    STA st_f+7,X
    ORA si_w
    BNE @var
-   LDA #1
-   STA st_f+13,X                        ; W = 0: constant y0
+   LDA si_y0                            ; W = 0: constant y0
+   STA st_f+0,X
+   LDA si_y0+1
+   STA st_f+1,X
+   LDA #$FF
+   STA st_f+6,X
+   STA st_f+7,X
+   STZ st_f+4,X
+   STZ st_f+5,X
+   STZ st_f+8,X
+   STZ st_f+9,X
+   STZ st_f+10,X
+   STZ st_f+11,X
    RTS
 @var:
-   STZ st_f+13,X
    LDA si_d                             ; q, r = |D| * k / W
    STA m_a
    LDA si_d+1
@@ -922,14 +973,29 @@ st_init:
    STA m_b+1
    JSR div32
    LDX si_x
-   LDA m_p
-   STA st_f+2,X
-   LDA m_p+1
-   STA st_f+3,X
    LDA m_r
    STA st_f+4,X
    LDA m_r+1
    STA st_f+5,X
+   LDA si_neg                           ; y = y0 +/- q
+   BNE @yneg
+   CLC
+   LDA si_y0
+   ADC m_p
+   STA st_f+0,X
+   LDA si_y0+1
+   ADC m_p+1
+   STA st_f+1,X
+   BRA @qr
+@yneg:
+   SEC
+   LDA si_y0
+   SBC m_p
+   STA st_f+0,X
+   LDA si_y0+1
+   SBC m_p+1
+   STA st_f+1,X
+@qr:
    LDA si_d                             ; Q, R = 4|D| / W
    ASL A
    STA m_p
@@ -949,104 +1015,50 @@ st_init:
    STA m_b+1
    JSR div32
    LDX si_x
-   LDA m_p
-   STA st_f+8,X
-   LDA m_p+1
-   STA st_f+9,X
    LDA m_r
    STA st_f+10,X
    LDA m_r+1
    STA st_f+11,X
+   LDA si_neg                           ; Qs = +/-Q
+   BNE @qneg
+   LDA m_p
+   STA st_f+8,X
+   LDA m_p+1
+   STA st_f+9,X
+   RTS
+@qneg:
+   SEC
+   LDA #0
+   SBC m_p
+   STA st_f+8,X
+   LDA #0
+   SBC m_p+1
+   STA st_f+9,X
    RTS
 
-; st_step: advance stepper X by four pixels (one byte column)
-st_step:
-   LDA st_f+13,X
-   BNE @rts
-   CLC
-   LDA st_f+4,X
-   ADC st_f+10,X
-   STA st_f+4,X
-   LDA st_f+5,X
-   ADC st_f+11,X
-   STA st_f+5,X
-   CLC
-   LDA st_f+2,X
-   ADC st_f+8,X
-   STA st_f+2,X
-   LDA st_f+3,X
-   ADC st_f+9,X
-   STA st_f+3,X
-   LDA st_f+4,X                         ; r >= W ?
-   CMP st_f+6,X
-   LDA st_f+5,X
-   SBC st_f+7,X
-   BCC @rts
-   LDA st_f+4,X
-   SBC st_f+6,X                         ; (C = 1 from the compare)
-   STA st_f+4,X
-   LDA st_f+5,X
-   SBC st_f+7,X
-   STA st_f+5,X
-   INC st_f+2,X
-   BNE @rts
-   INC st_f+3,X
-@rts:
-   RTS
 
 ; st_val: ln_y = stepper X's current y (s16)
 st_val:
-   LDA st_f+13,X
-   BEQ @var
    LDA st_f+0,X
    STA ln_y
    LDA st_f+1,X
    STA ln_y+1
-   RTS
-@var:
-   LDA st_f+2,X
-   STA m_p
-   LDA st_f+3,X
-   STA m_p+1
-   LDA st_f+12,X
-   BEQ @pos
-   LDA st_f+4,X                         ; negative: y0 - (q + (r != 0))
+   LDA st_f+13,X                        ; negative: y - (r != 0)
+   BPL @rts
+   LDA st_f+4,X
    ORA st_f+5,X
-   BEQ @sub
-   INC m_p
-   BNE @sub
-   INC m_p+1
-@sub:
-   SEC
-   LDA st_f+0,X
-   SBC m_p
-   STA ln_y
-   LDA st_f+1,X
-   SBC m_p+1
-   STA ln_y+1
-   RTS
-@pos:
-   CLC
-   LDA st_f+0,X
-   ADC m_p
-   STA ln_y
-   LDA st_f+1,X
-   ADC m_p+1
-   STA ln_y+1
+   BEQ @rts
+   LDA ln_y
+   BNE :+
+   DEC ln_y+1
+:  DEC ln_y
+@rts:
    RTS
 
 ; st_peek: ln_y = stepper X's y one step on (4 pixels), its state kept --
-; exactly st_step then st_val
+; exactly a step then st_val
 st_peek:
-   LDA st_f+13,X
-   BEQ @var
-   LDA st_f+0,X
-   STA ln_y
-   LDA st_f+1,X
-   STA ln_y+1
-   RTS
-@var:
-   CLC                                  ; r' = r + R, q' = q + Q
+   CLC                                  ; r' = r + R, y' = y + Qs
    LDA st_f+4,X
    ADC st_f+10,X
    STA m_r
@@ -1054,13 +1066,13 @@ st_peek:
    ADC st_f+11,X
    STA m_r+1
    CLC
-   LDA st_f+2,X
+   LDA st_f+0,X
    ADC st_f+8,X
-   STA m_p
-   LDA st_f+3,X
+   STA ln_y
+   LDA st_f+1,X
    ADC st_f+9,X
-   STA m_p+1
-   LDA m_r                              ; r' >= W: r' -= W, q' += 1
+   STA ln_y+1
+   LDA m_r                              ; r' >= W: r' -= W, y' += inc
    CMP st_f+6,X
    LDA m_r+1
    SBC st_f+7,X
@@ -1071,35 +1083,24 @@ st_peek:
    LDA m_r+1
    SBC st_f+7,X
    STA m_r+1
-   INC m_p
-   BNE @val
-   INC m_p+1
-@val:
-   LDA st_f+12,X
-   BEQ @pos
-   LDA m_r                              ; negative: y0 - (q' + (r' != 0))
-   ORA m_r+1
-   BEQ @sub
-   INC m_p
-   BNE @sub
-   INC m_p+1
-@sub:
-   SEC
-   LDA st_f+0,X
-   SBC m_p
-   STA ln_y
-   LDA st_f+1,X
-   SBC m_p+1
-   STA ln_y+1
-   RTS
-@pos:
    CLC
-   LDA st_f+0,X
-   ADC m_p
+   LDA ln_y
+   ADC st_f+12,X
    STA ln_y
-   LDA st_f+1,X
-   ADC m_p+1
+   LDA ln_y+1
+   ADC st_f+13,X
    STA ln_y+1
+@val:
+   LDA st_f+13,X                        ; negative: y' - (r' != 0)
+   BPL @rts
+   LDA m_r
+   ORA m_r+1
+   BEQ @rts
+   LDA ln_y
+   BNE :+
+   DEC ln_y+1
+:  DEC ln_y
+@rts:
    RTS
 
 ; tr_lines: the right strip's lines (once per byte): the midpoints of the
@@ -4049,20 +4050,40 @@ pl_prod:
 
 ; mul8x32: pl_q (5) = pl_e (4) * A (8): four quarter-square 8x8s
 mul8x32:
-   STA mq_b
+   STA mq_b                             ; quarter squares, the tables' offsets
+   STA m8_p1+1                          ;  patched once: f(e + A) at SQR_LO+A,
+   STA m8_p2+1                          ;  f(|e - A|) at SQR_LO-A (the mirror
+   SEC                                  ;  page below serves e < A), each byte
+   LDA #0                               ;  of pl_e then four indexed reads
+   SBC mq_b
+   STA m8_m1+1
+   STA m8_m2+1
+   LDA #>SQR_LO
+   SBC #0                               ; (the page below unless A = 0)
+   STA m8_m1+2
+   CLC
+   ADC #>(SQR_HI - SQR_LO)
+   STA m8_m2+2
    STZ pl_q
    STZ pl_q+1
    STZ pl_q+2
    STZ pl_q+3
    STZ pl_q+4
-   STZ mq_i
-@lp:
-   LDX mq_i
-   LDA pl_e,X
-   BEQ @nx                              ; zero byte: adds nothing
-   JSR mf_mul8
+   LDX #0
+m8_lp:
+   LDY pl_e,X
+   BEQ m8_nx                              ; zero byte: adds nothing
+   SEC
+m8_p1:
+   LDA SQR_LO,Y                         ; (patched lo: A)
+m8_m1:
+   SBC SQR_LO,Y                         ; (patched: SQR_LO - A)
+   STA mq_l
+m8_p2:
+   LDA SQR_HI,Y                         ; (patched lo: A)
+m8_m2:
+   SBC SQR_HI,Y                         ; (patched: SQR_HI - A)
    TAY                                  ; Y = hi
-   LDX mq_i
    CLC                                  ; pl_q+i+1 is still clear: no
    LDA mq_l                             ;  carry out of it
    ADC pl_q,X
@@ -4070,11 +4091,10 @@ mul8x32:
    TYA
    ADC pl_q+1,X
    STA pl_q+1,X
-@nx:
-   INC mq_i
-   LDA mq_i
-   CMP #4
-   BNE @lp
+m8_nx:
+   INX
+   CPX #4
+   BNE m8_lp
    RTS
 
 ; neg_ah: A non-zero -> pl_a, pl_h negated (mod 2^16)
