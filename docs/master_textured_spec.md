@@ -28,8 +28,15 @@ Model B memory map are replaced. The Model B build is not maintained.
 
 ## 2. Colours
 
-**Since step 6a** (Mode 2): texels are solid colours; no cross-hatch and
-no sector light (the demo is for texturing, not atmospherics). Textures
+**Since step 6a** (Mode 2): wall texels are solid colours; no sector
+light (the demo is for texturing, not atmospherics). **Since step 6d**
+floors and ceilings cross-hatch again: a flat texel is one of 17 *tones*,
+the 8 solid colours or one of 9 gentle pairs (`master_assets.PAIRS`),
+two colours one RGB bit apart in blue (luma gap 0.11: black+blue,
+red+magenta, green+cyan, yellow+white) or red (0.30: black+red,
+blue+magenta, green+yellow, cyan+white), plus red+green (an olive brown,
+0.29). Flats are a placeholder ramp over the tones per material
+(`TONE_RAMPS`, `quantise_flat`). Textures
 are a placeholder conversion until each is redrawn as pixel art (step
 6b): per texture, its brightness (normalised to its own 5–95% range) is
 cut into four levels of a ramp for its material, found from its mean
@@ -53,15 +60,17 @@ Steps 1–5 (Mode 1):
 
 ## 3. Drawing
 
-All writes are whole bytes; each texel row writes byte `B` to lines 2r and
-2r+1 (step 6a; in Mode 1 the second line was `FLIP[B]`).
+All writes are whole bytes; each wall texel row writes byte `B` to lines
+2r and 2r+1 (step 6a; in Mode 1 the second line was `FLIP[B]`); floors
+and ceilings write `FLIP[B]` on the odd line (step 6d).
 
 - **Walls**: two independent strips per byte, one Mode 2 pixel each:
   `byte = TEX1 OR (TEX2 >> 1)`, where each texel byte carries its colour in
   the left pixel's bits (`$AA`): one shift (Mode 1 was `(TEX1 << 2) OR
   TEX2`, two).
-- **Floors and ceilings**: one texel per byte, a full byte with both
-  pixels the colour.
+- **Floors and ceilings**: one texel per byte, a full byte (a tone: left
+  pixel a, right b) on a pair's even line and `FLIP[B]` (b, a) on its odd
+  line, a checkerboard (step 6d). A solid tone is its own FLIP.
 - **Sky** (F_SKY1): solid cyan, no texture.
 - Drawing code runs from **HAZEL** and reaches the shadow buffers by setting
   **ACCCON X** for the duration of a draw. The E bit cannot be used: Master
@@ -121,7 +130,7 @@ All writes are whole bytes; each texel row writes byte `B` to lines 2r and
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16`, page-aligned at $C800, $C900; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D4E3, **free $D4E4–$D7FF (0.8K)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D5F9, **free $D5FA–$D7FF (0.5K)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B7EC: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
@@ -955,6 +964,43 @@ the video ULA and palette mid-frame.
   - `to_png` decodes lines 136+ as Mode 1 in the split palette.
 - *Cost*: two interrupts a field, about 60 cycles each (well under 0.1% of
   a frame).
+
+**6d. Floor and ceiling cross-hatch. — DONE.** Floors and ceilings
+regain Mode 1's texture without its harshness: a flat texel is a TONE,
+a solid colour or a pair of colours whose brightness gap is gentle, and
+the odd line of each pair writes it with its pixels swapped.
+- *Tones* (`master_assets.TONES`): the 8 solids, then the pairs
+  - one RGB bit apart in **blue** (luma gap 0.11, nearly a flat tone):
+    black+blue, red+magenta, green+cyan, yellow+white;
+  - one bit apart in **red** (0.30, a calm texture): black+red,
+    blue+magenta, green+yellow, cyan+white;
+  - **red+green** (0.29), the one two-bit pair: an olive brown for
+    DOOM's floors.
+
+  Green-bit pairs (gap 0.59) and complements (red+cyan, magenta+green,
+  …) are left out: they read as a checkerboard, or shimmer.
+- *Flats* (placeholder until 6b): per flat, brightness normalised to its
+  5–95% range, nearest tone by luma on its material's ramp
+  (`TONE_RAMPS`: grey/blue K, K+B, B, (B+M), C, C+W, W; brown K, K+R,
+  R, R+G, Y, Y+W, W; green K, R+G, G, G+Y, Y, Y+W, W; red K, K+R, R,
+  R+M, M, W); vivid texels keep the nearest saturated solid.
+- *FLIP* (`flip`, HAZEL $CA00, page-aligned next to `hi16` / `lo16`):
+  `((b << 1) & $AA) | ((b >> 1) & $55)`, generated by `.repeat`.
+  - `sp_go2`: each body writes the even line, then `TAX / LDA flip,X`
+    for the odd line (+6 cycles a byte).
+  - `sl_go` (one line): `sl_fb`, a `BRA` over the flip that `sl_draw`
+    patches to 0 on an odd line.
+  - `pl_wr1` (a partial line drawn on the spot): flips on an odd line.
+  - Walls, sky and the solid runs (`hz_run`) are unchanged: a solid is
+    its own FLIP.
+- *Models*: `tex_ref._compose` writes `FLIP[b]` for plane bytes on odd
+  lines; `textured_ref` likewise per pixel half.
+- *Gates*: `test_master_tex` byte-exact over the 18 poses (the first run
+  caught `pl_wr1`); `test_master_assets` checks FLIP swaps every byte's
+  pixels, that every pair is one of the gentle set and that every flat
+  byte is a tone.
+- *Cycles*: the mean frame 1.447M → 1.458M (+0.8%); the span loops 106K
+  → 110K. HAZEL +256 B (`flip`) and the patched code.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

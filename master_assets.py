@@ -12,7 +12,7 @@ Outputs (all deterministic):
                     assets.json and textab.inc)
   textab.s          ca65 source for the HAZEL tables: texture directory,
                     texture headers + column index bytes, flat tables,
-                    (no FLIP table since Mode 2)
+                    (FLIP, the floor cross-hatch: master/mfill.s)
   textab.inc        TEX_* / FLAT_* ids and bank-image equates
   assets.json       manifest for the Python reference renderer (step 2)
   walls.png, flats.png   previews decoded back from the packed bytes
@@ -26,7 +26,9 @@ magenta cyan white):
   wall texel    the colour in the LEFT pixel's bits; the drawer writes
                 TEX1 OR (TEX2 >> 1), two strips (pixels) per byte. Both
                 lines of a texel row are the same byte: no cross-hatch.
-  floor texel   a full byte, both pixels the colour.
+  floor texel   a full byte: a TONE, a solid colour or one of PAIRS (left,
+                right) on a pair's even line, FLIP (pixels swapped) on
+                its odd line -- the cross-hatch, floors and ceilings only.
   wall column   32 bytes, one texel per byte, top row first. A 256-byte
                 page holds 8 columns interleaved: byte = row*8 + slot.
   texture       header in HAZEL: ptr lo, ptr hi, bank, width, rowoff, then
@@ -108,7 +110,36 @@ def wall_byte(shade):
 
 
 def floor_byte(shade):
+    """A floor texel: a solid colour, or a TONE (0-16 below) as a pair."""
     return mode2_byte((shade, shade))
+
+
+# Floors and ceilings cross-hatch (step 6d): a flat texel is a byte of two
+# colours, written as is on a pair's even line and FLIP (the pixels
+# swapped) on its odd line, a checkerboard. Only pairs whose brightness gap
+# is gentle: one RGB bit apart, blue bit (luma 0.11) or red bit (0.30), plus
+# red + green (an olive brown, the one two-bit pair).
+PAIRS = [(BLACK, BLUE), (RED, MAGENTA), (GREEN, CYAN), (YELLOW, WHITE),
+         (BLACK, RED), (BLUE, MAGENTA), (GREEN, YELLOW), (CYAN, WHITE),
+         (RED, GREEN)]
+TONES = [(c, c) for c in range(8)] + PAIRS      # tone t -> (left, right)
+
+
+def flip(b):
+    """A Mode 2 byte with its two pixels swapped."""
+    return ((b << 1) & 0xAA) | ((b >> 1) & 0x55)
+
+
+FLIP = bytes(flip(b) for b in range(256))
+
+
+def tone_byte(t):
+    return mode2_byte(TONES[t])
+
+
+def tone_rgb(t):
+    a, b = TONES[t]
+    return (np.array(PALETTE[a], float) + PALETTE[b]) / 2
 
 
 def wall_pair(l, r):
@@ -232,6 +263,34 @@ def quantise_tex(rgb):
     near = np.argmin(((rgb[..., None, :] * 255 / np.maximum(rgb.max(-1), 1)[..., None, None]
                        - pal) ** 2).sum(-1), -1) + 1
     return np.where(vivid, near, out)
+
+
+# placeholder flat ramps over the tones (step 6b redraws each flat), dark
+# to light, one per material
+TONE_RAMPS = {
+    'grey':  [BLACK, 8, BLUE, CYAN, 15, WHITE],             # (8 = K+B ..
+    'blue':  [BLACK, 8, BLUE, 13, CYAN, 15, WHITE],         #  16 = R+G)
+    'brown': [BLACK, 12, RED, 16, YELLOW, 11, WHITE],
+    'green': [BLACK, 16, GREEN, 14, YELLOW, 11, WHITE],
+    'red':   [BLACK, 12, RED, 9, MAGENTA, WHITE],
+}
+
+
+def quantise_flat(rgb):
+    """PLACEHOLDER tones (TONES indices) for a flat: its brightness,
+    normalised to its own 5..95% range, matched to the nearest tone of its
+    material's ramp by brightness; strongly coloured texels (nukage, lights)
+    take the nearest saturated colour, as for the walls."""
+    lum = rgb @ LUMA
+    lo, hi = np.percentile(lum, 5), np.percentile(lum, 95)
+    t = np.clip((lum - lo) / max(hi - lo, 1), 0, 1)
+    ramp = TONE_RAMPS[material(rgb)]
+    tl = np.array([tone_rgb(r) @ LUMA / 255 for r in ramp])
+    out = np.array(ramp)[np.argmin(abs(t[..., None] - tl), -1)]
+    solid = quantise_tex(rgb)
+    sat = rgb.max(-1) - rgb.min(-1)
+    vivid = (sat > 110) & (rgb.max(-1) > 140)
+    return np.where(vivid, solid, out)
 
 
 def quantise(rgb):
@@ -397,8 +456,8 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
             raise SystemExit('flats do not fit the bank regions')
         for f in unit:
             page = R.top // 256
-            sq = quantise_tex(scale_rgb(wad.pal[wad.flat(f)], FLAT_N, FLAT_N))
-            R.mem[page * 256:(page + 1) * 256] = bytes(floor_byte(s) for s in sq.ravel())
+            sq = quantise_flat(scale_rgb(wad.pal[wad.flat(f)], FLAT_N, FLAT_N))
+            R.mem[page * 256:(page + 1) * 256] = bytes(tone_byte(t) for t in sq.ravel())
             R.top += 256
             fplace[f] = dict(bank=R.bank, ptr=R.start + page * 256)
             order.append(f)

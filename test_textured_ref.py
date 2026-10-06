@@ -48,8 +48,13 @@ for pose in POSES:
         for k in range(64):
             a = (y >> 3) * 512 + k * 8 + (y & 7)
             b, b2 = fb[a], fb[a + 1]
-            if b2 != b:
-                fails.append(f'{pose}: line {y + 1} col {k} does not repeat line {y}')
+            want = 0                                  # a wall half repeats,
+            for c, m in ((2 * k, 0xAA), (2 * k + 1, 0x55)):   # a plane half
+                v = R.cell[y >> 1][c]                 # is its plane byte's
+                want |= (b if v is None or v[0] == 'w' else   # FLIP (6d)
+                         M.FLIP[R._plane_byte(c, y >> 1, v[1], v[2])]) & m
+            if b2 != want:
+                fails.append(f'{pose}: line {y + 1} col {k} is not line {y} (planes FLIPped)')
                 break
             if b & 0xC0:
                 fails.append(f'{pose}: byte ${b:02X} at line {y} col {k} has a flashing colour')

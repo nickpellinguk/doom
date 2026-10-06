@@ -50,6 +50,16 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
             check(comb == w | (M.wall_byte(s2) >> 1), f'wall_pair {s},{s2}')
             check(M.mode2_pixels(comb) == [pa, qa], f'strip combine {s},{s2}')
 
+    # ── floor cross-hatch (step 6d): FLIP swaps the pixels; only TONES ──
+    for x in range(256):
+        a, b = M.mode2_pixels(x)
+        check(M.mode2_pixels(M.FLIP[x]) == [b, a], f'FLIP {x:02X}')
+    check(len(M.PAIRS) == 9 and len(set(M.TONES)) == 17, 'tone set')
+    for a, b in M.PAIRS:
+        check(a != b and ((a ^ b) in (1, 4) or {a, b} == {M.RED, M.GREEN}),
+              f'pair {a},{b} not one of the gentle pairs')
+    ok_tones = {M.tone_byte(t) for t in range(len(M.TONES))}
+
     # ── walls: every texel read back through the tables ──
     wad = M.Wad()
     src = wad.textures()
@@ -75,9 +85,10 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
 
     # ── flats ──
     for f in man['flats']:
-        q = M.quantise_tex(M.scale_rgb(wad.pal[wad.flat(f['name'])], M.FLAT_N, M.FLAT_N))
-        check((A.flat_bytes(f['id']) == np.vectorize(M.floor_byte)(q)).all(),
-              f"{f['name']} reads back wrong")
+        q = M.quantise_flat(M.scale_rgb(wad.pal[wad.flat(f['name'])], M.FLAT_N, M.FLAT_N))
+        got = A.flat_bytes(f['id'])
+        check((got == np.vectorize(M.tone_byte)(q)).all(), f"{f['name']} reads back wrong")
+        check(set(got.ravel().tolist()) <= ok_tones, f"{f['name']} uses a pair outside TONES")
     names = [f['name'] for f in man['flats']]
     for grp in M.ANIM_FLATS:
         i = names.index(grp[0])

@@ -268,23 +268,28 @@ class TexturedRef:
         return int(self.flat[pic][fv, fu])
 
     def _compose(self):
+        import master_assets as M
         import master_panel
         fb = bytearray(10240)
         fb[master_panel.PANEL_OFFSET:] = master_panel.panel_bytes()
         for r in range(ROWS):
             row = self.cell[r]
             for k in range(64):
-                b = 0
+                b = o = 0                             # even, odd line
                 for half, c in ((0, 2 * k), (1, 2 * k + 1)):
                     v = row[c]
                     if v is None:
                         continue                      # never drawn: black
+                    m = 0xAA if half == 0 else 0x55
                     if v[0] == 'w':
-                        b |= v[1] if half == 0 else v[1] >> 1
-                    else:
+                        w = v[1] if half == 0 else v[1] >> 1
+                        b |= w
+                        o |= w
+                    else:                             # odd line: FLIP
                         pb = self._plane_byte(c, r, v[1], v[2])
-                        b |= pb & (0xAA if half == 0 else 0x55)
-                for line, val in ((2 * r, b), (2 * r + 1, b)):
+                        b |= pb & m
+                        o |= M.FLIP[pb] & m
+                for line, val in ((2 * r, b), (2 * r + 1, o)):
                     fb[(line >> 3) * 512 + k * 8 + (line & 7)] = val
         return bytes(fb)
 

@@ -376,8 +376,14 @@ lo16:
    .byte (I << 4) & $FF
 .endrepeat
 
-; (Mode 2: no FLIP table -- both lines of a texel row are the same byte)
-.assert (hi16 & $FF) = 0 && (lo16 & $FF) = 0, error, "x16 tables must be page-aligned"
+; flip: a Mode 2 byte with its two pixels swapped -- the floor and ceiling
+; cross-hatch (step 6d: a flat texel's pair on a line pair's even line,
+; flip[] of it on the odd). Walls use none: both lines the same byte.
+flip:
+.repeat 256, I
+   .byte ((I << 1) & $AA) | ((I >> 1) & $55)
+.endrepeat
+.assert (hi16 & $FF) = 0 && (lo16 & $FF) = 0 && (flip & $FF) = 0, error, "x16 / flip tables must be page-aligned"
 
 ; Sky map: one bit per subsector, set when its ceiling is F_SKY1.
 ; SEEDED BY THE IMAGE BUILDER (banked_bsp / tools/build_master_ssd.py).
@@ -3616,7 +3622,8 @@ pl_pair:
    ROL A
    ; fall into pl_wr1
 
-; pl_wr1: A = line; t_ev = the texel byte: write it at column pl_kb
+; pl_wr1: A = line; t_ev = the texel byte: write it at column pl_kb (flip[]
+; of it on an odd line)
 pl_wr1:
    STA pl_y
    LDX r_ys                             ; (ln_ptrk reads r_ys: lend it)
@@ -3628,8 +3635,13 @@ pl_wr1:
    STX r_ys
    LDA #ACC_DXY
    STA $FE34
+   LDA pl_y
+   LSR A                                ; C = odd
    LDA t_ev
-   STA (PTR),Y
+   BCC :+
+   TAX
+   LDA flip,X
+:  STA (PTR),Y
    LDA #ACC_DY
    STA $FE34
    RTS
@@ -3643,9 +3655,9 @@ mf_planes:
 .segment "MFILL"
 ; ---- sp_go2 / sl_go: the span loops (HAZEL: they page the flat's bank).
 ; sp_setup has set U, V, PTR, Y, the patched steps and page; A = the
-; flat's bank. sp_go2 writes a line PAIR per byte (even line lit, odd line
-; FLIP lit); sl_go ONE line (sl_draw patches the FLIP and the mask for its
-; parity).
+; flat's bank. sp_go2 writes a line PAIR per byte (even line the texel,
+; odd line flip[] of it); sl_go ONE line (sl_draw patches sl_fb to take
+; the flip on an odd line).
 ; sp_go2 is Duff's device: four bytes unrolled (sf_lp), entered at one of
 ; four points (sf_eq, q = -n & 3) so the span's last byte ends a block.
 ; PTR points at the block's first column (+ the line within the character
@@ -3692,6 +3704,8 @@ sf_r0:
    LDY #0
    STA (PTR),Y                          ; even line: whole byte
    INY
+   TAX
+   LDA flip,X
    STA (PTR),Y                          ; odd line: FLIP
    CLC
    LDA su
@@ -3711,6 +3725,8 @@ sf_r1:
    LDY #8
    STA (PTR),Y                          ; even line: whole byte
    INY
+   TAX
+   LDA flip,X
    STA (PTR),Y                          ; odd line: FLIP
    CLC
    LDA su
@@ -3730,6 +3746,8 @@ sf_r2:
    LDY #16
    STA (PTR),Y                          ; even line: whole byte
    INY
+   TAX
+   LDA flip,X
    STA (PTR),Y                          ; odd line: FLIP
    CLC
    LDA su
@@ -3749,6 +3767,8 @@ sf_r3:
    LDY #24
    STA (PTR),Y                          ; even line: whole byte
    INY
+   TAX
+   LDA flip,X
    STA (PTR),Y                          ; odd line: FLIP
    DEC sf_nb
    BEQ sf_end
@@ -3788,6 +3808,11 @@ sl_lp:
    TAX
 sl_rd:
    LDA $FF00,X                          ; (patched: the flat's page)
+sl_fb:
+   BRA sl_wr                            ; (patched: 0 on an odd line, FLIP)
+   TAX
+   LDA flip,X
+sl_wr:
    STA (PTR),Y
    TYA
    CLC
@@ -4802,6 +4827,10 @@ sl_draw:
    LDA pl_y
    LSR A
    STA pl_p
+   LDA #sl_wr - sl_fb - 2               ; even line: skip the FLIP
+   BCC :+
+   LDA #0                               ; odd: through it
+:  STA sl_fb+1
    JSR sp_setup
    JMP sl_go
 

@@ -280,8 +280,9 @@ class TexRef(Fm.FillRef):
         return int(self.tex[tp['name']][0][row, col]), row, col, tp['name']
 
     def _compose(self):
-        """The buffer bytes (Mode 2, step 6a: both lines of a texel row the
-        same byte, no sector light). Below the view, the control panel
+        """The buffer bytes (Mode 2, step 6a: both lines of a wall texel row
+        the same byte, no sector light; step 6d: a plane byte FLIP on odd
+        lines, the floors' cross-hatch). Below the view, the control panel
         (master_panel)."""
         import master_panel
         fb = bytearray(10240)
@@ -291,7 +292,9 @@ class TexRef(Fm.FillRef):
             for k in range(64):
                 l, r = row[2 * k], row[2 * k + 1]
                 if l is not None and l[0] == 'F':
-                    b = l[1]                        # a whole plane byte
+                    b = l[1]                        # a whole plane byte,
+                    if y & 1:                       #  pixels swapped on a
+                        b = M.FLIP[b]               #  pair's odd line
                 else:
                     b = M.wall_pair(l[1] if l is not None else 0,
                                     r[1] if r is not None else 0)
