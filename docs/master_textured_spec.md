@@ -781,7 +781,10 @@ focal lengths and all wall and flat maths are unchanged).
     - the big numbers (`STTNUM`, `STTPRCNT`) are their red body only, pure
       red, with a 1-pixel black outline (its 8 neighbours) at screen
       resolution;
-    - anything coloured (the face) takes the nearest palette colour;
+    - the face (`FACE`, DOOM's straight-ahead STFST01) is hand-drawn,
+      18 × 22, on black: red skin, white eyes and teeth, black brows,
+      pupils and mouth, and a red/black hatch for the hair and the jaw's
+      shading;
     - the small text is the panel's own 3×5 font (M 5 wide), white on
       black boxes (`lettering`): the section labels centred where DOOM's
       are (lines 18–22), the arms numbers (the owned pistol white, the

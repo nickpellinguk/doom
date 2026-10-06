@@ -164,6 +164,51 @@ AMMO = [('BULL', 50, 200), ('SHEL', 0, 50), ('RCKT', 0, 50), ('CELL', 0, 300)]
 AMMO_X = 199
 
 
+# The face (DOOM's STFST01, straight ahead), redrawn by hand at the panel's
+# size: '.' black, 'r' red, 'W' white, 'd' red / black cross-hatch (hair,
+# shadows)
+FACE = [
+    '.....dddddddd.....',
+    '...dddddddddddd...',
+    '..dddddddddddddd..',
+    '.ddddrrrrrrrrdddd.',
+    '.ddrrrrrrrrrrrrdd.',
+    '.drrrrrrrrrrrrrrd.',
+    '.drrrrrrrrrrrrrrd.',
+    '.rr...rrrrrr...rr.',
+    '.rrW.WrrrrrrW.Wrr.',
+    '.rrWWWrrrrrrWWWrr.',
+    '.rrrrrrdrrrrrrrrr.',
+    '.rrrrrrdrrrrrrrrr.',
+    '.rrrrrrd..drrrrrr.',
+    '.drrrrrrrrrrrrrrd.',
+    '.drrrr......rrrrd.',
+    '.drrr.WWWWWW.rrrd.',
+    '.ddrrr......rrrdd.',
+    '..drrrrrrrrrrrrd..',
+    '..ddrrrrrrrrrrdd..',
+    '...ddrrrrrrrrdd...',
+    '....dddrrrrddd....',
+    '......dddddd......',
+]
+FACE_BOX = (114, 1, 141, 23)            # the face's black box (x0, y0, x1, y1)
+
+
+def face(px):
+    """Draw FACE centred in FACE_BOX (on black)."""
+    x0, y0, x1, y1 = FACE_BOX
+    _box(px, x0, y0, x1, y1)
+    fx = x0 + (x1 - x0 + 1 - len(FACE[0])) // 2
+    fy = y0 + (y1 - y0 + 1 - len(FACE)) // 2
+    for r, row in enumerate(FACE):
+        for i, c in enumerate(row):
+            x, y = fx + i, fy + r
+            odd = (x + y) & 1
+            px[y, x] = {'.': BLACK, 'r': RED, 'W': WHITE,
+                        'd': BLACK if odd else RED}[c]
+    return px
+
+
 def lettering(px):
     """The panel's small text, drawn over panel_pixels' conversion: the
     section labels, the arms numbers (the pistol's white, the rest red, as
@@ -193,7 +238,7 @@ def panel_bytes():
     """The panel as it sits in a buffer: 1536 bytes, character rows 17..19
     (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 1 byte
     per four pixels."""
-    px = lettering(panel_pixels())
+    px = face(lettering(panel_pixels()))
     out = bytearray(PANEL_SIZE)
     for y in range(PANEL_LINES):
         for k in range(64):
