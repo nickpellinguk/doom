@@ -99,8 +99,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C6AF (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D278, **free $D279–$DDFF (2.9K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B7C5: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C6AF (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D304, **free $D305–$DDFF (2.7K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B87A: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -694,6 +694,29 @@ The block end adds 32 to PTR, which also carries the screen page.
 - *Cycles* (`tools/master_profile.py`): the span loops 167K → 163K per
   frame; the mean frame 1.730M → 1.725M. HAZEL −0.6K. Byte-exact (no
   model change).
+
+**5m. Solid runs (sky): unrolled character rows. — DONE.** `hz_run` (sky
+ceilings and untextured shades) filled a byte column a line at a time:
+parity test, reload, count and row-end check, ~29 cycles a line.
+- *Unrolled rows* (HAZEL; bank 6 is full): body k is `LDY #k`,
+  `STA (PTR),Y`, so the 8 bodies are a whole character row. Body 8 is the
+  row tail: `INC PTR+1` twice, `DEC hz_r`, `BNE` back to body 0.
+- *Two copies*: `h1` when the even and odd bytes are equal, with A
+  holding the byte; that is sky (cyan $F0, FLIP-symmetric and never
+  darkened). `h2` loads `r_ev` / `r_od` by line parity, for the
+  light-masked shades.
+- *Driver* (`HZ_DRIVE`, bank 6):
+  - The run's last row goes first. A temporary RTS is laid over the body
+    after its last line (the original opcode is saved and put back), and
+    it is entered at line 0, or at the first line if the run is in one
+    row.
+  - Then the rest goes in one entry at the first line, the row tail
+    looping once per row.
+  - There is no per-line test anywhere.
+- *Cycles*: sky 8 cycles a line plus 19 a row (~10.4 a line), against
+  ~29. Each run costs a fixed ~150 cycles for the set-up and the patch.
+  The profile poses see almost no sky: solid fills 2.5K → 1.8K per frame,
+  mean frame 1.725M → 1.724M. Byte-exact (no model change).
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

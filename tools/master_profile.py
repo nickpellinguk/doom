@@ -47,7 +47,9 @@ JOBS = [
                                  'sl_fl', 'sl_mk']
                                 + ['sf_lp'] + [f'sf_e{q}' for q in range(4)]
                                 + [f'sf_r{q}' for q in range(4)]),
-    ('solid fills', ['hz_run', 'run', 'pl_shade']),
+    ('solid fills', ['hz_run', 'hz_two', 'hz_done', 'run', 'pl_shade']
+                    + [f'h{v}_{n}' for v in (1, 2)
+                       for n in ('call', 'b0', 't')]),
     ('partial/second-run cells', ['pl_line', 'pl_pair', 'pl_cell', 'pc_go', 'pc_rd', 'pl_wr1']),
     ('plane spans set-up', ['mk_spans', 'mk_close', 'sp_setup', 'pp_slot', 'sl_draw', 'pe_init',
                             'pe_kind', 'pe_clr', 'pd_flush', 'mf_flush', 'prun', 'pl_part',

@@ -217,6 +217,12 @@ r_ye:    .res 1
 r_part:  .res 1
 r_ev:    .res 1
 r_od:    .res 1
+hz_n:    .res 1                         ; hz_run: lines, the first line's
+hz_a:    .res 1                         ;  place in its row, the last line
+hz_l:    .res 1                         ;  (from the row), rows after the
+hz_r:    .res 1                         ;  first (and * 2), scratch
+hz_r2:   .res 1
+hz_e:    .res 1
 ; ---- step 4: wall textures (tex_ref.py is the executable spec) ----
 mf_xt:   .res 2                         ; near-plane crossing t (0..256), set
                                         ; by reproject_at_crossing (bsp/lo.s)
@@ -1197,6 +1203,74 @@ run:
    STA r_ye
    ; fall into hz_run
 
+.macro HZ_DRIVE S, SIZE
+   ; Y = a (the first line's place in its row), hz_n = n lines: rows
+   ; r = (a + n - 1) >> 3 after the first. The LAST row first: a temporary
+   ; RTS on the body after its last line (body 8 is the row tail); then
+   ; the rest in one entry, the row tail looping r times.
+   STY hz_a
+   TYA
+   CLC
+   ADC hz_n
+   SBC #0                               ; (C = 0: - 1) last line L
+   STA hz_l
+   LSR A
+   LSR A
+   LSR A
+   STA hz_r                             ; r
+   ASL A
+   STA hz_r2
+   CLC
+   ADC PTR+1                            ; the last row
+   STA PTR+1
+   LDA hz_l
+   AND #7
+   INC A                                ; e = (L & 7) + 1, 1..8
+ .if SIZE = 4
+   ASL A
+   ASL A
+ .else
+   STA hz_e                             ; * 7 = * 8 - 1
+   ASL A
+   ASL A
+   ASL A
+   SEC
+   SBC hz_e
+ .endif
+   TAY
+   LDA .ident(.concat(.string(S), "_b0")),Y
+   PHA
+   LDA #$60                             ; RTS over body e
+   STA .ident(.concat(.string(S), "_b0")),Y
+   PHY
+   LDX #0                               ; enter at line 0, or at a if the
+   LDA hz_r                             ;  run is in one row
+   BNE :+
+   LDA hz_a
+   ASL A
+   TAX
+:  JSR .ident(.concat(.string(S), "_call"))
+   PLY
+   PLA
+   STA .ident(.concat(.string(S), "_b0")),Y                      ; restored
+   LDA hz_r
+   BEQ :+
+   SEC                                  ; the first row: r rows back
+   LDA PTR+1
+   SBC hz_r2
+   STA PTR+1
+   LDA hz_a
+   ASL A
+   TAX
+   JSR .ident(.concat(.string(S), "_call"))                      ; rows 0 .. r - 1, from line a
+:  JMP hz_done
+.ident(.concat(.string(S), "_call")):
+ .if SIZE = 4
+   LDA r_ev
+ .endif
+   JMP (.ident(.concat(.string(S), "_tab")),X)
+.endmacro
+
 ; ============================================================================
 ; hz_run: byte column mf_x >> 2, screen lines [r_ys, r_ye], shade r_part:
 ; the WHOLE byte (both strips the shade -- a 4x2 fat pixel) on even lines,
@@ -1226,30 +1300,65 @@ hz_run:
    SEC
    LDA r_ye
    SBC r_ys
-   TAX
-   INX                                  ; line count
+   INC A
+   STA hz_n                             ; line count
    LDA #ACC_DXY
    STA $FE34                            ; -> shadow (no main reads >= $3000)
-@lp:
-   TYA
-   LSR A                                ; C = line parity
    LDA r_ev
-   BCC :+
-   LDA r_od
-:  STA (PTR),Y
-   DEX
-   BEQ @done
-   INY
-   CPY #8
-   BNE @lp
-   LDY #0
-   INC PTR+1
-   INC PTR+1
-   BRA @lp
-@done:
+   CMP r_od
+   BNE hz_two
+   HZ_DRIVE h1, 4                       ; one value (sky): A = it
+hz_two:
+   HZ_DRIVE h2, 7                       ; even / odd lines differ
+
+; hz_done: (HZ_DRIVE's exit)
+hz_done:
    LDA #ACC_DY
    STA $FE34                            ; back to main RAM
    RTS
+
+.segment "MFILL"                        ; (HAZEL: bank 6 is full)
+; The unrolled character rows: body k writes line k of the row at PTR;
+; after line 7 the row tail moves PTR on a row and loops hz_r times.
+; HZ_DRIVE lays a temporary RTS on the body after the last row's last
+; line (body 8 being the tail).
+h1_b0:
+.repeat 8, K
+   LDY #K
+   STA (PTR),Y
+.endrepeat
+h1_t:                                  ; body 8: the next character row
+   INC PTR+1
+   INC PTR+1
+   DEC hz_r
+   BNE h1_b0
+   RTS
+h1_tab:
+.repeat 8, K
+   .word h1_b0 + 4 * K
+.endrepeat
+
+h2_b0:
+.repeat 8, K
+   LDY #K
+ .if K & 1
+   LDA r_od
+ .else
+   LDA r_ev
+ .endif
+   STA (PTR),Y
+.endrepeat
+h2_t:                                  ; body 8: the next character row
+   INC PTR+1
+   INC PTR+1
+   DEC hz_r
+   BNE h2_b0
+   RTS
+h2_tab:
+.repeat 8, K
+   .word h2_b0 + 7 * K
+.endrepeat
+.segment "MB6C"
 
 ; ============================================================================
 ; STEP 4: WALL TEXTURES (tex_ref.py is the executable spec; master_walls.py
