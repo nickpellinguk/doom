@@ -123,7 +123,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D782 (with `cyc_tab`, step 6e), **free $D783–$D7FF (125 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$AA36: the fill's cold set-up code (steps 5f–5h) and the gun overlay (`gun_draw` + `gun_tab`, step 6f), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$ABDF: the fill's cold set-up code (steps 5f–5h) and the gun overlay (`gun_draw` + `gun_tab`, step 6f), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1093,21 +1093,25 @@ showed none, which ruled out the renderer itself.
 
 **6f. Gun overlay. — DONE.** DOOM's idle pistol (PISGA0) drawn over
 the view, bottom centre, sitting on the panel's edge.
-- *Art*: `art/gun/PISGA0.txt`, 24 x 25 pixel art (one Mode 2 pixel by
-  two lines each, the wall texels' square fat pixel; ' ' transparent):
-  a blue slide with cyan / white highlights and its dark bore, a red fist
-  with yellow knuckles and black creases, a black outline. DOOM draws
-  PISGA0 at (126, 106) of 320 x 200 over a 168-line view; scaled 0.4 that
-  is pixel 50 (byte column 25) and lines 86-135.
-- *Spec*: `master_gun.py` -- `table()` (per grid row: the line, the first
-  byte column, the count, and per byte a mask (the screen bits of its
-  transparent pixels) and data), `apply(fb)`, and `source()`, which
-  writes `src/master/mgun_tab.s` (434 B).
+- *Art*: `art/gun/PISGA0.txt`, 24 x 50: one Mode 2 pixel by ONE line
+  each (' ' transparent). DOOM draws PISGA0 at (126, 106) of 320 x 200
+  over a 168-line view; scaled 0.4 x 0.81 that is pixel 50 (byte column
+  25) and lines 87-135. The first cut (24 x 25, two lines a pixel, drawn
+  as symbols) read as neither a hand nor a pistol; this one is sampled
+  from PISGA0 and posterised -- skin black / red / yellow by brightness
+  (cuts 75, 125), metal black / blue / cyan / white (22, 50, 95) -- then
+  given a cyan rim on the gun's lit left and top edges (so it reads on the
+  navy floors) and a black outline on the hand. Dithered skin was tried
+  and read as a mesh.
+- *Spec*: `master_gun.py` -- `table()` (per grid row, one line: the line,
+  the first byte column, the count, and per byte a mask (the screen bits
+  of its transparent pixels) and data), `apply(fb)`, and `source()`, which
+  writes `src/master/mgun_tab.s` (870 B).
 - *6502*: `gun_draw` (bank 6, MB6C) walks `gun_tab` and writes each byte
-  as (screen AND mask) OR data on both lines of its row, into the back
+  as (screen AND mask) OR data on its line, into the back
   buffer (DV_BACKHI) with ACCCON X; the driver calls it after
-  `ENG_RENDER_FRAME`, before `flip_sched` (MASTER only). ~18.6K cycles a
-  frame (~1.3%).
+  `ENG_RENDER_FRAME`, before `flip_sched` (MASTER only). ~29.6K cycles a
+  frame (~2%).
 - *Room*: bank 6's texture region now ends at $9500 (B6CM starts there,
   $2400 long) -- the pixel-art textures need 1.3K of it.
 - *Gate*: `test_master_gun` -- the table is what `master_gun.py`

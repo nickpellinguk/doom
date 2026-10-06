@@ -1,27 +1,54 @@
-# PISGA0 (the pistol, idle) 24x25: one Mode 2 pixel x 2 lines each;
-# ' ' transparent, .rgybmcw = K R G Y B M C W. Bottom row sits on line 135.
-            .c.         
-           .bcb.        
-           .bcb.        
-          .bbcbb.       
-          .bcwcb.       
-         .bbc.cbb.      
-         .bc...cb.      
-        .bbc...cbb.     
-        .bc.....cb.     
-        .bc.....cb.     
-        .bbc...cbb.     
-       ..bbbbbbbbb.     
-      .rr.bbbbbbb..     
-    ..rrrr.......rr.    
-   .rrryyrr....rryyr.   
-   .ryyyyrrrrrryyyrr..  
-  .rrrrrrrrrryyrrr.rr.  
-  .rrrrrrrrrrrrr.rr.r.  
-  .rrrrrrrrrrrrrr.rr.   
-   .rrrrrrrrrrrrr..r.   
-   .rrrryrrrrrrrrr..    
-   .rrryyrrrrrrrrr.     
-  .rrrrrrrrrrrrrrr.     
- .rrrrrrrrrrrrrrrr.     
-.rrrrrrrrrrrrrrrrr.     
+# PISGA0 (the pistol, idle) 24x50: one Mode 2 pixel x ONE line each; ' ' transparent,
+# .rgybmcw = K R G Y B M C W. The bottom row is line 135 (the panel edge).
+# Sampled from DOOM's PISGA0 at 0.4 x 0.81, posterised: skin K/R/Y, metal K/B/C/W,
+# then a cyan rim on the gun's lit left and top edges and a black outline on the hand.
+                        
+             cc         
+            ccbc        
+            ccbb        
+           cb..bc       
+           c.b..b       
+           cbcb.b       
+          cbccbb.c      
+          cbwcbc.b      
+          ccwcccbb      
+          ccwcbbbb      
+          ccc..bbb      
+         cbwwcbbbbc     
+         ccwwwbbbcb     
+        cwcwwcbbbcb     
+        cbbww...bcb     
+        cccwwcbb.bbc    
+        ccbwcbbb.b.b    
+        cbcwb.....b     
+         ccwb.....b     
+         ccwb.....b     
+        .bcwcb...bb     
+        cbcwbb...bb     
+       .ccccbb..bb.c    
+      .r.cbccbbbb..b    
+      .yrbbbccbb...b    
+     .ryrbbc......bb    
+    .rryy.bwcb.....r..  
+    .rrryr.cbb....rrr.  
+    .rrryyyr.b...yyyyr. 
+    .ryryyyyr..ryyyyyr. 
+    .rryryyyyrryyyyyrr. 
+   .rrryrryyrryyyyyyr...
+   .rrrryyrrryyyyyyyrb..
+  ..rrrryrryyyyyyyyrrbb.
+  ...rrrrrryyyyyyyyrrbb.
+  ...rrrrrryryyyryyrrbb 
+   b.rrrrryyyryyryyr.b  
+   b.rrrrryyryrrrrrr.b  
+   brrrrryyyyyrr.rr.b   
+   .ryryyyyyyyrr.rr..   
+   .rrryyryyyyrr.r.b.   
+   .rryyrrrryrr.r...    
+   .rrrryyrrrrr...b.    
+   .ryyyyyrrrrrrb...    
+   .rrryyyrrrrrr.b..    
+  .rrrrrryyrrrr.....    
+.b.rrrryyrrryrr.b..     
+.b.rrrrryyyrryyr...     
+b.ryryrr.ryyryyr...     

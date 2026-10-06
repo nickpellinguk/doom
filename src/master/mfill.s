@@ -1540,8 +1540,8 @@ h2_tab:
 ; ============================================================================
 ; gun_draw (step 6f): the gun overlay into the back buffer, after the frame
 ; and before the flip (the driver calls it, bank 6 paged). master_gun.py is
-; the spec: per row of gun_tab, both lines of the row get, per byte,
-; (screen AND mask) OR data -- the art's transparent pixels keep the view.
+; the spec: per row of gun_tab (one line), per byte, (screen AND mask) OR
+; data -- the art's transparent pixels keep the view.
 ; ============================================================================
 gun_draw:
    LDA #ACC_DXY
@@ -1552,7 +1552,7 @@ gun_draw:
    STA TP+1
 @row:
    LDY #0
-   LDA (TP),Y                           ; the row's (even) line; $FF: done
+   LDA (TP),Y                           ; the row's line; $FF: done
    CMP #$FF
    BEQ @done
    PHA
@@ -1589,18 +1589,13 @@ gun_draw:
    INY
    STY gd_t
    LDY gd_s
-   LDA (PTR),Y                          ; even line
-   AND gd_m
-   ORA gd_d
-   STA (PTR),Y
-   INY
-   LDA (PTR),Y                          ; odd line
+   LDA (PTR),Y
    AND gd_m
    ORA gd_d
    STA (PTR),Y
    TYA
    CLC
-   ADC #7                               ; the next byte column
+   ADC #8                               ; the next byte column
    STA gd_s
    DEC gd_n
    BNE @byte
