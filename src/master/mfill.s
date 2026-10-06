@@ -311,6 +311,10 @@ ss_x:    .res 3                         ; per band kind (b_kind): the byte,
 ss_pt:   .res 3                         ;  part and left step of its last run
 ss_sl:   .res 3                         ;  ($FF: none) -- the right strip's
 ss_sh:   .res 3                         ;  step extrapolates from them
+ss_hl:   .res 3                         ;  and that left step's B - T (step 7e:
+ss_hh:   .res 3                         ;  an equal one reuses the step)
+t_hl:    .res 1                         ; this run's left B - T
+t_hh:    .res 1
 tx_x0:   .res 1                         ; the seg's first byte column
 tx_ax:   .res 1                         ; a look-ahead exact d: its byte
 tx_ad:   .res 2                         ;  and value
@@ -2050,7 +2054,36 @@ trun:
    STA q_t,X
    DEX
    BPL :-
+   ; step 7e: the band's last run in this seg had the same part and B - T:
+   ; the same step, no division (K is the part's; exact)
+   SEC
+   LDA q_b
+   SBC q_t
+   STA t_hl
+   LDA q_b+1
+   SBC q_t+1
+   STA t_hh
+   LDY b_kind
+   LDA ss_x,Y
+   CMP #$FF
+   BEQ @sdiv                            ; (none yet in this seg)
+   LDA t_part
+   CMP ss_pt,Y
+   BNE @sdiv
+   LDA t_hl
+   CMP ss_hl,Y
+   BNE @sdiv
+   LDA t_hh
+   CMP ss_hh,Y
+   BNE @sdiv
+   LDA ss_sl,Y
+   STA t_step
+   LDA ss_sh,Y
+   STA t_step+1
+   BRA @sgot
+@sdiv:
    JSR tv_div
+@sgot:
    LDA t_step                           ; (the left step, for the next byte)
    STA t_sl
    LDA t_step+1
@@ -2130,11 +2163,30 @@ trun:
    STA t_step+1
    BRA @rr
 @rx:
+   SEC                                  ; step 7e: Br - Tr = B - T: the left
+   LDA q_b                              ;  step (exact)
+   SBC q_t
+   CMP t_hl
+   BNE @rdiv
+   LDA q_b+1
+   SBC q_t+1
+   CMP t_hh
+   BNE @rdiv
+   LDA t_sl
+   STA t_step
+   LDA t_sl+1
+   STA t_step+1
+   BRA @rr
+@rdiv:
    JSR tv_div                           ; exact: K / (Br - Tr)
 @rr:
    LDY b_kind
    LDA mf_x
    STA ss_x,Y
+   LDA t_hl
+   STA ss_hl,Y
+   LDA t_hh
+   STA ss_hh,Y
    LDA t_part
    STA ss_pt,Y
    LDA t_sl

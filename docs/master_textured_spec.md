@@ -123,7 +123,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B590: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b) and `rm_patch` (7c), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B604: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b) and `rm_patch` (7c), free to $B8FF; bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1155,6 +1155,19 @@ loads Y = U before `JMP (sf_ent,X)`. 59 -> 58 cycles a byte; 18 poses
 the screen column.) Its column-0 body then stores `STA (PTR) / LDY #1`
 (3 cycles a block of four); 18 poses 22,813,838 -> 22,796,456,
 byte-exact.
+
+**7e. Maths: the per-run wall step, cached. — DONE.** Profiled by
+caller first: the multiplies and divides are 21-25% of a frame (the
+floor inner loop only 6-11%). The biggest exact saving: a run's left
+step K // (B - T) is the same as the band's last run in this seg when the
+part and B - T match (K is the part's; ss_* reset per seg, so a mover's
+new K never meets an old step) -- 42% of left steps over the 18 poses.
+And the right strip's exact fallback (no previous byte to extrapolate
+from) reuses the left step when Br - Tr = B - T. `ss_hl`/`ss_hh` keep
+each band's last B - T. 18 poses 22,688,518 -> 22,452,010, byte-exact
+(no model change). Tried and rejected: the right strip's d fallback as
+the left strip's d (no division) -- 93.05% within one texel, under the
+gate's 94.5%.
 
 **7d. Speed: the right strip as a stepped 5.3 delta. — DONE.** A wall
 run that does not share one v (step 5n) used to step both strips' 5.11 v.
