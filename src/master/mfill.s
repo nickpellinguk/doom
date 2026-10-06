@@ -293,6 +293,8 @@ tw_lh:   .res 1                         ;  texel column addresses
 tw_rl:   .res 1
 tw_rh:   .res 1
 tw_np:   .res 1                         ; whole pairs in the run
+tw_slim: .res 2                         ; step 5n: the seg's shared-v limit,
+tw_sh:   .res 1                         ;  and this run shares ($80) or not
 tw_ly:   .res 1                         ; tr_fetch: the caller's Y                         ; c_tr / c_br made for this byte
 t_part:  .res 1                         ; trun: the part, its left strip's
 t_sl:    .res 2                         ;  (undoubled) step
@@ -609,6 +611,7 @@ mf_fill:
    STA si_neg
    LDX #ST_B
    JSR st_init
+   JSR sh_lim
    LDA #$FF
    STA tx_lx                            ; no exact d yet in this seg
    STA tx_ax                            ; no look-ahead d
@@ -1875,6 +1878,25 @@ trun:
    STA tw_ll
    LDA t_ch
    STA tw_lh
+   ; step 5n: a left step <= the seg's limit shares the left v (t_v,
+   ; t_step are still the left strip's): none of the right v is made
+   STZ tw_sh
+   LDA tw_slim
+   CMP t_sl
+   LDA tw_slim+1
+   SBC t_sl+1
+   BCC @own
+   DEC tw_sh                            ; ($FF: shared)
+   LDA l_v                              ; the right strip's v = the left's
+   STA t_v                              ;  (tr_screen, tr_vstep)
+   LDA l_v+1
+   STA t_v+1
+   LDA l_step
+   STA t_step
+   LDA l_step+1
+   STA t_step+1
+   BRA @rr
+@own:
    ; the right strip: its own v from its own T, B (the midpoints with the
    ; next byte's); its step extrapolated from the left strip's steps (the
    ; same band kind and part on the previous byte), else exact; its column
@@ -1924,8 +1946,10 @@ trun:
    STA ss_sl,Y
    LDA t_sl+1
    STA ss_sh,Y
+   BIT tw_sh
+   BMI :+
    JSR tv_v0
-   LDA tx_dr
+:  LDA tx_dr
    STA q_d
    LDA tx_dr+1
    STA q_d+1
@@ -2016,7 +2040,10 @@ tr_screen:
    ASL A
    ORA zw_ev
    TAX                                  ; Y * 4 + (pairs & 3) * 2
+   BIT tw_sh
+   BMI :+
    JMP (tr_ent,X)
+:  JMP (ts_ent,X)                       ; (step 5n: one v)
 @tail:
    BIT t_n
    BPL @done
@@ -2047,6 +2074,76 @@ tb_end:
    STA $FE34
    LDA #BANK_C
    STA $FE30
+   RTS
+
+; sh_lim: step 5n, the seg's shared-v limit (tex_ref.shared_limit):
+; tw_slim = (384 w - 1) // max(|DT|, |DB|), $FFFF if that overflows or w
+; or the rise is 0 -- a run whose left step is <= it shares one v
+sh_lim:
+   LDA lt_dm                            ; m_b = the larger rise
+   CMP lb_dm
+   LDA lt_dm+1
+   SBC lb_dm+1
+   LDX #lt_dm - lt_dm
+   BCS :+
+   LDX #lb_dm - lt_dm
+:  LDA lt_dm,X
+   STA m_b
+   LDA lt_dm+1,X
+   STA m_b+1
+   ORA m_b
+   BEQ @all
+   LDA l_w+1
+   BMI @all
+   ORA l_w
+   BEQ @all
+   STZ m_p                              ; m_p = 768 w = (3 w) << 8 ...
+   LDA l_w
+   ASL A
+   STA m_p+1
+   LDA l_w+1
+   ROL A
+   STA m_p+2
+   LDA #0
+   ROL A
+   STA m_p+3
+   CLC
+   LDA m_p+1
+   ADC l_w
+   STA m_p+1
+   LDA m_p+2
+   ADC l_w+1
+   STA m_p+2
+   LDA m_p+3
+   ADC #0
+   LSR A                                ; ... >> 1 = 384 w
+   STA m_p+3
+   ROR m_p+2
+   ROR m_p+1
+   ROR m_p
+   LDA m_p                              ; - 1 (384 w > 0: no borrow out)
+   BNE :+++
+   LDA m_p+1
+   BNE :++
+   LDA m_p+2
+   BNE :+
+   DEC m_p+3
+:  DEC m_p+2
+:  DEC m_p+1
+:  DEC m_p
+   JSR div32
+   LDA m_p+2
+   ORA m_p+3
+   BNE @all
+   LDA m_p
+   STA tw_slim
+   LDA m_p+1
+   STA tw_slim+1
+   RTS
+@all:
+   LDA #$FF
+   STA tw_slim
+   STA tw_slim+1
    RTS
 
 ; tr_fetch: the current pair's combined texel byte: X = it, A = it lit for
@@ -2693,6 +2790,455 @@ te_33:
    BEQ :+
    JMP tv_3
 :  JMP tb_end
+
+; Step 5n: the shared-v bodies (sv_0..sv_3, entries ts_sj), as tv_* but
+; with one v: the left strip's v steps alone and its row (Y) reads both
+; texel columns. The exit copies it to the right strip's for tb_end.
+ts_ent:                                 ; X = Y * 4 + (pairs & 3) * 2
+   .word ts_00, ts_13, ts_22, ts_31   ; Y = 0: r = 0..3
+   .word ts_10, ts_23, ts_32, ts_01   ; Y = 2: r = 0..3
+   .word ts_20, ts_33, ts_02, ts_11   ; Y = 4: r = 0..3
+   .word ts_30, ts_03, ts_12, ts_21   ; Y = 6: r = 0..3
+
+sv_0:
+   ; (pairs on lines 0, 2, 4, 6)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_00:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_01:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_02:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_03:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   DEC zw_np
+   BEQ :+
+   JMP sv_0
+:  JMP ts_end
+sv_1:
+   ; (pairs on lines 2, 4, 6, 0)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_10:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_11:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_12:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_13:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   DEC zw_np
+   BEQ :+
+   JMP sv_1
+:  JMP ts_end
+sv_2:
+   ; (pairs on lines 4, 6, 0, 2)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_20:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_21:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_22:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_23:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   DEC zw_np
+   BEQ :+
+   JMP sv_2
+:  JMP ts_end
+sv_3:
+   ; (pairs on lines 6, 0, 2, 4)
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_30:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #6
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   INC PTR+1                            ; the next character row
+   INC PTR+1
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_31:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #0
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_32:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #2
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   CLC
+   LDA zw_lvl
+   ADC l_step
+   STA zw_lvl
+   LDA zw_lvh
+   ADC l_step+1
+   STA zw_lvh
+ts_33:
+   LDA zw_lvh
+   AND zw_rowm
+   TAY
+   LDA (zw_tl),Y
+   ASL A
+   ASL A
+   STA zw_ev
+   LDA (zw_tr),Y
+   ORA zw_ev
+   TAX
+   AND maskEven
+   LDY #4
+   STA (PTR),Y
+   LDA mf_flip,X
+   AND maskOdd
+   INY
+   STA (PTR),Y
+   DEC zw_np
+   BEQ :+
+   JMP sv_3
+:  JMP ts_end
+
+ts_end:
+   LDA zw_lvl                           ; (tb_end steps and reads both)
+   STA zw_tvl
+   LDA zw_lvh
+   STA zw_tvh
+   JMP tb_end
 
 .segment "MB6C"
 

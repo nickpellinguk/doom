@@ -56,6 +56,12 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             band kind and part on the previous byte):
                 stepR = stepL + ((stepL - stepL_prev) >> 1)   (s16)
             else it is exact, K // (Br - Tr).
+            Step 5n: a run whose two strips' v would differ by less than
+            3/8 of a texel SHARES the left strip's v (T, B, step) -- each
+            strip keeps its own u. The test is geometric and cheap: per
+            seg s_lim = (384 * w - 1) // m (w its projected width, m the
+            larger rise of its top and bottom lines; shared_limit), per
+            run step <= s_lim. Nothing of the right strip's v is made.
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines: the byte,
             then FLIP of it; a pair moves 2 * step):
@@ -76,6 +82,20 @@ import master_walls as MW
 import master_assets as M
 
 ROOT = Fm.ROOT
+
+
+def shared_limit(w, m):
+    """Step 5n: the largest left step for which a run shares one v.
+
+    Between strips 2 pixels apart the v of a run differs by about the
+    step times the lines' rise over those 2 pixels; within a seg the top
+    and bottom lines are straight, rising at most m lines over w pixels.
+    A run shares when step * m * 2 < 768 * w (3/8 of a texel, 2048 = one),
+    i.e. step <= (384 * w - 1) // m: one division per seg, one compare
+    per run. A zero-width or flat seg always shares."""
+    if w <= 0 or m == 0:
+        return 0xFFFF
+    return min((384 * w - 1) // m, 0xFFFF)
 
 
 def cross_t(vy_clip, vy_other, near):
@@ -159,6 +179,7 @@ class TexRef(Fm.FillRef):
         self.dbg[si] = dict(slot=si, l16=L16, d1=d1, d2=d2, wa=wa, wb=wb, xl=xl, xh=xh,
                             dl=dL, dh=dH, A=A, B=B)   # (the 6502 debug view)
         d_prev = None                       # (x, d) of the last byte with d
+        s_lim = shared_limit(sx2 - sx1, max(abs(ft2 - ft1), abs(fb2 - fb1)))
         sslot = {}                          # band kind -> (x, part, stepL)
         for x in xs:
             o = self._span_at(before, x)
@@ -208,6 +229,7 @@ class TexRef(Fm.FillRef):
                 part = p_mid if solid else (p_up if which == 'up' else
                                             p_lo if which == 'lo' else MW.NONE)
                 sr = None                       # the right strip's step
+                share = False                   # one v for both strips
                 if part != MW.NONE and max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_):
                     K = W.parts[part]['K']
                     sl = (K // (B_ - T)) & 0xFFFF if B_ > T else 0
@@ -219,6 +241,7 @@ class TexRef(Fm.FillRef):
                     else:
                         sr = (K // (Br - Tr)) & 0xFFFF if Br > Tr else 0
                     sslot[which] = (x, part, sl)
+                    share = sl <= s_lim
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
                     self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
                     if yb < T:
@@ -233,7 +256,9 @@ class TexRef(Fm.FillRef):
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
                         self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
-                        self.grid[yb - Bz][c + 1] = ('t',) + self._texel(part, ur, yb, Tr, Br, sr)
+                        self.grid[yb - Bz][c + 1] = ('t',) + (
+                            self._texel(part, ur, yb, T, B_) if share
+                            else self._texel(part, ur, yb, Tr, Br, sr))
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 

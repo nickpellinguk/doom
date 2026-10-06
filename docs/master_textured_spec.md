@@ -99,8 +99,8 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C6AF (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D304, **free $D305–$DDFF (2.7K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B87A: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C6AF (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D6E4, **free $D6E5–$DDFF (1.8K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B8B0: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -717,6 +717,47 @@ parity test, reload, count and row-end check, ~29 cycles a line.
   ~29. Each run costs a fixed ~150 cycles for the set-up and the patch.
   The profile poses see almost no sky: solid fills 2.5K → 1.8K per frame,
   mean frame 1.725M → 1.724M. Byte-exact (no model change).
+
+**5n. Walls: one shared v when the strips agree. — DONE.** A wall byte's
+two strips each step their own v. But they are 2 pixels apart, so for
+most runs the two v values differ by a fraction of a texel. Each strip
+keeps its own u (both texture columns stay); only v is shared.
+- *Measured* (14 on-map poses, 1,680 runs): half of all runs differ by
+  under 1/8 texel over their whole length; 80% by under 3/8.
+- *Predictor* (`tex_ref.shared_limit`), from geometry, with nothing of the
+  right strip computed. Both strips' v come from the seg's top and bottom
+  lines, so between strips 2 pixels apart the gap is about step × the
+  lines' rise over 2 pixels. Within a seg the lines are straight, so the
+  rise is the seg's own:
+  - per seg, s_lim = (384·w − 1) // max(|ΔT|, |ΔB|), with w = sx2 − sx1;
+    $FFFF if w or the rise is 0, or if it overflows;
+  - per run, share when the left step ≤ s_lim (step·m·2 < 768·w: 3/8 of
+    a texel).
+  It shares 76.6% of wall lines (an exact per-run test would share 80.1%).
+- *Accuracy*: within one texel of the float reference 95.04% → 95.07%,
+  exact 77.58% → 77.94%. Where the current right strip's v strays most,
+  sharing the left's exact v is the better answer. The right strip's v is
+  built from approximations: its step is extrapolated from the previous
+  byte's, and its top and bottom are midpoints with the next byte's.
+- *6502*:
+  - `sh_lim` (HAZEL; bank 6 is full) runs once per seg after the T and B
+    steppers: one `div32`.
+  - `trun` compares `t_sl` with `tw_slim`. A shared run copies the left
+    v and step to the right strip's and skips `tr_lines` (`st_peek`), the
+    right step and its `tv_v0`. It keeps the step bookkeeping (`ss_*`) and
+    the right strip's column.
+  - `tr_screen` enters a second set of four Duff versions (`sv_0`..`sv_3`,
+    entries `ts_sj`, `ts_ent`). Each body steps one v, and that row index
+    (Y) reads both texel columns. Their exit (`ts_end`) copies the left v
+    to the right strip's for `tb_end`; the odd first line uses the
+    copies.
+- *Cycles* (`tools/master_profile.py`):
+  - the wall loop 361K → 299K per frame;
+  - per-byte/run set-up 202K → 161K;
+  - `sh_lim` +6.5K;
+  - the mean frame 1.724M → 1.611M (−6.5%);
+  - the 18 poses 28.1M → 26.5M.
+  Byte-exact against the revised model. HAZEL +1.0K.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

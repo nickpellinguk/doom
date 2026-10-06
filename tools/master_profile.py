@@ -42,7 +42,9 @@ ARITH = {'mf_mul8', 'mul16', 'div32', 'divq16', 'dq_set', 'dq_core', 'd8_byte',
 JOBS = [
     ('wall texel loop', ['tr_screen', 'tr_fetch', 'tr_vstep', 'tr_ent', 'tb_end']
                         + [f'tv_{v}' for v in range(4)]
-                        + [f'te_{v}{j}' for v in range(4) for j in range(4)]),
+                        + [f'te_{v}{j}' for v in range(4) for j in range(4)]
+                        + ['ts_ent', 'ts_end'] + [f'sv_{v}' for v in range(4)]
+                        + [f'ts_{v}{j}' for v in range(4) for j in range(4)]),
     ('span loops (pair, line)', ['sp_go2', 'sf_end', 'sf_ent', 'sl_go', 'sl_lp', 'sl_rd',
                                  'sl_fl', 'sl_mk']
                                 + ['sf_lp'] + [f'sf_e{q}' for q in range(4)]
@@ -57,7 +59,7 @@ JOBS = [
     ('plane rows', ['pl_rowc', 'pl_row', 'pl_zrow']),
     ('wall set-up per seg', ['tx_seg', 'at', 'l16t', 'ld_dress', 'set_cur']),
     ('wall set-up per byte/run', ['trun', 'tv_div', 'tv_v0', 'tcol', 'tx_getd', 'tr_lines',
-                                  'wall_run', 'st_peek']),
+                                  'wall_run', 'st_peek', 'sh_lim']),
     ('column walk + span edges', ['mf_fill', 'col', 'adv', 'next_col', 'st_init8', 'st_init',
                                   'st_step', 'st_val', 'band', 'clamp_ln', 'ln_ptr', 'ln_ptrk',
                                   'mf_range', 'mf_snap']),
@@ -70,7 +72,8 @@ INCLUSIVE = ['mf_fill', 'mf_snap', 'band', 'wall_run', 'tv_div', 'tv_v0', 'tcol'
              'tx_seg', 'at', 'pl_pair', 'mk_spans', 'sp_setup', 'pl_rowc', 'uvat', 'st_step',
              'st_val', 'st_peek', 'div32', 'divq16', 'mul16', 'mul8x32']
 LOOP_HEADS = ['sl_lp', 'trun', 'sp_go2', 'sl_go', 'mf_fill', 'col', 'band', 'tx_getd']
-WALL_PAIR_LABELS = [f'te_{v}{j}' for v in range(4) for j in range(4)]
+WALL_PAIR_LABELS = ([f'te_{v}{j}' for v in range(4) for j in range(4)]
+                    + [f'ts_{v}{j}' for v in range(4) for j in range(4)])
 SPAN_PAIR_LABELS = [f'sf_r{q}' for q in range(4)]
 
 
