@@ -7,9 +7,9 @@ is character rows 17..19, lines 136..159. It is drawn once, into both
 buffers, and nothing writes there again (the Master never clears a
 screen).
 
-The bar is scaled to 128 strips x 24 lines (each strip two Mode 1 pixels,
-as the walls), quantised to the same shade pairs as the textures, and
-written as the walls are: the byte on even lines, its FLIP on odd lines.
+It is pixel art at the full Mode 1 resolution (256 x 24), not a texture
+match: grey stone is a red / cyan cross-hatch, the big numbers pure red
+with a 1-pixel black outline (panel_pixels).
 
     python3 master_panel.py     # writes build/master/panel.bin and .png
 """
@@ -27,73 +27,106 @@ PANEL_OFFSET = PANEL_ROW * 512          # its offset in a 10K buffer ($2200)
 PANEL_SIZE = PANEL_LINES // 8 * 512     # 1536 bytes
 
 
-GAIN, CHROMA = 1.3, 0.6                 # the bar's own match (M.quantise's)
+DARK, LIGHT = 41, 140                   # grey levels: black below, white above
+RED, CYAN, BLACK, WHITE = 1, 2, 0, 3    # logical colours (master_assets.PALETTE)
 
 
-def _draw(w, bar, name, x, y):
-    """V_DrawPatch onto the bar: at (x, y) less the patch's offsets."""
+def _draw(w, bar, name, x, y, big=None):
+    """V_DrawPatch onto the bar: at (x, y) less the patch's offsets. With
+    `big`, a big-number glyph: only its red body is marked there (its own
+    dark edge is left to the stone; the panel outlines the body itself)."""
     import struct
     _, _, lo, to = struct.unpack_from('<HHhh', w.lump(name))
     p = w._patch(name)
     ys, xs = np.nonzero(p >= 0)
     Y, X = ys + y - to, xs + x - lo
     ok = (X >= 0) & (X < 320) & (Y >= 0) & (Y < 32)
-    bar[Y[ok], X[ok]] = p[ys[ok], xs[ok]]
+    if big is None:
+        bar[Y[ok], X[ok]] = p[ys[ok], xs[ok]]
+    else:
+        body = w.pal[p[ys, xs]][:, 0] >= 90
+        big[Y[ok & body], X[ok & body]] = True
 
 
-def _num(w, bar, font, width, v, x, y):
+def _num(w, bar, font, width, v, x, y, big=None):
     """STlib_drawNum: v right-aligned with its right edge at x."""
     for i, d in enumerate(reversed(str(v))):
-        _draw(w, bar, f'{font}{d}', x - width * (i + 1), y)
+        _draw(w, bar, f'{font}{d}', x - width * (i + 1), y, big)
 
 
 def status_bar():
-    """(32, 320) palette indices: STBAR with a new game's single-player
-    state drawn on it as st_stuff.c places it (ammo 50, health 100%,
-    the pistol, the straight face, armour 0%, the four ammo counts)."""
+    """(32, 320) palette indices, and the big numbers' (32, 320) body mask:
+    STBAR with a new game's single-player state as st_stuff.c places it
+    (ammo 50, health 100%, the pistol, the straight face, armour 0%, the
+    four ammo counts)."""
     w = M.Wad()
     bar = w._patch('STBAR')
-    _num(w, bar, 'STTNUM', 14, 50, 44, 3)               # ammo
-    _num(w, bar, 'STTNUM', 14, 100, 90, 3)              # health
-    _draw(w, bar, 'STTPRCNT', 90, 3)
+    big = np.zeros(bar.shape, bool)
+    _num(w, bar, 'STTNUM', 14, 50, 44, 3, big)          # ammo
+    _num(w, bar, 'STTNUM', 14, 100, 90, 3, big)         # health
+    _draw(w, bar, 'STTPRCNT', 90, 3, big)
     _draw(w, bar, 'STARMS', 104, 0)                     # arms box
     for i, wp in enumerate(range(2, 8)):                # the pistol owned
         _draw(w, bar, f'{"STYSNUM" if wp == 2 else "STGNUM"}{wp}',
               111 + (i % 3) * 12, 4 + (i // 3) * 10)
     _draw(w, bar, 'STFST01', 143, 0)                    # face
-    _num(w, bar, 'STTNUM', 14, 0, 221, 3)               # armour
-    _draw(w, bar, 'STTPRCNT', 221, 3)
+    _num(w, bar, 'STTNUM', 14, 0, 221, 3, big)          # armour
+    _draw(w, bar, 'STTPRCNT', 221, 3, big)
     for y, have, most in ((5, 50, 200), (11, 0, 50), (23, 0, 300), (17, 0, 50)):
         _num(w, bar, 'STYSNUM', 4, have, 288, y)        # ammo counts
         _num(w, bar, 'STYSNUM', 4, most, 314, y)
-    return w, bar
+    return w, bar, big
 
 
-def panel_shades():
-    """(24, 128) shade indices: the status bar scaled to 128 strips x 24
-    lines, matched with its own gain and colour weight (it is mostly mid
-    grey stone, which the texture settings turn into cyan speckle)."""
-    w, bar = status_bar()
-    rgb = w.pal[np.clip(bar, 0, 255)]
-    g, c = M.GAIN, M.CHROMA
-    M.GAIN, M.CHROMA = GAIN, CHROMA
-    try:
-        return M.quantise(M.scale_rgb(rgb, PANEL_LINES, 128))
-    finally:
-        M.GAIN, M.CHROMA = g, c
+def panel_pixels():
+    """(24, 256) logical colours, drawn as pixel art rather than matched:
+    the bar sampled at each pixel's centre (320 x 32 -> 256 x 24), then
+      grey stone (DARK..LIGHT)  red / cyan cross-hatch, by (x + y) parity;
+                                a lone dark or light grey pixel in it
+                                (the stone's own specks) is stone too
+      dark grey                 black (dividers, shadows, the face box)
+      light grey                white (labels, bevels)
+      the big numbers           pure red, with a 1-pixel black outline
+      anything coloured         the nearest palette colour (face, the
+                                small yellow numbers)"""
+    w, bar, big = status_bar()
+    sy = (np.arange(PANEL_LINES) * 2 + 1) * 32 // (2 * PANEL_LINES)
+    sx = (np.arange(256) * 2 + 1) * 320 // (2 * 256)
+    rgb = w.pal[np.clip(bar[np.ix_(sy, sx)], 0, 255)]
+    body = big[np.ix_(sy, sx)]
+    pal = np.array(M.PALETTE, float)
+    out = np.argmin(((rgb[..., None, :] - pal) ** 2).sum(-1), -1)
+    grey = (rgb.max(-1) - rgb.min(-1)) < 24
+    lum = rgb.mean(-1)
+    yy, xx = np.mgrid[0:PANEL_LINES, 0:256]
+    hatch = np.where((xx + yy) & 1, CYAN, RED)
+    out = np.where(grey & (lum < DARK), BLACK, out)
+    out = np.where(grey & (lum >= LIGHT), WHITE, out)
+    stone = grey & (lum >= DARK) & (lum < LIGHT)
+    for _ in range(2):                                  # the stone's own specks:
+        n4 = np.pad(stone, 1, constant_values=True)    # a grey pixel with stone
+        lone = (n4[:-2, 1:-1] & n4[2:, 1:-1]           # all round is stone
+                & n4[1:-1, :-2] & n4[1:-1, 2:])
+        stone |= grey & lone
+    out = np.where(stone, hatch, out)
+    ring = np.zeros_like(body)                          # 8-neighbours of a digit
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            ring |= np.roll(np.roll(np.pad(body, 1), dy, 0), dx, 1)[1:-1, 1:-1]
+    out = np.where(ring & ~body, BLACK, out)
+    return np.where(body, RED, out)
 
 
 @functools.lru_cache(None)
 def panel_bytes():
     """The panel as it sits in a buffer: 1536 bytes, character rows 17..19
-    (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7))."""
-    sh = panel_shades()
+    (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 1 byte
+    per four pixels."""
+    px = panel_pixels()
     out = bytearray(PANEL_SIZE)
     for y in range(PANEL_LINES):
         for k in range(64):
-            b = (((M.wall_byte(sh[y, 2 * k]) << 2) & 0xCC)
-                 | M.wall_byte(sh[y, 2 * k + 1]))
-            out[(y >> 3) * 512 + k * 8 + (y & 7)] = b if y % 2 == 0 else M.FLIP[b]
+            out[(y >> 3) * 512 + k * 8 + (y & 7)] = M.mode1_byte(px[y, 4 * k:4 * k + 4])
     return bytes(out)
 
 

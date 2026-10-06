@@ -771,10 +771,18 @@ focal lengths and all wall and flat maths are unchanged).
   - STBAR with a new game's state drawn on it as `st_stuff.c` places it:
     ammo 50, health 100%, the arms box with the pistol, the straight face,
     armour 0%, and the ammo counts.
-  - Scaled to 128 strips × 24 lines and quantised to the wall shades, with
-    its own match (gain 1.3, colour weight 0.6) so the grey stone does
-    not turn to cyan speckle and the red digits stay red. Even lines take
-    the byte, odd lines its FLIP, as the walls do.
+  - Pixel art at the full Mode 1 resolution (256 × 24), not a texture
+    match (`panel_pixels`). The bar is sampled at each pixel's centre;
+    then:
+    - grey stone is a red/cyan cross-hatch, by (x + y) parity; a lone
+      dark or light speck in it (the stone texture's own) is stone too;
+    - dark grey is black (dividers, shadows, the face box) and light grey
+      white (labels, bevels);
+    - the big numbers (`STTNUM`, `STTPRCNT`) are their red body only, pure
+      red, with a 1-pixel black outline (its 8 neighbours) at screen
+      resolution;
+    - anything coloured (the face, the small yellow numbers) takes the
+      nearest palette colour.
   - 1,536 bytes (`MPANEL` on the disc).
 - *Boot*:
   - The loader parks `MPANEL` in buffer 1's panel rows (shadow

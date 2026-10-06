@@ -44,7 +44,7 @@ for pose in C.POSITIONS:
     # Fills are per LINE, so a band edge may fall between the two lines of
     # a pair: the rule is per line -- even lines are two valid shade
     # halves, odd lines are FLIP of two valid shade halves.
-    for y in range(160):
+    for y in range(Fm.LINES):                   # the view (the panel is pixel art)
         for k in range(64):
             b = fb[(y >> 3) * 512 + k * 8 + (y & 7)]
             if y & 1:
