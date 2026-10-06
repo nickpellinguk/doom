@@ -20,6 +20,8 @@ Files on the disc (DFS, boot option *RUN):
   MHAZEL  HAZEL: pattern, HUD, FLIP, font at $C000; the filler +
           wall texturer and its sky map at $C800          staged $3000
   MANDY   ANDY: the per-seg wall tables (master_walls)    staged $3000
+  MPANEL  the control panel (master_panel), the bottom    staged $3000
+          24 lines of both buffers
 """
 import os, subprocess, sys
 
@@ -31,6 +33,7 @@ os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 os.environ['DOOM_CPU'] = '65c02'
 
 import master_assets as M
+import master_panel
 import abi
 from build_master_display import ssd, COLBYTE      # same band pattern
 
@@ -116,7 +119,8 @@ def build():
              ('MMAIN', HOST | abi.LOW_BASE, HOST | abi.LOW_BASE, main),
              ('MCBITS', HOST | abi.CBITS_M, HOST | abi.CBITS_M, cbits),
              ('MHAZEL', HOST | 0x3000, HOST | 0x3000, hz),
-             ('MANDY', HOST | 0x3000, HOST | 0x3000, andy)]
+             ('MANDY', HOST | 0x3000, HOST | 0x3000, andy),
+             ('MPANEL', HOST | 0x3000, HOST | 0x3000, master_panel.panel_bytes())]
     path = os.path.join(OUT, 'doom_master.ssd')
     ssd(files, path)
     for n, l, e, d in files:

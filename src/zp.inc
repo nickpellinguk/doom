@@ -1055,7 +1055,22 @@ EPSILON_F = 12
 ; ANGX/ANIM*/RCCODE/VRCACHE_CODE/.._BK twins) died here; so did its landmine
 ; class (ZZTAIL fall-through, cfg-order region shifts).
 Y_BIAS = 48                             ; bias Y so visible [0,159] maps to [48,207] within u8
-VIS_YMAX = Y_BIAS + 159                 ; = 207: maximum biased visible Y
+; The view's height: 160 lines about line 80; the Master's is 136 lines
+; about line 68 (its bottom 24 lines are the control panel, master_panel.py)
+.if .defined(::MASTER)
+ .if ::MASTER
+  .ifdef MASTER_VIEW
+VIEW_LINES = MASTER_VIEW                ; (test_master_engine: 160, Model B's)
+  .else
+VIEW_LINES = 136
+  .endif
+ .else
+VIEW_LINES = 160
+ .endif
+.else
+VIEW_LINES = 160
+.endif
+VIS_YMAX = Y_BIAS + VIEW_LINES - 1      ; = 207 (Master 183): maximum biased visible Y
 ; --- span-pool layout (moved from clip/arith.s 2026-08-29: BOTH units
 ;     need it — the clipper owns the pool, bsp/objects.s probes it) ---
 POOL = SPAN_POOL                        ; abi.inc ($1800 since the 2026-08-19

@@ -6,11 +6,13 @@ WHAT the 6502 textured renderer must draw, written for clarity: a classic
 DOOM column renderer (front-to-back BSP walk, per-column top/bottom clip,
 solid columns close) at the Master's resolution and in its exact bytes.
 
-  Grid      128 wall strips (2 px) x 80 texel rows (2 lines); floors and
+  Grid      128 wall strips (2 px) x 68 texel rows (2 lines); floors and
             ceilings are sampled per BYTE column (4 px), so they come out
             as 4x2 fat pixels while walls are 2x2.
   Camera    the engine's: 90 degree HFOV, focal 128 across / 153.6 down at
             256x160 (doom_wireframe's 1024x640 float camera scaled by 1/4),
+            the view cut to its top 136 lines and centred on line 68 (the
+            control panel, master_panel, is the bottom 24),
             eye at floor + 41, angle byte -> radians as the engine.
   Map       the engine's own tables (doom_wireframe: alternate BSP, segs,
             seg_sectors with its one-way-wall rule).
@@ -40,8 +42,8 @@ import math, os, sys
 import numpy as np
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-STRIPS, ROWS = 128, 80
-CX, CY = 128.0, 80.0                    # screen centre (256 x 160)
+STRIPS, ROWS = 128, 68                  # the Master view: 136 lines (master_panel)
+CX, CY = 128.0, 68.0                    # its centre (256 x 136)
 FX, FY = 128.0, 153.6                   # focal lengths (px, lines)
 NEAR = 1.0
 DONTPEGTOP, DONTPEGBOTTOM = 0x08, 0x10
@@ -268,7 +270,9 @@ class TexturedRef:
         return int(self.flat[pic][fv, fu])
 
     def _compose(self):
+        import master_panel
         fb = bytearray(10240)
+        fb[master_panel.PANEL_OFFSET:] = master_panel.panel_bytes()
         for r in range(ROWS):
             row = self.cell[r]
             for k in range(64):

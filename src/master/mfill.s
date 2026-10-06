@@ -83,6 +83,9 @@ sdu     = zw_tr
 sdv     = zw_rowm
 sf_nb   = zw_np                         ; sp_go2: blocks of four bytes left
 NONE = $FF                              ; no texture (master_walls.NONE)
+HZ_LINE = VIEW_LINES / 2                ; the horizon: line 68 of the 136
+HZ_PAIR = HZ_LINE / 2                   ; its pair (34); the rows per side
+VIEW_PAIRS = VIEW_LINES / 2             ; line pairs in the view (68)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
 .export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame
@@ -148,13 +151,13 @@ pe_ct:   .res 64                        ; per byte column, this seg's textured
 pe_cb:   .res 64                        ;  ceiling / floor whole-pair interval
 pe_ft:   .res 64                        ;  (top, bottom pair; empty: $FF, 0)
 pe_fb:   .res 64
-sp_start: .res 80                       ; MakeSpans: per pair, its span's start
-pc_ep:        .res 80                   ; per line pair p: the frame epoch and
-pc_d:         .res 80                   ;  plane height D it was computed for,
-pc_uc:        .res 80                   ;  U, dU, V, dV (4.4): U, V at byte
-pc_du:        .res 80                   ;  column 32
-pc_vc:        .res 80
-pc_dv:        .res 80
+sp_start: .res VIEW_PAIRS                       ; MakeSpans: per pair, its span's start
+pc_ep:        .res VIEW_PAIRS                   ; per line pair p: the frame epoch and
+pc_d:         .res VIEW_PAIRS                   ;  plane height D it was computed for,
+pc_uc:        .res VIEW_PAIRS                   ;  U, dU, V, dV (4.4): U, V at byte
+pc_du:        .res VIEW_PAIRS                   ;  column 32
+pc_vc:        .res VIEW_PAIRS
+pc_dv:        .res VIEW_PAIRS
 
 .segment "MFILLBSS"
 mf_lo:   .res 1                         ; clamped [lo, hi) of the seg
@@ -736,8 +739,8 @@ adv:
    STA c_t
    LDA ln_y+1
    STA c_t+1
-   LDX #Y_BIAS                          ; clamp(T, 48, 208)
-   LDY #Y_BIAS + 160
+   LDX #Y_BIAS                          ; clamp(T, 48, VIS_YMAX + 1)
+   LDY #VIS_YMAX + 1
    JSR clamp_ln
    STA c_tc
    LDX #ST_B
@@ -746,7 +749,7 @@ adv:
    STA c_b
    LDA ln_y+1
    STA c_b+1
-   LDX #Y_BIAS - 1                      ; clamp(B, 47, 207)
+   LDX #Y_BIAS - 1                      ; clamp(B, 47, VIS_YMAX)
    LDY #VIS_YMAX
    JSR clamp_ln
    STA c_bc
@@ -3415,9 +3418,9 @@ ln_ptrk:                                ; (A = byte column k)
 mf_frame:
    INC mf_ep
    BNE @ep
-   LDX #79                              ; wrapped: no stale epoch may match
+   LDX #VIEW_PAIRS - 1                  ; wrapped: no stale epoch may match
 :  STZ pc_ep,X
-   CPX #40
+   CPX #HZ_PAIR
    BCS :+
    STZ zr_ep,X
 :  DEX
@@ -3578,36 +3581,36 @@ prun:
    LSR A
    LSR A
    STA pl_kb
-   ; the wrong side of the horizon keeps the shade (floor: lines < 80;
-   ; ceiling: lines >= 80)
+   ; the wrong side of the horizon keeps the shade (floor: lines < HZ_LINE;
+   ; ceiling: lines >= HZ_LINE)
    LDA pl_kind
    BEQ @ceil
    LDA r_ys                             ; floor
-   CMP #80
+   CMP #HZ_LINE
    BCS @parts
    LDA r_ye
-   CMP #80
+   CMP #HZ_LINE
    BCC :+
-   LDA #79
-:  JSR pl_shade                         ; lines r_ys .. min(ye, 79)
-   LDA #80
+   LDA #HZ_LINE - 1
+:  JSR pl_shade                         ; lines r_ys .. min(ye, HZ_LINE - 1)
+   LDA #HZ_LINE
    STA r_ys
    BRA @chk
 @ceil:
    LDA r_ye
-   CMP #80
+   CMP #HZ_LINE
    BCC @parts
    LDA r_ys
    PHA
-   CMP #80
+   CMP #HZ_LINE
    BCS :+
-   LDA #80
+   LDA #HZ_LINE
    STA r_ys
 :  LDA r_ye
-   JSR pl_shade                         ; lines max(ys, 80) .. ye
+   JSR pl_shade                         ; lines max(ys, HZ_LINE) .. ye
    PLA
    STA r_ys
-   LDA #79
+   LDA #HZ_LINE - 1
    STA r_ye
 @chk:
    LDA r_ye
@@ -4398,18 +4401,18 @@ q_a_h:
    ROL pl_h+1
    RTS
 
-; 2^20 // k for k = 2j + 1, j = 0..39 (the depth of a pair k lines off the
+; 2^20 // k for k = 2j + 1, j = 0..HZ_PAIR - 1 (the depth of a pair k lines off the
 ; horizon, 1024 * depth / D), three byte planes
 pl_zk0:
-.repeat 40, J
+.repeat HZ_PAIR, J
    .byte <((1 << 20) / (2 * J + 1))
 .endrepeat
 pl_zk1:
-.repeat 40, J
+.repeat HZ_PAIR, J
    .byte >((1 << 20) / (2 * J + 1))
 .endrepeat
 pl_zk2:
-.repeat 40, J
+.repeat HZ_PAIR, J
    .byte ^((1 << 20) / (2 * J + 1))
 .endrepeat
 
@@ -4435,20 +4438,20 @@ pp_s:    .res 1
 pp_base: .res 1
 pp_k:    .res 1
 pp_k1:   .res 1
-zr_ep:   .res 40                        ; per row j: the epoch ZC / ZS are for
-zc0:     .res 40                        ; ZC[j] = Zk * |c| (4 bytes)
-zc1:     .res 40
-zc2:     .res 40
-zc3:     .res 40
-zs0:     .res 40                        ; ZS[j] = Zk * |s|
-zs1:     .res 40
-zs2:     .res 40
-zs3:     .res 40
+zr_ep:   .res HZ_PAIR                        ; per row j: the epoch ZC / ZS are for
+zc0:     .res HZ_PAIR                        ; ZC[j] = Zk * |c| (4 bytes)
+zc1:     .res HZ_PAIR
+zc2:     .res HZ_PAIR
+zc3:     .res HZ_PAIR
+zs0:     .res HZ_PAIR                        ; ZS[j] = Zk * |s|
+zs1:     .res HZ_PAIR
+zs2:     .res HZ_PAIR
+zs3:     .res HZ_PAIR
 
 .segment "MFILLC"                       ; main RAM code: runs with ACCCON X
                                         ;  clear (row maths, span sweeps)
 ; pl_row: the row maths for pair pl_p and D pl_d, into pc_*[pl_p]
-;   k = |2p + 1 - 80| (j = k >> 1 indexes pl_zk = 2^20 // k)
+;   k = |2p + 1 - HZ_LINE| (j = k >> 1 indexes pl_zk = 2^20 // k)
 ;   Pc = D * ZC[j], Ps = D * ZS[j], ZC = Zk * |c|, ZS = Zk * |s| (unity:
 ;   Zk << 8), made once per frame per j (zr_*): the same integers as
 ;   (D * Zk) * |c|, one multiply per term
@@ -4458,9 +4461,9 @@ zs3:     .res 40
 pl_row:
    LDA pl_p
    SEC
-   SBC #40
-   BCS :+                               ; floor: j = p - 40
-   EOR #$FF                             ; ceiling: j = 39 - p
+   SBC #HZ_PAIR
+   BCS :+                               ; floor: j = p - HZ_PAIR
+   EOR #$FF                             ; ceiling: j = HZ_PAIR - 1 - p
 :  TAX
    STX pl_j
    LDA zr_ep,X

@@ -16,6 +16,9 @@ Model B memory map are replaced. The Model B build is not maintained.
   flip rewrites the CRTC start address (R12/R13).
 - Effective resolution: every texel row is 2 screen lines (see 3), so the view
   is **80 texel rows** high; walls are 128 columns wide, floors/ceilings 64.
+- Since step 5o the 3D view is the top **136 lines** (68 texel rows, horizon
+  at line 68); the bottom 24 lines of both buffers are a static control
+  panel (DOOM's status bar, `master_panel.py`).
 
 ## 2. Colours
 
@@ -98,14 +101,14 @@ All writes are whole bytes; each texel row writes byte `B` to line 2r and
 | Area | Contents |
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
-| Shadow RAM (20K) | The two screen buffers, &3000 and &5800 |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C6AF (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D6E4, **free $D6E5–$DDFF (1.8K)**; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B8B0: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and `mf_flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map) $C800–$D6E4, **free $D6E5–$DDFF (1.8K)**; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $A500–$B89E: the fill's cold set-up code (steps 5f–5h; free to $B8FF); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
 | Main $6D38–$6FE9 | Cold per-seg wall and plane set-up |
-| Main $4FB1–$55AA | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
+| Main $4FB1–$5574 | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
@@ -758,6 +761,64 @@ keeps its own u (both texture columns stay); only v is shared.
   - the mean frame 1.724M → 1.611M (−6.5%);
   - the 18 poses 28.1M → 26.5M.
   Byte-exact against the revised model. HAZEL +1.0K.
+
+**5o. A 136-line view and a static control panel. — DONE.** The bottom 24
+lines of both buffers are DOOM's status bar, drawn once at boot; the 3D
+view is the top 136 lines (17 character rows), re-centred on line 68 as
+DOOM does with its status bar (the vertical field of view shrinks; the
+focal lengths and all wall and flat maths are unchanged).
+- *The panel* (`master_panel.py`):
+  - STBAR with a new game's state drawn on it as `st_stuff.c` places it:
+    ammo 50, health 100%, the arms box with the pistol, the straight face,
+    armour 0%, and the ammo counts.
+  - Scaled to 128 strips × 24 lines and quantised to the wall shades, with
+    its own match (gain 1.3, colour weight 0.6) so the grey stone does
+    not turn to cyan speckle and the red digits stay red. Even lines take
+    the byte, odd lines its FLIP, as the walls do.
+  - 1,536 bytes (`MPANEL` on the disc).
+- *Boot*:
+  - The loader parks `MPANEL` in buffer 1's panel rows (shadow
+    &7A00–&7FFF, clear of the parked HAZEL and ANDY blocks).
+  - The stub copies it to buffer 0's (&5200), once ANDY has moved out.
+  - `MHZ_PATTERN` clears and draws only character rows 0–16.
+  - Nothing writes there again: the Master never clears a screen, and the
+    fill stops at line 135.
+- *Engine* (shared code, one MASTER-conditional `VIEW_LINES` in `zp.inc`;
+  Model B's values and builds are unchanged):
+  - `VIS_YMAX = Y_BIAS + VIEW_LINES − 1` feeds the clip pool's full-screen
+    span (`pool.s`), the zero-record off-screen test (`tfr.s`) and the
+    fill's clamps.
+  - `project_y`'s bias constant is `VIEW_LINES / 2 + Y_BIAS`: 116 on the
+    Master (128 before).
+- *Fill*:
+  - `HZ_LINE` (68), `HZ_PAIR` (34) and `VIEW_PAIRS` (68) replace the
+    literal 80, 79, 40 and 160 in `prun`, `pl_row` and `mf_frame`.
+  - The per-pair tables (`sp_start`, `pc_*`) and the per-row ones (`pl_zk`,
+    `zr_ep`, `zc*`, `zs*`) shrink to match.
+- *Models*:
+  - `fill_ref.master_view` switches the Python engine twin (`fp`,
+    `endpoint_spans`, `wad_packed`, `doom_wireframe`, `angle_seg`) to 136
+    lines about 68, for the length of a Master render only. The Model B
+    references keep 160 about 80.
+  - `fill_ref`, `tex_ref` and `textured_ref` compose the panel into lines
+    136–159; `plane_ref.HORIZON` and `textured_ref.CY` are 68.
+- *Gates*:
+  - `test_master_tex` compares all 10,240 bytes, panel included: the rig
+    paints the panel into both buffers before each frame as the disc does.
+  - `test_master_disc` checks both buffers' panel rows on jsbeeb after the
+    engine has turned and walked.
+  - `test_master_engine` links the Master with `-D MASTER_VIEW=160`
+    (`DOOM_ASMDEFS`) to keep matching Model B's line list.
+  - `test_tex_ref`'s float agreement is 94.83% (the gate is now 94.5%,
+    from 95%). The maths is unchanged, but the lost lines were mostly easy
+    near-floor and lower-wall cells; exact agreement rose to 77.98%.
+- *Cycles* (`tools/master_profile.py`):
+  - the mean frame 1.611M → 1.519M (−5.8%);
+  - the 18 poses 26.5M → 24.9M;
+  - the wall loop 299K → 275K, the span loops 163K → 127K, arithmetic
+    356K → 340K.
+  Per-column costs (column walk, per-seg and per-byte set-up, ~470K) do
+  not shrink with the height.
 
 **6. Movers.** Doors, lift and moving floor with textures: alignment as they
 move; invisible movers still cost nothing; cache-exactness gates rerun on

@@ -106,6 +106,14 @@ class BankedMemory(list):
             return bytes(list.__getitem__(self, slice(lo, hi)))
         return bytes(self._shadow[lo - 0x3000:hi - 0x3000])
 
+    def shadow_store(self, addr, data):
+        """Write bytes into the shadow RAM at addr ($3000-$7FFF), whatever
+        X is now (the disc's boot-time images)."""
+        if self._xon:
+            list.__setitem__(self, slice(addr, addr + len(data)), list(data))
+        else:
+            self._shadow[addr - 0x3000:addr - 0x3000 + len(data)] = list(data)
+
     def clear_shadow(self):
         if self._xon:
             list.__setitem__(self, slice(0x3000, 0x8000), [0] * 0x5000)

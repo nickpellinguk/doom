@@ -53,7 +53,7 @@ for pose in C.POSITIONS:
                 fails.append(f'{pose}: line {y} col {k}: ${b:02X} is not two shades')
                 break
     fk, n, agree = F.kinds(), 0, 0
-    for r in range(80):
+    for r in range(T.ROWS):
         for c in range(128):
             t, f = tkind(R.cell[r][c]), fk[r][c]
             if t is None and f is None:

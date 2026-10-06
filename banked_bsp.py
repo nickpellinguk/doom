@@ -510,7 +510,13 @@ class MasterBspRender(BankedBspRender):
         self.bm[0xFE34] = 0x09                # ACCCON at render time: D | Y
 
     def render_frame(self, px, py, ab, floor_z=0):
+        # the screens as the disc leaves them: blank, with the control panel
+        # (master_panel) in both buffers' bottom 24 lines
+        import master_panel as MP
         self.bm.clear_shadow()
+        pb = MP.panel_bytes()
+        for base in (abi.MSCREEN0, abi.MSCREEN1):
+            self.bm.shadow_store(base + MP.PANEL_OFFSET, pb)
         return super().render_frame(px, py, ab, floor_z)
 
     def framebuffer(self):

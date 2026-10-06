@@ -10,6 +10,12 @@ that missed the rebase shows up here as a different list.
 
 Billboard objects are off on both sides (the Master build has none yet).
 
+The Master's own view is 136 lines about line 68 (the control panel is the
+bottom 24, master_panel.py), so every Y it emits differs from Model B's by
+design. This gate links the Master engine with Model B's 160-line view
+(-D MASTER_VIEW=160, through DOOM_ASMDEFS) to keep proving the Master link
+itself; the 136-line view is proved byte-exact by test_master_tex.
+
 Poses: the 17 frame-cycle positions (compare_renders.POSITIONS) plus the 11
 ground-truth verify positions from run_regression. Also reports the Master
 cycle total against the Model B C02 build. Prints MASTERENGINE: PASS.
@@ -17,6 +23,7 @@ cycle total against the Model B C02 build. Prints MASTERENGINE: PASS.
 import os, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+os.environ['DOOM_ASMDEFS'] = 'MASTER_VIEW=160'   # the Master link at Model B's view
 os.environ['DOOM_CPU'] = '65c02'        # compare against the Model B C02 link:
                                         # same CPU as the Master's 65C12
 import pygame

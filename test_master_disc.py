@@ -23,8 +23,13 @@ subprocess.run([sys.executable, 'tools/build_master_ssd.py'], check=True,
 import abi, symmap
 out = os.path.join(ROOT, 'build', 'master')
 addrs = os.path.join(out, 'addrs.json')
+import master_panel
+open(os.path.join(out, 'panel.bin'), 'wb').write(master_panel.panel_bytes())
 json.dump({'flip_sched': symmap.sym('flip_sched', banked=2),
-           'DV_ANGIDX': abi.DV_ANGIDX}, open(addrs, 'w'))
+           'DV_ANGIDX': abi.DV_ANGIDX,
+           'panel': [abi.MSCREEN0 + master_panel.PANEL_OFFSET,
+                     abi.MSCREEN1 + master_panel.PANEL_OFFSET],
+           'panel_bin': os.path.join(out, 'panel.bin')}, open(addrs, 'w'))
 r = subprocess.run(['node', 'tools/master_rig.mjs', 'engine',
                     os.path.join(out, 'doom_master.ssd'), addrs,
                     os.path.join(out, 'engine')], capture_output=True, text=True)

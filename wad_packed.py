@@ -1551,6 +1551,9 @@ def write_s16(arr, off, val):
 
 # ── Span array helpers ──────────────────────────────────────────────────
 
+VIEW_BOT = 159                  # the view's last line (fill_ref.master_view: 135)
+
+
 def spans_init(ram, base):
     """Initialise span array with one full-screen span."""
     ram[base] = 1   # count = 1
@@ -1560,9 +1563,9 @@ def spans_init(ram, base):
     write_s16(ram, o + SP_TSLOPE, 0)
     write_s16(ram, o + SP_BSLOPE, 0)
     write_s16(ram, o + SP_TINTERCEPT, 0)
-    write_s16(ram, o + SP_BINTERCEPT, 159)
+    write_s16(ram, o + SP_BINTERCEPT, VIEW_BOT)
     write_s16(ram, o + SP_INNER_TOP, 0)
-    write_s16(ram, o + SP_INNER_BOT, 159)
+    write_s16(ram, o + SP_INNER_BOT, VIEW_BOT)
 
 def spans_init_full(ram, base, xhi, bot):
     """Initialise span array: one span [0, xhi) top=0, bot=bot."""
@@ -1613,7 +1616,7 @@ def read_span_tuple(ram, base, i):
 
 def write_span(ram, base, i, xlo, xhi, tfn, bfn, inner_top, inner_bot, outer_top, outer_bot):
     """Write span i from components.  Bytes 14/15 store outer_top/outer_bot
-    as u8 clamped to [0, 159] for the 6502 clipper's fast reject/accept."""
+    as u8 clamped to [0, VIEW_BOT] for the 6502 clipper's fast reject/accept."""
     o = span_offset(base, i)
     ram[o + SP_XLO] = xlo & 0xFF
     ram[o + SP_XHI] = xhi & 0xFF
@@ -1623,8 +1626,8 @@ def write_span(ram, base, i, xlo, xhi, tfn, bfn, inner_top, inner_bot, outer_top
     write_s16(ram, o + SP_BINTERCEPT, bfn[1])
     write_s16(ram, o + SP_INNER_TOP, inner_top)
     write_s16(ram, o + SP_INNER_BOT, inner_bot)
-    ram[o + 14] = max(0, min(159, outer_top))
-    ram[o + 15] = max(0, min(159, outer_bot))
+    ram[o + 14] = max(0, min(VIEW_BOT, outer_top))
+    ram[o + 15] = max(0, min(VIEW_BOT, outer_bot))
 
 def write_span_from_tuple(ram, base, i, s):
     """Write span i from an 8-tuple (as returned by read_span_tuple)."""

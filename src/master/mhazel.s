@@ -9,7 +9,9 @@
 ; and its tables live here too.
 ;
 ;   MHZ_PATTERN  draw the test pattern into BOTH buffers: the 10 shades as
-;                vertical wall-format bands below an empty HUD row
+;                vertical wall-format bands below an empty HUD row, in the
+;                view's character rows only (0..16): rows 17..19 are the
+;                control panel the loader left there (master_panel.py)
 ;   MHZ_HUD      A = back buffer page hi; draw "tttt ff" into its top
 ;                character row: frame time in 1MHz ticks (hex) and fields
 
@@ -20,6 +22,7 @@ ptr     = $70                           ; zp scratch (frame-scoped, driver-
 cnt     = $72                           ; owned outside the render: the
 tmp     = $73                           ; render is done when these run)
 glyph   = $74
+VIEW_ROWS = 17                          ; the 136-line view; the panel below
 
         .segment "HAZEL"
         jmp pattern                     ; MHZ_PATTERN = $C000
@@ -35,7 +38,7 @@ pattern:
 pat_buf:                                ; A = buffer page hi
         sta ptr+1
         stz ptr
-        ldx #0                          ; clear the whole buffer: 40 pages
+        ldx #0                          ; clear the view: 2 pages a row
         lda #0
         ldy #0
 :       sta (ptr),y
@@ -43,11 +46,11 @@ pat_buf:                                ; A = buffer page hi
         bne :-
         inc ptr+1
         inx
-        cpx #40
+        cpx #VIEW_ROWS * 2
         bne :-
         lda ptr+1                       ; back to the buffer start + 512:
         sec                             ; character row 1 (row 0 = HUD)
-        sbc #40 - 2
+        sbc #VIEW_ROWS * 2 - 2
         sta ptr+1
         ldx #0                          ; byte column
 @col:   lda colbyte,x
@@ -59,8 +62,8 @@ pat_buf:                                ; A = buffer page hi
         sta @odd+1                      ; odd lines (SMC, HAZEL is RAM)
         lda ptr+1
         pha
-        lda #19
-        sta cnt                         ; character rows 1..19
+        lda #VIEW_ROWS - 1
+        sta cnt                         ; character rows 1..16
 @row:   ldy #0
 @line:  lda tmp
         sta (ptr),y

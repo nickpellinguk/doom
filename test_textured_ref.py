@@ -16,6 +16,7 @@ os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import compare_renders as C
 import master_assets as M
+import master_panel
 import textured_ref as T
 
 VERIFY = [(1792.34375, -3351.375, 108), (1056, -3616, 64), (1500, -3700, 0),
@@ -42,7 +43,9 @@ for pose in POSES:
               for row in R.cell for v in row if v is not None}
     if R.render(*pose) != fb:
         fails.append(f'{pose}: not deterministic')
-    for y in range(0, 160, 2):
+    if fb[master_panel.PANEL_OFFSET:] != master_panel.panel_bytes():
+        fails.append(f'{pose}: the control panel (lines 136..159) is not master_panel')
+    for y in range(0, 2 * T.ROWS, 2):                 # the view: lines 0..135
         for k in range(64):
             a = (y >> 3) * 512 + k * 8 + (y & 7)
             b, b2 = fb[a], fb[a + 1]

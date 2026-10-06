@@ -281,8 +281,11 @@ class TexRef(Fm.FillRef):
     def _compose(self):
         """The buffer bytes, lit: every byte of a seg is ANDed with its
         front sector's light masks (maskEven on even lines, maskOdd on odd
-        lines, after the FLIP); sky is never masked."""
+        lines, after the FLIP); sky is never masked. Below the view, the
+        control panel (master_panel)."""
+        import master_panel
         fb = bytearray(10240)
+        fb[master_panel.PANEL_OFFSET:] = master_panel.panel_bytes()
         sky = M.wall_byte(Fm.SH_SKY)
         for y in range(Fm.LINES):
             row = self.grid[y]

@@ -170,6 +170,16 @@ async function engineMode() {
     out.walk = [[s2.px, s2.py], [s3.px, s3.py]];
     if (s3.px === s2.px && s3.py === s2.py) fails.push("UP did not move");
     fs.writeFileSync(path.join(outdir, "engine.png"), await s.screenshotActive({ scale: 1 }));
+    // the control panel: both buffers' bottom 24 lines, exactly as loaded,
+    // after the engine has drawn and flipped many frames over them
+    const panel = new Uint8Array(fs.readFileSync(A.panel_bin));
+    out.panel_bad = A.panel.map((a) => {
+        const m = s.readMemory(a, panel.length, { shadow: true });
+        let bad = 0;
+        for (let i = 0; i < panel.length; i++) if (m[i] !== panel[i]) bad++;
+        return bad;
+    });
+    if (out.panel_bad.some((b) => b)) fails.push(`control panel differs: ${out.panel_bad} bytes`);
     // screen content: palette only, and the HUD row lit
     const fb = new Uint8Array(s._completeFb8);
     const W = 1024, H = 625, cols = new Set();

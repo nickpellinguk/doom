@@ -38,7 +38,11 @@ os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 
 import master_assets as M
 
-STRIPS, LINES = 128, 160
+# The Master's 3D view: lines 0..135 (17 character rows) about a horizon
+# at line 68; lines 136..159 are the control panel (master_panel), drawn
+# once and never written by the fill.
+STRIPS, LINES = 128, 136
+HORIZON = LINES // 2                    # 68
 SKY = 'F_SKY1'
 # step-3 shades (indices into master_assets.SHADES)
 SH_SKY = M.SHADES.index((2, 2))        # cyan
@@ -71,6 +75,27 @@ def _floor_interp(x, x0, y0, x1, y1):
     return y0 + (y1 - y0) * (x - x0) // (x1 - x0)
 
 
+class master_view:
+    """The engine models' view for the Master: LINES lines about HORIZON.
+    The Python engine (fp, endpoint_spans, wad_packed, doom_wireframe,
+    angle_seg) is shared with the Model B references and keeps its 160
+    lines about 80 outside this context."""
+    def __enter__(self):
+        import fp, endpoint_spans, wad_packed, doom_wireframe, angle_seg
+        self.saved = [(m, n, getattr(m, n)) for m, n in (
+            (fp, 'FP_RENDER_H'), (fp, 'HALF_H'), (endpoint_spans, 'FP_RENDER_H'),
+            (doom_wireframe, 'FP_RENDER_H'), (doom_wireframe, 'HALF_H'),
+            (angle_seg, 'HALF_H'), (wad_packed, 'VIEW_BOT'))]
+        for m, n, _ in self.saved:
+            setattr(m, n, {'FP_RENDER_H': LINES, 'HALF_H': HORIZON,
+                           'VIEW_BOT': LINES - 1}[n])
+        return self
+
+    def __exit__(self, *exc):
+        for m, n, v in self.saved:
+            setattr(m, n, v)
+
+
 class FillRef:
     def __init__(self):
         import pygame
@@ -89,6 +114,13 @@ class FillRef:
         def hook(si, x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid, near=None):
             ctx_box[si] = (x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid)
             self.near[si] = near
+        with master_view():
+            return self._render(px, py, ab, ctx_box, hook)
+
+    def _render(self, px, py, ab, ctx_box, hook):
+        import fp, pygame
+        from wad_packed import spans_init_full
+        dw = self.dw
         orig_seg = dw.packed_render_seg
         def seg(si, clips, *a, **k):
             before = list(clips.spans)
@@ -147,7 +179,9 @@ class FillRef:
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = sh
 
     def _compose(self):
+        import master_panel
         fb = bytearray(10240)
+        fb[master_panel.PANEL_OFFSET:] = master_panel.panel_bytes()
         for y in range(LINES):
             row = self.grid[y]
             for k in range(64):
@@ -162,7 +196,7 @@ class FillRef:
 
     def kinds(self):
         """Per (strip, texel row) surface kind at the row's sample line 2r+1."""
-        return [[KIND.get(self.grid[2 * r + 1][c]) for c in range(STRIPS)] for r in range(80)]
+        return [[KIND.get(self.grid[2 * r + 1][c]) for c in range(STRIPS)] for r in range(LINES // 2)]
 
 
 if __name__ == '__main__':

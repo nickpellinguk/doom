@@ -140,13 +140,13 @@ szr_lt:
    BMI szr_yes
    CLC
    RTS
-; C=1 iff value > Y_BIAS+159.
-; Same idiom, operands reversed: sign of ((Y_BIAS+159) - value) < 0.
+; C=1 iff value > VIS_YMAX (Y_BIAS+159; the Master's view Y_BIAS+135).
+; Same idiom, operands reversed: sign of (VIS_YMAX - value) < 0.
 szr_gt:
-   LDA #<(Y_BIAS+159)
+   LDA #<VIS_YMAX
    SEC
    SBC SZR_PROJ,X
-   LDA #>(Y_BIAS+159)
+   LDA #>VIS_YMAX
    SBC SZR_PROJ+1,X
    BMI szr_yes
    CLC

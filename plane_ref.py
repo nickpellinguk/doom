@@ -11,8 +11,8 @@ column's centre and the line PAIR's centre, written whole (FLIP of it on
 the pair's odd line).
 
   depth     a floor seen at line pair p (lines 2p, 2p+1, centre 2p+1) is
-            k = 2p + 1 - 80 lines below the horizon (a ceiling k = 80 -
-            (2p+1) above it), k odd in 1..79. From the engine's projection
+            k = 2p + 1 - 68 lines below the horizon (a ceiling k = 68 -
+            (2p+1) above it), k odd in 1..67. From the engine's projection
             (focal 128, prescaled heights with the 1.2 aspect baked in) its
             depth is 1024 * D / k world units, D the eye's prescaled height
             above the plane -- the SAME prescaled heights the walls' floor
@@ -51,7 +51,7 @@ import master_assets as M
 import tex_ref as X
 
 ROOT = Fm.ROOT
-HORIZON = 80
+HORIZON = Fm.HORIZON                  # 68: the Master view's centre
 
 
 def _name(b):

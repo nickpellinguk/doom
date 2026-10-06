@@ -50,7 +50,7 @@ def self_uv(y, c, g, si):
     pxw = dw.MAP_CENTER_X + v['px88'] / 32
     pyw = dw.MAP_CENTER_Y + v['py88'] / 32
     p, kind = y >> 1, g[2]
-    k = 2 * p + 1 - 80 if kind == 'f' else 80 - (2 * p + 1)
+    k = 2 * p + 1 - P.HORIZON if kind == 'f' else P.HORIZON - (2 * p + 1)
     fh, ch = dw.fp_segs_vwh[si][3:5]
     D = (v['vz'] - fh) if kind == 'f' else (ch - v['vz'])
     ey = 1024 * D / k
@@ -74,7 +74,7 @@ for pose in C.POSITIONS:
     hole = F.unfilled()
     if hole and pose not in OFFMAP:
         fails.append(f'{pose}: {hole} unfilled cells on an on-map pose')
-    for y in range(160):
+    for y in range(len(F.grid)):
         for c in range(0, 128, 2):
             g = F.grid[y][c]
             if g and g[0] == 'F':
@@ -82,7 +82,7 @@ for pose in C.POSITIONS:
                 SN += 1
                 SOK += near(g[3] - tu) and near(g[4] - tv)
     n = ne = ex = 0
-    for r in range(80):
+    for r in range(T.ROWS):
         for c in range(0, 128, 2):              # one cell per byte column
             g, t = F.grid[2 * r + 1][c], R.cell[r][c]
             if not (g and g[0] == 'F' and t and t[0] == 'p' and t[2] != T.SKY):

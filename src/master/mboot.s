@@ -11,14 +11,18 @@
 ;   3. MHAZEL, then MANDY: staged at $3000 and parked in SHADOW RAM (the
 ;      screen; it shows as noise during the load) one after the other,
 ;      bounced a page at a time through $0A00 because the CPU sees either
-;      main or shadow at $3000, not both.
+;      main or shadow at $3000, not both. Then MPANEL, the control panel
+;      (master_panel.py), parked where it lives in buffer 1: its character
+;      rows 17..19, shadow $7A00-$7FFF, clear of the parked blocks.
 ;   4. From the page-9 stub: MMAIN straight to $0F00 (on the Master DFS
 ;      keeps its workspace in HAZEL, so main RAM from $0E00 is free) --
 ;      this overwrites the loader; then MCBITS to $5800. Last disc access.
 ;   5. SEI; the parked HAZEL block goes shadow -> $0A00 -> HAZEL ($C000),
 ;      the parked ANDY block shadow -> ANDY ($8000, ROMSEL bit 7: the MOS
 ;      keeps its font and workspace there, so it waits for the last OS
-;      call too); JMP DRV_ORG. No OS call after this point.
+;      call too); the panel shadow $7A00 -> $5200 (buffer 0's rows
+;      17..19, which the parked ANDY block covered); JMP DRV_ORG. No OS
+;      call after this point.
 ;
 ; (The first cut staged MHAZEL at $3000 AFTER the engine image was in
 ; place, which wrote the HAZEL block over engine code at $3000+.)
@@ -27,6 +31,9 @@
 
 ROMSEL_COPY = $F4
 ANDY_PAGES  = 16                        ; MANDY: 4K
+PANEL_PAGES = 6                         ; MPANEL: character rows 17..19
+PANEL0      = MSCREEN0 + 17 * 512       ; ... of buffer 0 (shadow $5200)
+PANEL1      = MSCREEN1 + 17 * 512       ; ... of buffer 1 (shadow $7A00)
 ; the bounce page is $0A00, one free OS buffer page (written inline)
 
         .segment "CODE"
@@ -68,6 +75,12 @@ ldr:
         jsr $FFF7                       ; *LOAD MANDY 3000
         lda #$30 + HAZEL_PAGES          ; park it in shadow above HAZEL's
         ldx #ANDY_PAGES
+        jsr park
+        ldx #<c_pn
+        ldy #>c_pn
+        jsr $FFF7                       ; *LOAD MPANEL 3000
+        lda #>PANEL1                    ; park it in buffer 1's panel rows
+        ldx #PANEL_PAGES
         jsr park
         ldx #stub_len
 :       lda stub_image-1,x
@@ -141,6 +154,7 @@ c_b5:   .byte "LOAD MBANK5 3000", 13
 c_b6:   .byte "LOAD MBANK6 3000", 13
 c_hz:   .byte "LOAD MHAZEL 3000", 13
 c_an:   .byte "LOAD MANDY 3000", 13
+c_pn:   .byte "LOAD MPANEL 3000", 13
 vdu_init:
         .byte 22, 129                   ; MODE 129: Mode 1 in shadow RAM
         .byte 19, 1, 1, 0, 0, 0         ; logical 1 -> red
@@ -206,6 +220,19 @@ stub:
         inc $83
         dex
         bne @an
+        lda #>PANEL1                    ; the panel: buffer 1's rows -> buffer
+        sta $81                         ;  0's (X still on: shadow to shadow)
+        lda #>PANEL0
+        sta $83
+        ldx #PANEL_PAGES
+@pn:    lda ($80),y                     ; (Y = 0 again)
+        sta ($82),y
+        iny
+        bne @pn
+        inc $81
+        inc $83
+        dex
+        bne @pn
         lda $FE34
         and #$FB
         sta $FE34

@@ -105,7 +105,7 @@ si_setup:
    STA POOL_BDEN,X                         ; bottom anchor span = 255
    STA POOL_XEND,X
 ; |
-   LDA #(Y_BIAS + 159)                     ; |
+   LDA #VIS_YMAX                           ; | (Y_BIAS + 159; Master + 135)
    STA POOL_BL,X
    STA POOL_BR,X
 ; |

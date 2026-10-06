@@ -388,6 +388,7 @@ pym2:
 ;   NOTE the constant loaded below is 128 = HALF_H (80) + Y_BIAS (48): the
 ;   screen-space Y bias every consumer used to add per-store is folded into
 ;   the projection, so results come out PRE-BIASED. Same final values.
+;   (The Master's 136-line view is centred on line 68: 116.)
 ;   Clobbers zp_br_t2, zp_br_a/b, mul workspace.
 ; ============================================================================
 ; (label deleted 2026-07-12: NO ENTRY EXISTS — the body is reached only
@@ -548,7 +549,7 @@ py_stored:                                 ; (C02 ptail re-enters here past
                                         ; (default arbitrary — every
                                         ; dispatch is select-dominated)
    LDX zp_pyc_idx                                                         ;# |||||      1.0
-   LDA #128                                                               ;# |||        0.7
+   LDA #(VIEW_LINES / 2 + Y_BIAS)                                         ;# |||        0.7
    SEC                                                                    ;# |||        0.7
    SBC zp_br_res_l                                                        ;# |||||      1.0
    TAY                                     ; REG CONTRACT: Y = sy lo, A = sy hi ;# |||        0.7
