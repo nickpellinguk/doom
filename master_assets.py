@@ -118,10 +118,11 @@ def floor_byte(shade):
 # colours, written as is on a pair's even line and FLIP (the pixels
 # swapped) on its odd line, a checkerboard. Only pairs whose brightness gap
 # is gentle: one RGB bit apart, blue bit (luma 0.11) or red bit (0.30), plus
-# red + green (an olive brown, the one two-bit pair).
+# red + green (an olive brown) and magenta + green (a mid grey, 0.17), the
+# two pairs further apart in RGB.
 PAIRS = [(BLACK, BLUE), (RED, MAGENTA), (GREEN, CYAN), (YELLOW, WHITE),
          (BLACK, RED), (BLUE, MAGENTA), (GREEN, YELLOW), (CYAN, WHITE),
-         (RED, GREEN)]
+         (RED, GREEN), (MAGENTA, GREEN)]
 TONES = [(c, c) for c in range(8)] + PAIRS      # tone t -> (left, right)
 
 
@@ -268,8 +269,8 @@ def quantise_tex(rgb):
 # placeholder flat ramps over the tones (step 6b redraws each flat), dark
 # to light, one per material
 TONE_RAMPS = {
-    'grey':  [BLACK, 8, BLUE, CYAN, 15, WHITE],             # (8 = K+B ..
-    'blue':  [BLACK, 8, BLUE, 13, CYAN, 15, WHITE],         #  16 = R+G)
+    'grey':  [BLACK, 8, BLUE, 17, CYAN, 15, WHITE],         # (8 = K+B ..
+    'blue':  [BLACK, 8, BLUE, 13, CYAN, 15, WHITE],         #  17 = M+G)
     'brown': [BLACK, 12, RED, 16, YELLOW, 11, WHITE],
     'green': [BLACK, 16, GREEN, 14, YELLOW, 11, WHITE],
     'red':   [BLACK, 12, RED, 9, MAGENTA, WHITE],

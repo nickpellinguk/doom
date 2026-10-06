@@ -30,12 +30,12 @@ Model B memory map are replaced. The Model B build is not maintained.
 
 **Since step 6a** (Mode 2): wall texels are solid colours; no sector
 light (the demo is for texturing, not atmospherics). **Since step 6d**
-floors and ceilings cross-hatch again: a flat texel is one of 17 *tones*,
-the 8 solid colours or one of 9 gentle pairs (`master_assets.PAIRS`),
+floors and ceilings cross-hatch again: a flat texel is one of 18 *tones*,
+the 8 solid colours or one of 10 gentle pairs (`master_assets.PAIRS`),
 two colours one RGB bit apart in blue (luma gap 0.11: black+blue,
 red+magenta, green+cyan, yellow+white) or red (0.30: black+red,
 blue+magenta, green+yellow, cyan+white), plus red+green (an olive brown,
-0.29). Flats are a placeholder ramp over the tones per material
+0.29) and magenta+green (a mid grey, 0.17). Flats are a placeholder ramp over the tones per material
 (`TONE_RAMPS`, `quantise_flat`). Textures
 are a placeholder conversion until each is redrawn as pixel art (step
 6b): per texture, its brightness (normalised to its own 5–95% range) is
@@ -974,14 +974,16 @@ the odd line of each pair writes it with its pixels swapped.
     black+blue, red+magenta, green+cyan, yellow+white;
   - one bit apart in **red** (0.30, a calm texture): black+red,
     blue+magenta, green+yellow, cyan+white;
-  - **red+green** (0.29), the one two-bit pair: an olive brown for
-    DOOM's floors.
+  - **red+green** (0.29): an olive brown for DOOM's floors;
+  - **magenta+green** (0.17): a mid grey, the one complementary pair (the
+    hues fight, but the brightness gap is small).
 
-  Green-bit pairs (gap 0.59) and complements (red+cyan, magenta+green,
-  …) are left out: they read as a checkerboard, or shimmer.
+  Green-bit pairs (gap 0.59) and the other complements (black+white,
+  blue+yellow, red+cyan) are left out: they read as a checkerboard.
 - *Flats* (placeholder until 6b): per flat, brightness normalised to its
   5–95% range, nearest tone by luma on its material's ramp
-  (`TONE_RAMPS`: grey/blue K, K+B, B, (B+M), C, C+W, W; brown K, K+R,
+  (`TONE_RAMPS`: grey K, K+B, B, M+G, C, C+W, W; blue K, K+B, B, B+M,
+  C, C+W, W; brown K, K+R,
   R, R+G, Y, Y+W, W; green K, R+G, G, G+Y, Y, Y+W, W; red K, K+R, R,
   R+M, M, W); vivid texels keep the nearest saturated solid.
 - *FLIP* (`flip`, HAZEL $CA00, page-aligned next to `hi16` / `lo16`):
@@ -997,7 +999,7 @@ the odd line of each pair writes it with its pixels swapped.
   lines; `textured_ref` likewise per pixel half.
 - *Gates*: `test_master_tex` byte-exact over the 18 poses (the first run
   caught `pl_wr1`); `test_master_assets` checks FLIP swaps every byte's
-  pixels, that every pair is one of the gentle set and that every flat
+  pixels, that every pair is one of the gentle set (10) and that every flat
   byte is a tone.
 - *Cycles*: the mean frame 1.447M → 1.458M (+0.8%); the span loops 106K
   → 110K. HAZEL +256 B (`flip`) and the patched code.
