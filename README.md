@@ -118,6 +118,13 @@ Disc images: `doom_walk.ssd` (walkable, animated sectors), `doom_spin.ssd`
 (rotating demo), for a Model B with sideways RAM banks 4/6/7 — plain
 B + SWRAM, no Master required.
 
+`doom_master.ssd` is the **BBC Master 128** textured version (work in
+progress, docs/master_textured_spec.md): textured walls, floors and
+ceilings with sector lighting in shadow Mode 1, a 136-line view and a
+static DOOM status bar. Boot it on a Master 128 (or jsbeeb's Master
+model) with SHIFT+BREAK; cursor keys to turn and move. Rebuild it with
+`python3 tools/build_master_ssd.py` (needs DOOM1.WAD).
+
 ## Layout
 
 | | |
