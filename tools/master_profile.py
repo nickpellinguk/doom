@@ -33,7 +33,6 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
-os.environ['DOOM_CPU'] = '65c02'
 
 OFFMAP = {(192, -2368, 99), (3648, -2368, 35), (1500, -3700, 0), (3648, -4800, 131)}
 BANK6_CODE = ('MB6C', 'MFILLV')
@@ -232,15 +231,15 @@ def main():
     import pygame
     pygame.init()
     import asmbuild
-    import compare_renders as C
-    import doom_wireframe as dw
+    import poses as C
+    import e1m1 as dw
     from banked_bsp import MasterBspRender
-    asmbuild.build('engine', banked=2, c02=1)
+    asmbuild.build('engine')
     if len(sys.argv) == 4:
         poses = [tuple(float(a) if '.' in a else int(a) for a in sys.argv[1:])]
     else:
         poses = [p for p in C.POSITIONS if p not in OFFMAP]
-    P = Profiler(code_labels(os.path.join(ROOT, 'build', 'engine_b2c1.dbg')))
+    P = Profiler(code_labels(os.path.join(ROOT, 'build', 'engine_m.dbg')))
     R = MasterBspRender(dw.packed_layout, dw.packed_rom_main, dw.packed_rom_detail,
                         dw.packed_bbox_table, dw.MAP_CENTER_X, dw.MAP_CENTER_Y, dw.PRESCALE)
     cyc = [P.frame(R, pose, dw.player_floor(*pose[:2])) for pose in poses]

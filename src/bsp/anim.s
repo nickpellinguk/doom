@@ -423,14 +423,8 @@ alw_floop:
    INY
    STY alw_y
    PAGE BANK_WALK
-.if ::C02
    LDA ANIM_VAL
    STA (zp_anim_w)                         ; non-indexed (the LDY died)
-.else
-   LDY #0
-   LDA ANIM_VAL
-   STA (zp_anim_w),Y
-.endif
    PAGE BANK_SEG
    LDY alw_y
    DEC alw_nf
@@ -446,14 +440,8 @@ alw_back:
    STA zp_anim_w+1
    INY
    STY alw_y
-.if ::C02
    LDA anim_val2                           ; HALF units (mover BPAL pool)
    STA (zp_anim_w)
-.else
-   LDY #0
-   LDA anim_val2                           ; HALF units (mover BPAL pool)
-   STA (zp_anim_w),Y
-.endif
    LDY alw_y
    DEC alw_nb
    JMP alw_back
@@ -519,12 +507,7 @@ alw_units_ok:
    STA zp_anim_w
    LDA alw_hdr+1
    STA zp_anim_w+1
-.if ::C02
    LDA (zp_anim_w)                         ; non-indexed (Y untouched to the
-.else                                     ;  writeback below — it forks too)
-   LDY #0
-   LDA (zp_anim_w),Y
-.endif
    AND #$83                                ; ~(SOLID|NEEDBT|NEEDBB|STEPUP_T/B)
    STA alw_f
 ; SOLID iff bch <= fh  or  bfh >= ch   (plain SBC sign tests: the packer
@@ -577,11 +560,7 @@ alw_solid:
    STA alw_f
 alw_wf:
    LDA alw_f                               ; NEEDED: the BPL alw_nobb path
-.if ::C02
    STA (zp_anim_w)                         ; arrives with the SBC result in A
-.else
-   STA (zp_anim_w),Y                       ; arrives with the SBC result in A
-.endif
                                            ; (regscan false positive 2026-07-19
                                            ; — its meet missed the mid-chain
                                            ; branch; anim6502 caught it)
@@ -606,14 +585,8 @@ alw_vexpl:
    INY
    STY alw_y
    PAGE BANK_C
-.if ::C02
    LDA ANIM_VAL                            ; INTEGER units (VEXPL stays the
    STA (zp_anim_w)                         ; integer tier this pass — see
-.else                                     ; doom_wireframe vexpl_bytes)
-   LDY #0
-   LDA ANIM_VAL
-   STA (zp_anim_w),Y
-.endif
    PAGE BANK_SEG
    LDY alw_y
    DEC alw_nv

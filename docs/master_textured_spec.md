@@ -1,10 +1,11 @@
 # Textured DOOM on the BBC Master — spec and plan
 
-A textured E1M1 for the **BBC Master 128 only**, built as a delta from this
-repo's wireframe engine. The BSP walk, angle-space culling, vertex pipeline,
+A textured E1M1 for the **BBC Master 128 only**, built as a delta from the
+Model B wireframe engine. The BSP walk, angle-space culling, vertex pipeline,
 caches, movers, trapezoid clip spans and the bit-exact Python reference are
 kept. The line clipper/rasteriser (DCL + NJ linedraw), Mode 4 display and the
-Model B memory map are replaced. The Model B build is not maintained.
+Model B memory map are replaced. Since step 7l (branch `master-only`) the
+Model B build, its wireframe renderer and its gates are gone from the tree.
 
 ## 1. Display
 
@@ -186,9 +187,10 @@ ticks and fields, args in `MHZ_ARGS`). `tools/build_master_ssd.py` writes
 banks 4 and 7, MAIN, MCBITS and the HAZEL block, sets MODE 129 and the
 palette, and copies the HAZEL block up after the last disc access.
 
-*Gates*: `test_master_engine.py` (in `run_regression.py`) requires the
+*Gates*: `test_master_engine.py` (in `run_regression.py`) required the
 Master engine's emitted line list to equal the Model B C02 engine's at 29
-poses (bank 6 is poisoned in its rig); `test_master_disc.py` boots the disc
+poses; since step 7l it compares against the lists recorded from the
+Master link (`golden/master_engine_lines.json.gz`, 31 poses); `test_master_disc.py` boots the disc
 on jsbeeb's Master 128 and checks frames flip, LEFT turns, UP walks and only
 palette colours appear (needs the jsbeeb clone; prints SKIP without it).
 Measured: about 13 frames per second walking the BSP with no drawing (the
@@ -1189,6 +1191,47 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7l. The Master-only tree (branch `master-only`). — DONE.** The Model B
+build, its wireframe renderer and every Model B gate are excised; what is
+left builds only the Master disc. The invariant throughout: the Master
+engine binaries (`engine_*_m.bin`) are byte-identical, and the disc differs
+only where noted below.
+- *Assembly.* Every conditional on the build flags (BANKED, MASTER, C02,
+  RASTERHW) is resolved for the Master (BANKED=1, MASTER=1, C02=1,
+  RASTERHW=0) and the dead arms deleted; `src/boot/`, `src/raster.s`
+  (the NJ rasteriser), `src/hud.s` (the Model B HUD) and the flat and
+  banked ld65 configs are gone. `tools/gen_abi.py` emits the Master values
+  only (`abi.py` lost its `_FLAT` twins). The emit stubs (plot_h, plot_v,
+  RASTER_ENTRY, the frame-buffer clears) stay: the rig traps them.
+- *Python.* `asmbuild` and `symmap` know one link (`engine_m.map` /
+  `.dbg`); the rig is `banked_bsp.MasterBspRender` (the Model B
+  `BankedBspRender` and the flat rig are folded away), always on py65's
+  65C02 core. Its bank images are built from their Python sources (angle
+  tables, bbox, recips), not copied out of a flat image. The Python
+  reference traversal (`e1m1.py`, was `doom_wireframe.py`; its pygame
+  wireframe game and debug renderers removed) drives the Master clipper
+  instead of Model B's: `test_master_tex` now finds 2 reference-gap segs,
+  not 4. `poses.py` holds the pose suite (from `compare_renders.py`).
+- *Gates.* `run_regression.py` runs the nine Master gates plus
+  `bakedscan`, then the frame-cycle gate on `poses.POSITIONS` against a
+  Master `baseline.json` (24,962,540 cycles); `--disc` adds the jsbeeb
+  boot. `test_master_engine` compares against recorded line lists. The
+  whole run takes under a minute (it was about five).
+- *A bug the old rig hid.* The mover jamb patch pointers in TABL0 (bank 4
+  $BA7C-$BA9F) came from the Model B banked map: $A03F, $A0AB, $A0AC --
+  Model B's bank-C VEXPL. On the Master VEXPL is in main RAM ($7800 /
+  $7880), and $A0xx with bank 6 paged is the fill's cold code (`gun_b1` in
+  the 7k build), so a moving door or lift jamb wrote its height into code
+  and never moved its vertical span. The Master map gives $783F, $78AB,
+  $78AC; `anim_sectors.gen_6502_tables` now asserts every jamb target lies
+  in VEXPL. This is one of the two disc differences; the other is the free
+  HAZEL tail $D648-$D7FF, which shipped stale flat-image bytes and now
+  ships zeros.
+- *Left for later.* `clip/plot_axis.s` still assembles the Model B
+  plotters' 24 bytes of edge masks (dead; kept so the binaries stayed
+  identical), and many comments in the engine sources still tell Model B
+  history.
+
 **7k. Set-up: geometry-heavy views (the start position). — DONE.**
 Profiled at the start (1056, -3616): the spawn view (angle $80, 838K
 cycles) and the room it turns to (angle 64, 1,776K, 32 segs), where
@@ -1278,7 +1321,7 @@ divisor with edge and random dividends, 16-bit divisors, quotients >= 2^16
 Bank 6 code $9500-$B895 (106 B free).
 
 **Gate: reference gaps from the opening's lines (2026-10-07).** Two
-start-area poses joined `compare_renders.POSITIONS`: (1046.7, -3090.4,
+start-area poses joined `compare_renders.POSITIONS` (now `poses.POSITIONS`): (1046.7, -3090.4,
 157), the wall that combed (7g), and (1144.6, -3342.5, 153). At the
 latter the 6502 drew 15 bytes of floor where `tex_ref` drew seg 156's
 STEP6 riser. Not a 6502 fault: the float reference has floor there too.

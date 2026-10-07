@@ -640,7 +640,7 @@ def fp_near_clip(vx1, vy1, vx2, vy2):
 
 # -- Cyrus-Beck clipper (8-bit screen coords) ---------------------------------
 
-# -- Prescaling constants (used by doom_wireframe.py at load time) ------------
+# -- Prescaling constants (used by e1m1.py at load time) ------------
 
 MAP_CENTER_X = 1200
 MAP_CENTER_Y = -3248    # 8-ALIGNED (2026-08-10, was -3250): a non-8-aligned

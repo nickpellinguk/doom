@@ -1598,7 +1598,6 @@ ok_z:
    BPL ok_z
 ok_done:
    RTS
-.if ::MASTER
 ; ok_clear: objects OFF whatever ok_state holds (the Master driver's init:
 ; it used to JSR ok_flip, which TOGGLES -- with OFF already the default
 ; that turned the billboards ON, and their span lines left cells the
@@ -1608,7 +1607,6 @@ ok_clear:
    LDA #1
    STA ok_state
    BNE ok_off                              ; (always)
-.endif
 ok_prev:  .byte 0
 ok_state: .byte 1                          ; 1 = objects OFF (the default,
                                            ; Eben 2026-09-02); press O for ON

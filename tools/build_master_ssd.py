@@ -30,7 +30,6 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
-os.environ['DOOM_CPU'] = '65c02'
 
 import master_assets as M
 import master_panel
@@ -87,7 +86,7 @@ def asm(name, defs=()):
 def engine_images():
     import pygame
     pygame.init()
-    import doom_wireframe as dw
+    import e1m1 as dw
     from banked_bsp import MasterBspRender
     r = MasterBspRender(dw.packed_layout, dw.packed_rom_main, dw.packed_rom_detail,
                         dw.packed_bbox_table, dw.MAP_CENTER_X, dw.MAP_CENTER_Y, dw.PRESCALE)

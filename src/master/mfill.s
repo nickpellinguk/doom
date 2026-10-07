@@ -37,7 +37,6 @@
 ; Arithmetic is the plain shift-add / shift-subtract kind: correctness first,
 ; the cycle grind is step 7.
 ; ============================================================================
-.if ::MASTER
 .setcpu "65C02"                         ; the Master's 65C12
 
 .include "../zp.inc"
@@ -5406,4 +5405,3 @@ d8_n:
    BNE d8_lp
    RTS
 
-.endif                                  ; ::MASTER

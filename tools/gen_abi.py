@@ -26,67 +26,67 @@ os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 # via these helpers; the generated literals stay consistent by
 # construction.
 BANKA_FLAT, BANKB_FLAT = 0x5800, 0x9600
-def _A(off): return (0x8000 + off, BANKA_FLAT + off)
-def _B(off): return (0x8000 + off, BANKB_FLAT + off)
+def _A(off): return (0x8000 + off,)
+def _B(off): return (0x8000 + off,)
 
 ABI = [
-    ('BANKA_ORG',      0x8000, BANKA_FLAT, "bank A ('seg group', image L0) org: sideways window banked, laid flat at $5800 on the parasite"),
-    ('BANKB_ORG',      0x8000, BANKB_FLAT, "bank B ('walk group', image L2) org: laid flat at $9600 on the parasite (rides bank A's empty top 512 B; bank-C bits above $D600)"),
-    ('BANK_L0',        4,      None, 'legacy alias for BANK_SEG (two-bank re-cut 2026-08-13)'),
-    ('BANK_SEG',       4,      None, 'sideways bank A: seg headers+DIRs, verts, recips, VYCACHE, TABL0 — held for seg stages 1-4'),
-    ('BANK_C',         6,      None, 'sideways bank: clipper + rasteriser + HUD'),
+    ('BANKA_ORG',      0x8000, "bank A ('seg group', image L0) org: sideways window banked, laid flat at $5800 on the parasite"),
+    ('BANKB_ORG',      0x8000, "bank B ('walk group', image L2) org: laid flat at $9600 on the parasite (rides bank A's empty top 512 B; bank-C bits above $D600)"),
+    ('BANK_L0',        4, 'legacy alias for BANK_SEG (two-bank re-cut 2026-08-13)'),
+    ('BANK_SEG',       4, 'sideways bank A: seg headers+DIRs, verts, recips, VYCACHE, TABL0 — held for seg stages 1-4'),
+    ('BANK_C',         6, 'sideways bank: clipper + rasteriser + HUD'),
     # --- BBC Master textured port (docs/master_textured_spec.md) ---
-    ('CBITS_M',        0x5800, None, 'MASTER build: bank-C content (clipper code + data) laid LINEAR in main RAM from here: master = banked - $8000 + CBITS_M (main $5800-$7FFF is free: both screens are in shadow RAM)'),
-    ('MSCREEN0',       0x3000, None, 'MASTER build: shadow framebuffer 0 (256x160 4-colour, 10K; CPU reaches it only with ACCCON X set)'),
-    ('MSCREEN1',       0x5800, None, 'MASTER build: shadow framebuffer 1'),
-    ('MHZ_PATTERN',    0xC000, None, 'MASTER build: HAZEL entry -- draw the step-1 test pattern into both buffers (caller sets ACCCON D|X|Y)'),
-    ('MHZ_HUD',        0xC003, None, 'MASTER build: HAZEL entry -- draw the cycles HUD into the back buffer (A = buffer page hi; args at MHZ_ARGS; caller sets ACCCON D|X|Y)'),
-    ('MHZ_ARGS',       0xC006, None, 'MASTER build: HUD argument block in HAZEL: +0/+1 frame time in 1MHz ticks (lo/hi), +2 fields. Written by the driver with HAZEL paged in, so HAZEL code never reads main RAM above $3000 (X is set while it draws)'),
-    ('BANK_L2',        7,      None, 'legacy alias for BANK_WALK'),
-    ('BANK_WALK',      7,      None, 'sideways bank B: node SoA, L8/AE/VATOX, bbox, COLIDX, ANIM CFG — held for the whole BSP walk. FREED 2026-09-04: the extent cache psi planes $A900-$AEFF + RCACHE_STATE $AF00 (137 B), and the corner memo 6 planes $A600-$A8FF (768 B)'),
+    ('CBITS_M',        0x5800, 'MASTER build: bank-C content (clipper code + data) laid LINEAR in main RAM from here: master = banked - $8000 + CBITS_M (main $5800-$7FFF is free: both screens are in shadow RAM)'),
+    ('MSCREEN0',       0x3000, 'MASTER build: shadow framebuffer 0 (256x160 4-colour, 10K; CPU reaches it only with ACCCON X set)'),
+    ('MSCREEN1',       0x5800, 'MASTER build: shadow framebuffer 1'),
+    ('MHZ_PATTERN',    0xC000, 'MASTER build: HAZEL entry -- draw the step-1 test pattern into both buffers (caller sets ACCCON D|X|Y)'),
+    ('MHZ_HUD',        0xC003, 'MASTER build: HAZEL entry -- draw the cycles HUD into the back buffer (A = buffer page hi; args at MHZ_ARGS; caller sets ACCCON D|X|Y)'),
+    ('MHZ_ARGS',       0xC006, 'MASTER build: HUD argument block in HAZEL: +0/+1 frame time in 1MHz ticks (lo/hi), +2 fields. Written by the driver with HAZEL paged in, so HAZEL code never reads main RAM above $3000 (X is set while it draws)'),
+    ('BANK_L2',        7, 'legacy alias for BANK_WALK'),
+    ('BANK_WALK',      7, 'sideways bank B: node SoA, L8/AE/VATOX, bbox, COLIDX, ANIM CFG — held for the whole BSP walk. FREED 2026-09-04: the extent cache psi planes $A900-$AEFF + RCACHE_STATE $AF00 (137 B), and the corner memo 6 planes $A600-$A8FF (768 B)'),
     # Jump tables are GONE (2026-07-16, forbidden): engine entry points
     # (view_setup / render_frame / anim_tick / anim_init / clipper
     # entries) are resolved by SYMBOL from the linker map — beebasm via
     # the generated engine_syms.inc (build_walk_ssd.py), Python via
     # symmap. Only the cfg-anchored region head stays an ABI constant
     # (the driver clear-overlay assert needs it before the engine links).
-    ('MAIN_BASE',      0x1A00, None, 'engine CODE region head — $2500 -> $1A00 2026-08-26 (the LOW-RAM CONSOLIDATION: driver $0F00 | PMOVE $1340 | CODE $1A00 = ONE contiguous engine area to $57FF, freeing ~2.9K below the framebuffer). History: engine CODE region head (cfg-anchored; MAIN first). $2A00 -> $2600 2026-08-19: the -$400 window slide that took the pm_frame code out of bank B — strip $1600, window $1A00-$25FF, CODE $2600 with PMB1-4 appended identically in both builds. $2600 -> $2500 2026-08-23: PMOVE+PMH are 1,728 B and stopped at $24FF, leaving the PMOVE region a dead last page; CODE takes it (+256 B) and the window shrinks to $1A00-$24FF. Both cfgs move together — bottom-22K identity.'),
-    ('HUD_ENTRY',      0xA100, None, 'hud_draw (bank C window)'),
+    ('MAIN_BASE',      0x1A00, 'engine CODE region head — $2500 -> $1A00 2026-08-26 (the LOW-RAM CONSOLIDATION: driver $0F00 | PMOVE $1340 | CODE $1A00 = ONE contiguous engine area to $57FF, freeing ~2.9K below the framebuffer). History: engine CODE region head (cfg-anchored; MAIN first). $2A00 -> $2600 2026-08-19: the -$400 window slide that took the pm_frame code out of bank B — strip $1600, window $1A00-$25FF, CODE $2600 with PMB1-4 appended identically in both builds. $2600 -> $2500 2026-08-23: PMOVE+PMH are 1,728 B and stopped at $24FF, leaving the PMOVE region a dead last page; CODE takes it (+256 B) and the window shrinks to $1A00-$24FF. Both cfgs move together — bottom-22K identity.'),
+    ('HUD_ENTRY',      0xA100, 'hud_draw (bank C window)'),
     # (BCA_WS RETIRED 2026-07-26: the workspace block is gone — the box
     # val[] slots were engine-dead (the classify reads BBP planes; only
     # stale harness pokes touched them) and bca_ab moved to ZP. $1B40-
     # $1BFF is free in both builds and LOW now loads at $1C00.)
-    ('SQR_MIR_LO',     0x0200, None, 'quarter-square EVEN-MIRROR lo page: [k] = f(256-k) for k 1..255, [0] = f(256)&$FF. Lets a diff-side walk LDA (SQR_LO-M),X reach f(|o-M|) for ANY M 0..256 with a 2-byte SMC base and no abs staging (the t16p2 trick, 2026-09-01). Boot-generated by the sqr_fill mirror tail.'),
-    ('SQR_LO',         'SQR_MIR_LO+$100', None, 'qsqr lo bytes (f 0..255). The quad grew to [mir][lo,2lo][mir][hi,2hi] at $0200-$07FF when the low strip moved up: each mirror sits DIRECTLY below its plane, which is the whole point.'),
-    ('SQR2_LO',        'SQR_MIR_LO+$200', None, 'qsqr lo bytes (f 256..510) — must stay adjacent above SQR_LO (the base+mag walks index across the seam).'),
-    ('SQR_MIR_HI',     'SQR_MIR_LO+$300', None, 'even-mirror hi page: [k] = f(256-k)>>8, [0] = f(256)>>8 = 64.'),
-    ('SQR_HI',         'SQR_MIR_LO+$400', None, 'qsqr hi bytes (f 0..255)'),
-    ('SQR2_HI',        'SQR_MIR_LO+$500', None, 'qsqr hi bytes (f 256..510) — adjacent above SQR_HI.'),
-    ('DRV_ORG',        0x0F00, None, '$1A00 -> $0F00 2026-08-26 (low-RAM consolidation; the driver heads the ONE engine code area). walk/anim driver entry (!BOOT CALLs this). $1E00 -> $1A00 2026-08-19 (the -$400 window slide, bank-B code eviction): the exception window is $1A00-$25FF — banked walk_drv+PMOVE, flat VRCACHE_YLO/YHI + records + PM_SCRATCH + PMH (the CPM keys that used to live there went with the corner memo 2026-09-04).'),
-    ('DRV_VARS',       0x0D10, None, 'UNIFIED both builds 2026-08-26: the 16-byte hole in the WORK segment between PM_FXW and the scalars ($0B10-$0B1F) — one address, no flat/tube fork (the $1180 flat home died with the map). walk driver variable block (layout below). Banked base $1B80 -> $1BF0 2026-08-24: the block sat in the MIDDLE of walk_drv\'s ORG\'d span, capping the code at 384 B, and the OSBYTE font probe did not fit. The span is code | glue (DRV_GLUE) | vars | input+flip (DRV_CLR), so the vars now occupy the 16 free bytes below DRV_CLR and the code\'s real limit is DRV_GLUE -- which is what walk_drv now asserts, at both ends. FLAT is $1180 because $1B00-$1BFF there is the SENIOR page of VRCACHE_YLO: the seg pipeline cached vertices 384..396 straight over the old block -- vertex 387 landed on DV_PXL and the player X jumped mid-turn. Banked never saw it (VRCACHE lives in bank A), so only the TUBE, which runs the flat engine with a driver, was corrupted. $1180 verified clear by poisoning $1100-$11FF and running render+anim_tick+pm_frame.'),
-    ('DV_ANGIDX',      'DRV_VARS+0',  None, 'view angle index 0..63 (angle byte = idx*4)'),
-    ('DV_BACKHI',      'DRV_VARS+1',  None, 'hidden-buffer page hi ($58/$6C)'),
-    ('DV_PXF',         'DRV_VARS+2',  None, 'player x 8.8 prescaled, 24-bit: frac'),
-    ('DV_PXL',         'DRV_VARS+3',  None, '... int lo'),
-    ('DV_PXH',         'DRV_VARS+4',  None, '... int hi'),
-    ('DV_PYF',         'DRV_VARS+5',  None, 'player y frac'),
-    ('DV_PYL',         'DRV_VARS+6',  None, '... int lo'),
-    ('DV_PYH',         'DRV_VARS+7',  None, '... int hi'),
-    ('DV_JIDX',        'DRV_VARS+8',  None, 'vsync journal index'),
-    ('DV_HUD_EN',      'DRV_VARS+9',  None, 'debug HUD on/off (H toggles)'),
-    ('DV_HUD_PREV',    'DRV_VARS+10', None, 'H-key debounce state'),
-    ('DV_SPACE_PREV',  'DRV_VARS+11', None, 'SPACE edge-detect state (walk_drv). Was a PRIVATE walk_drv equate until 2026-08-24, when DV_HUD_FONT was added at the same offset and silently ate it AND mv_dir -- SPACE stopped retriggering and the move direction was corrupted. The whole block is described HERE now; private copies of these offsets are what hud.s already warns about.'),
-    ('DV_MV_DIR',      'DRV_VARS+12', None, 'effective move direction this attempt (walk_drv). Also formerly private -- see DV_SPACE_PREV.'),
-    ('HUD_FONT_B',     0xC000, None, 'MOS font base on OS 0.x/1.x (Model B/B+): the glyphs really are in the MOS ROM at $C000, no paging needed. Picked by OSBYTE 129 at driver entry -- the address is a per-MOS accident, see HUD_FONT_MASTER.'),
-    ('HUD_FONT_MASTER',0x8900, None, "MOS font base on MOS 3.20 (Master 128) and MOS 5 (Compact): the CURRENT character definitions in ANDY, $8900-$8FFF, paged over $8000-$8FFF by ROMSEL bit 7 ($FE30). Chars 32-255 x 8 bytes = $700, which fills $8900-$8FFF exactly. The Master's font is NOT in the MOS ROM: $F900 (this constant until 2026-08-29) is MOS CODE, which is what the HUD was drawing as glyphs. The ROM defaults live at $B900 in ROM 15, unusable here — paging bank 15 would swap out the HUD code itself, which runs from bank C at $A400. Everything hud_draw touches is at $A400+ or in main RAM, so ANDY can stay paged for the whole draw."),
-    ('DV_HUD_FONT',    'DRV_VARS+13', None, 'MOS font base found by hud_find (TWO bytes, +13/+14; 0 = not searched, $FFxx = searched and absent). The glyphs are NOT at a fixed address: OS 1.2 $C000, MOS 3.20 $F900.'),
-    ('DV_FIELDS',      'DRV_VARS+15', None, 'PAL fields consumed by the last frame, for the debug HUD (F=). Written by walk_drv\'s mv_frame from the field-clock search result -- the same count it hands pm_frame, so the readout is the number the movement actually used, not a second estimate of it. The tube build carries the equivalent in its HUD packet.'),
-    ('DRV_GLUE',       0x10A0, None, 'anim/HUD glue pocket'),
-    ('DRV_CLR',        0x1100, None, 'input block + flip scheduler; the unrolled framebuffer clears moved to BANK C 2026-08-16, and the whole driver slid $2200 -> $2100 with DRV_ORG 2026-08-17 (2026-08-14: the sincos overlay moved to bank A $BA00 with STEPTAB/USEVEC; the driver packs below the engine PMOVE region)'),
-    ('PM_FXW',         0x0D00, None, 'world-fraction bytes of the CANDIDATE/committed position, x at +0 / y at +2 (4-byte block $096B-$096E, freed by the u8 BSP child staging retirement). Staged by pmf_cand = (candidate 8.8-prescaled byte0) << 3; consumed by the EXACT node point-on-side (axis ties + node_band) and nowhere else. Harnesses that poke the $90-$93 raws directly MUST poke these too (zero for integer positions).'),
-    ('VRCACHE_STATE',      0x0900, None, 'THE BITMAP PAGE: VXCACHE_VALID+VDONE+VRCACHE_VALID (boot zeroes the whole page; the 59 B RCACHE_COMPUTED bitmap went with the extent cache 2026-09-04)'),
-    ('VRCACHE_STATE_LEN',  0x100,  None, 'bytes to zero at boot (the whole bitmap page)'),
-    ('VRCACHE_ENABLE',     0x0D5D, None, 'translation vertex cache switch (scalars block $05xx -> $1Dxx sqr swap -> $19xx window slide -> $19DB->$19DD 2026-08-22 to clear the span pool 15th/16th planes; vrcache_prev_ab follows it)'),
+    ('SQR_MIR_LO',     0x0200, 'quarter-square EVEN-MIRROR lo page: [k] = f(256-k) for k 1..255, [0] = f(256)&$FF. Lets a diff-side walk LDA (SQR_LO-M),X reach f(|o-M|) for ANY M 0..256 with a 2-byte SMC base and no abs staging (the t16p2 trick, 2026-09-01). Boot-generated by the sqr_fill mirror tail.'),
+    ('SQR_LO',         'SQR_MIR_LO+$100', 'qsqr lo bytes (f 0..255). The quad grew to [mir][lo,2lo][mir][hi,2hi] at $0200-$07FF when the low strip moved up: each mirror sits DIRECTLY below its plane, which is the whole point.'),
+    ('SQR2_LO',        'SQR_MIR_LO+$200', 'qsqr lo bytes (f 256..510) — must stay adjacent above SQR_LO (the base+mag walks index across the seam).'),
+    ('SQR_MIR_HI',     'SQR_MIR_LO+$300', 'even-mirror hi page: [k] = f(256-k)>>8, [0] = f(256)>>8 = 64.'),
+    ('SQR_HI',         'SQR_MIR_LO+$400', 'qsqr hi bytes (f 0..255)'),
+    ('SQR2_HI',        'SQR_MIR_LO+$500', 'qsqr hi bytes (f 256..510) — adjacent above SQR_HI.'),
+    ('DRV_ORG',        0x0F00, '$1A00 -> $0F00 2026-08-26 (low-RAM consolidation; the driver heads the ONE engine code area). walk/anim driver entry (!BOOT CALLs this). $1E00 -> $1A00 2026-08-19 (the -$400 window slide, bank-B code eviction): the exception window is $1A00-$25FF — banked walk_drv+PMOVE, flat VRCACHE_YLO/YHI + records + PM_SCRATCH + PMH (the CPM keys that used to live there went with the corner memo 2026-09-04).'),
+    ('DRV_VARS',       0x0D10, 'UNIFIED both builds 2026-08-26: the 16-byte hole in the WORK segment between PM_FXW and the scalars ($0B10-$0B1F) — one address, no flat/tube fork (the $1180 flat home died with the map). walk driver variable block (layout below). Banked base $1B80 -> $1BF0 2026-08-24: the block sat in the MIDDLE of walk_drv\'s ORG\'d span, capping the code at 384 B, and the OSBYTE font probe did not fit. The span is code | glue (DRV_GLUE) | vars | input+flip (DRV_CLR), so the vars now occupy the 16 free bytes below DRV_CLR and the code\'s real limit is DRV_GLUE -- which is what walk_drv now asserts, at both ends. FLAT is $1180 because $1B00-$1BFF there is the SENIOR page of VRCACHE_YLO: the seg pipeline cached vertices 384..396 straight over the old block -- vertex 387 landed on DV_PXL and the player X jumped mid-turn. Banked never saw it (VRCACHE lives in bank A), so only the TUBE, which runs the flat engine with a driver, was corrupted. $1180 verified clear by poisoning $1100-$11FF and running render+anim_tick+pm_frame.'),
+    ('DV_ANGIDX',      'DRV_VARS+0', 'view angle index 0..63 (angle byte = idx*4)'),
+    ('DV_BACKHI',      'DRV_VARS+1', 'hidden-buffer page hi ($58/$6C)'),
+    ('DV_PXF',         'DRV_VARS+2', 'player x 8.8 prescaled, 24-bit: frac'),
+    ('DV_PXL',         'DRV_VARS+3', '... int lo'),
+    ('DV_PXH',         'DRV_VARS+4', '... int hi'),
+    ('DV_PYF',         'DRV_VARS+5', 'player y frac'),
+    ('DV_PYL',         'DRV_VARS+6', '... int lo'),
+    ('DV_PYH',         'DRV_VARS+7', '... int hi'),
+    ('DV_JIDX',        'DRV_VARS+8', 'vsync journal index'),
+    ('DV_HUD_EN',      'DRV_VARS+9', 'debug HUD on/off (H toggles)'),
+    ('DV_HUD_PREV',    'DRV_VARS+10', 'H-key debounce state'),
+    ('DV_SPACE_PREV',  'DRV_VARS+11', 'SPACE edge-detect state (walk_drv). Was a PRIVATE walk_drv equate until 2026-08-24, when DV_HUD_FONT was added at the same offset and silently ate it AND mv_dir -- SPACE stopped retriggering and the move direction was corrupted. The whole block is described HERE now; private copies of these offsets are what hud.s already warns about.'),
+    ('DV_MV_DIR',      'DRV_VARS+12', 'effective move direction this attempt (walk_drv). Also formerly private -- see DV_SPACE_PREV.'),
+    ('HUD_FONT_B',     0xC000, 'MOS font base on OS 0.x/1.x (Model B/B+): the glyphs really are in the MOS ROM at $C000, no paging needed. Picked by OSBYTE 129 at driver entry -- the address is a per-MOS accident, see HUD_FONT_MASTER.'),
+    ('HUD_FONT_MASTER',0x8900, "MOS font base on MOS 3.20 (Master 128) and MOS 5 (Compact): the CURRENT character definitions in ANDY, $8900-$8FFF, paged over $8000-$8FFF by ROMSEL bit 7 ($FE30). Chars 32-255 x 8 bytes = $700, which fills $8900-$8FFF exactly. The Master's font is NOT in the MOS ROM: $F900 (this constant until 2026-08-29) is MOS CODE, which is what the HUD was drawing as glyphs. The ROM defaults live at $B900 in ROM 15, unusable here — paging bank 15 would swap out the HUD code itself, which runs from bank C at $A400. Everything hud_draw touches is at $A400+ or in main RAM, so ANDY can stay paged for the whole draw."),
+    ('DV_HUD_FONT',    'DRV_VARS+13', 'MOS font base found by hud_find (TWO bytes, +13/+14; 0 = not searched, $FFxx = searched and absent). The glyphs are NOT at a fixed address: OS 1.2 $C000, MOS 3.20 $F900.'),
+    ('DV_FIELDS',      'DRV_VARS+15', 'PAL fields consumed by the last frame, for the debug HUD (F=). Written by walk_drv\'s mv_frame from the field-clock search result -- the same count it hands pm_frame, so the readout is the number the movement actually used, not a second estimate of it. The tube build carries the equivalent in its HUD packet.'),
+    ('DRV_GLUE',       0x10A0, 'anim/HUD glue pocket'),
+    ('DRV_CLR',        0x1100, 'input block + flip scheduler; the unrolled framebuffer clears moved to BANK C 2026-08-16, and the whole driver slid $2200 -> $2100 with DRV_ORG 2026-08-17 (2026-08-14: the sincos overlay moved to bank A $BA00 with STEPTAB/USEVEC; the driver packs below the engine PMOVE region)'),
+    ('PM_FXW',         0x0D00, 'world-fraction bytes of the CANDIDATE/committed position, x at +0 / y at +2 (4-byte block $096B-$096E, freed by the u8 BSP child staging retirement). Staged by pmf_cand = (candidate 8.8-prescaled byte0) << 3; consumed by the EXACT node point-on-side (axis ties + node_band) and nowhere else. Harnesses that poke the $90-$93 raws directly MUST poke these too (zero for integer positions).'),
+    ('VRCACHE_STATE',      0x0900, 'THE BITMAP PAGE: VXCACHE_VALID+VDONE+VRCACHE_VALID (boot zeroes the whole page; the 59 B RCACHE_COMPUTED bitmap went with the extent cache 2026-09-04)'),
+    ('VRCACHE_STATE_LEN',  0x100, 'bytes to zero at boot (the whole bitmap page)'),
+    ('VRCACHE_ENABLE',     0x0D5D, 'translation vertex cache switch (scalars block $05xx -> $1Dxx sqr swap -> $19xx window slide -> $19DB->$19DD 2026-08-22 to clear the span pool 15th/16th planes; vrcache_prev_ab follows it)'),
     # The dy key planes split out flat-side 2026-08-17 for the same reason
     # the psi planes did: CODE's head moved down again, to $2A00, and flat
     # has to clear the page. They land on the page RECIP_S vacated when it
@@ -114,15 +114,15 @@ ABI = [
     ('MV_SS_INFO',     *_B(0x31CA), 'parallel info bytes, classic SS_INFO format (mover idx, b7 = ceiling)'),
     ('MV_MINPASS',     *_B(0x31BC), 'per-mover min passable door pos (fh + 56, prescaled)'),
     ('COLPORT_BASE',   *_B(0x3600), 'P_CheckPosition aggregation ports: 42 x 12 (x1,y1,dx,dy s16 + ob_vz + ot_ps + mover + wall-angle). BANK B since 2026-09-01 (every reader runs under WALK by the pm_frame contract; runtime read-only, mover heights come via the mover id): banked $B600-$B7F7 (the $B700 window is bank-B free; DIR planes are bank A), flat $F400 in the dead SCREEN pages above COPROT (flat never renders; the copro draws via the host emitters) and below the tube client OS at $F800. The $0D00 pages joined the WORK arena; LOW_BASE is DRV_ORG now.'),
-    ('LOW_BASE',       0x0F00, None, 'first shipped byte of the LOW disc image / tube CODE file / bare-boot copy (the strip head = DRV_ORG since COLPORT moved to bank B 2026-09-01)'),
-    ('SPAN_POOL',      0x0A00, None, 'clipper span pool block head (13 x $20 fields; arith.s POOL derives from this)'),
-    ('PMOVE_BASE',     0x1340, None, 'PMOVE region head (banked cfg anchor; build_anim_ssd asserts driver_end <= this)'),
-    ('COL_N_SOLID',    204,    None,   'collision indices >= this are ports (colmap asserts the count; 199 -> 204 2026-08-29: the phase-existential flood adopted s62 + the two-pass colinear merge)'),
-    ('PM_TURNREM',     0x0D04, None,   'sub-step rotation fraction, Q8 — carries the frame-rate-compensated turn across frames. Moved into the WORK segment 2026-08-26; the PM_MOMX/Y tombstone slots (and the pm_fuzz stay-zero assert) DIED with the old map.'),
+    ('LOW_BASE',       0x0F00, 'first shipped byte of the LOW disc image / tube CODE file / bare-boot copy (the strip head = DRV_ORG since COLPORT moved to bank B 2026-09-01)'),
+    ('SPAN_POOL',      0x0A00, 'clipper span pool block head (13 x $20 fields; arith.s POOL derives from this)'),
+    ('PMOVE_BASE',     0x1340, 'PMOVE region head (banked cfg anchor; build_anim_ssd asserts driver_end <= this)'),
+    ('COL_N_SOLID',    204,   'collision indices >= this are ports (colmap asserts the count; 199 -> 204 2026-08-29: the phase-existential flood adopted s62 + the two-pass colinear merge)'),
+    ('PM_TURNREM',     0x0D04,   'sub-step rotation fraction, Q8 — carries the frame-rate-compensated turn across frames. Moved into the WORK segment 2026-08-26; the PM_MOMX/Y tombstone slots (and the pm_fuzz stay-zero assert) DIED with the old map.'),
     ('WALKTAB_BASE',   *_A(0x32E4), 'USETAB + 1 + n_use*11: the walk-over record section (n_walk byte, then 11-byte records — 9 + 2 biased hi-byte y bounds, SAME stride as use records). colmap asserts n_use == 9'),
     ('USETAB_BASE',    *_A(0x3280), 'use + walkover line tables (u8 n, n x 9: x1,y1,dx,dy s16 + action); banked home is BANK A since the slide arc — pmove_use pages SEG for the list reads'),
-    ('SCREEN0',        0x5800, None, 'framebuffer 0 (banked only: the flat/tube build never rasterises — clearers/plotters compiled out)'),
-    ('SCREEN1',        0x6C00, None, 'framebuffer 1 (see SCREEN0)'),
+    ('SCREEN0',        0x5800, 'framebuffer 0 (banked only: the flat/tube build never rasterises — clearers/plotters compiled out)'),
+    ('SCREEN1',        0x6C00, 'framebuffer 1 (see SCREEN0)'),
 ]
 
 
@@ -138,16 +138,15 @@ HDR = ('GENERATED by tools/gen_abi.py — DO NOT EDIT. One table, three\n'
 with open('src/abi.inc', 'w') as f:
     f.write(f'; {HDR.replace(chr(10), chr(10)+"; ")}\n')
     f.write('.ifndef ABI_INC_GUARD\nABI_INC_GUARD = 1\n')
-    # MASTER (2026-10, the textured Master port): a BANKED build for the
-    # BBC Master whose bank-C content is laid linearly in main RAM at
-    # CBITS_M and which has no rasteriser, plotters, clears or bank-C HUD
-    # (they become emit stubs). RASTERHW names the Model B case: banked
-    # AND real hardware drawing. Undefined MASTER means 0 (boot stubs).
+    # The Master build: a banked engine whose bank-C content is laid
+    # linearly in main RAM at CBITS_M, with no rasteriser, plotters,
+    # clears or bank-C HUD (they are emit stubs). Undefined MASTER means 0
+    # (boot stubs); RASTERHW (banked AND hardware drawing) is always 0.
     f.write('.ifndef MASTER\nMASTER = 0\n.endif\n'
             '.ifdef BANKED\nRASTERHW = ::BANKED .and (.not ::MASTER)\n.endif\n')
-    for name, bank, flat, comment in ABI:
+    for name, bank, comment in ABI:
         if name == 'SQR_MIR_LO':
-            # the MASTER build's quad lives in HAZEL, linker-placed (the
+            # the engine link's quad lives in HAZEL, linker-placed (the
             # MSQR segment, master/mfill.s), so page 2 keeps the MOS IRQ1V
             # for the panel raster split
             # (ENGINE: defined by asmbuild for the engine link only -- the
@@ -155,39 +154,24 @@ with open('src/abi.inc', 'w') as f:
             f.write(f'.if ::MASTER .and .defined(::ENGINE)\n.global sqr_quad_m\n'
                     f'{name} = sqr_quad_m\n.else\n'
                     f'{name} = {fmt_val(bank, "$")}'.ljust(40) + f'; {comment}\n.endif\n')
-        elif flat is None or flat == bank:
-            f.write(f'{name} = {fmt_val(bank, "$")}'.ljust(40) + f'; {comment}\n')
         else:
-            f.write(f'.if ::BANKED\n{name} = {fmt_val(bank, "$")}'.ljust(40)
-                    + f'; {comment}\n.else\n{name} = {fmt_val(flat, "$")}\n.endif\n')
-    # CBANK_ORG: where bank-C content sits in the CPU map -- the $8000
-    # window on the Model B, laid linear in main RAM on the Master. The
-    # bank-C data homes (layout.inc, bsp/header.s, clip/fusedw.s) are
-    # CBANK_ORG + offset, so both builds share one set of offsets.
-    f.write('.ifdef BANKED\n.if ::MASTER\nCBANK_ORG = CBITS_M\n.else\nCBANK_ORG = $8000\n.endif\n.endif\n')
+            f.write(f'{name} = {fmt_val(bank, "$")}'.ljust(40) + f'; {comment}\n')
+    # CBANK_ORG: where bank-C content sits in the CPU map -- laid linear in
+    # main RAM. The bank-C data homes (layout.inc, bsp/header.s,
+    # clip/fusedw.s) are CBANK_ORG + offset.
+    f.write('.ifdef BANKED\nCBANK_ORG = CBITS_M\n.endif\n')
     f.write('.endif\n')
 
 with open('abi.py', 'w') as f:
     f.write(f'# {HDR.replace(chr(10), chr(10)+"# ")}\n')
-    env = {}        # banked values
-    envf = {}       # flat values -- so a symbol DERIVED from a per-build
-                    # base (DV_PXL = DRV_VARS+3) gets its own _FLAT, instead
-                    # of silently inheriting the banked base. That gap put
-                    # the tube driver at $1B83 and the flat engine at $1183
-                    # after DRV_VARS forked.
-    for name, bank, flat, comment in ABI:
+    env = {}
+    for name, bank, comment in ABI:
         v = bank
         if isinstance(v, str):
             v = eval(v.replace('$', '0x'), {}, env)
         env[name] = v
-        vf = flat if flat is not None else bank
-        if isinstance(vf, str):
-            vf = eval(vf.replace('$', '0x'), {}, envf)
-        envf[name] = vf
         f.write(f'{name} = 0x{v:04X}  # {comment}\n' if v > 9
                 else f'{name} = {v}  # {comment}\n')
-        if vf != v:
-            f.write(f'{name}_FLAT = 0x{vf:04X}\n')
 
 # --- DRV_VARS block occupancy check -------------------------------------
 # walk_drv ORGs its glue at DRV_VARS+$10, so the block is +0..+15, and two
@@ -195,7 +179,7 @@ with open('abi.py', 'w') as f:
 # caught DV_HUD_FONT landing on space_prev/mv_dir.
 _DV_SIZES = {'DV_HUD_FONT': 2}          # everything else is one byte
 _occ = {}
-for name, bank, flat, comment in ABI:
+for name, bank, comment in ABI:
     if not (isinstance(bank, str) and bank.startswith('DRV_VARS+')):
         continue
     off = int(bank.split('+')[1])

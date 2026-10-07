@@ -7,11 +7,10 @@ untouched. Prints MASTERGUN: PASS / FAIL."""
 import os, random, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-os.environ['DOOM_CPU'] = '65c02'
 import pygame
 pygame.init()
 import abi
-import doom_wireframe as dw
+import e1m1 as dw
 import master_gun as G
 from banked_bsp import MasterBspRender
 from symmap import sym
@@ -29,7 +28,7 @@ for base in (abi.MSCREEN0, abi.MSCREEN1):
     bm.shadow_store(base, before)
     bm[abi.DV_BACKHI] = base >> 8
     bm.select(abi.BANK_C)
-    cyc = R.sc._run(sym('gun_draw', banked=2))
+    cyc = R.sc._run(sym('gun_draw'))
     got = bm.shadow_bytes(base, base + 0x2800)
     want = G.apply(before)
     bad = [i for i in range(0x2800) if got[i] != want[i]]

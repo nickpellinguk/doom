@@ -56,18 +56,12 @@
 ; whole walker state (3-line frames). The record page is free BY
 ; CONSTRUCTION — this campaign emptied it — and it is in the clipper's
 ; own bank context (bank C banked; the flat exception window flat).
-.if ::BANKED
 FW_BASE = CBANK_ORG + $1880                      ; bank C tail (2026-08-25 re-cut:
                                         ; code to $97FF, VEXPL_CONT $9800-
                                         ; $987F, cold state here, SINCOS
                                         ; $9900 unmoved). Ex-records pages;
                                         ; the BANKC region boundary keeps
                                         ; code growth a LINK ERROR.
-.else
-FW_BASE = $EE80                         ; parasite: LINEAR ($9880 banked -
-                                        ; $8000 + $D600); runtime state,
-                                        ; never shipped
-.endif
 ; COLD walker bytes only — the hot set was promoted to zero page
 ; (src/zp.inc FUSED block, 2026-08-25 grind; the freed TFS bytes).
 FW_TOUCH   = FW_BASE+$00                ; any flat or run this seg/object

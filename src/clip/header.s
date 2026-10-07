@@ -1,12 +1,9 @@
 ; --- CPU target: every builder MUST pass -D C02=0 (plain 6502) or -D C02=1
 ;     (enable 65C02 opcodes). STZ/INC A/PHX/etc are gated on C02 throughout. ---
-.if ::C02
 .setcpu "65C02"
-.endif
 ; ZERO addr: zero a byte. 65C02 = STZ (A preserved); 6502 = LDA #0:STA (A
 ; clobbered) — only use where A is dead afterwards.
 .macro ZERO a1, a2, a3, a4, a5, a6
-.if ::C02
 STZ a1
 .ifnblank a2
 STZ a2
@@ -23,36 +20,12 @@ STZ a5
 .ifnblank a6
 STZ a6
 .endif
-.else
-   LDA #0
-   STA a1
-.ifnblank a2
-   STA a2
-.endif
-.ifnblank a3
-   STA a3
-.endif
-.ifnblank a4
-   STA a4
-.endif
-.ifnblank a5
-   STA a5
-.endif
-.ifnblank a6
-   STA a6
-.endif
-.endif
 .endmacro
 
 ; BUMP: A = A + 1. 65C02 = INC A (no carry); 6502 = CLC : ADC #1. Use only
 ; where the carry/overflow OUT is dead (negate, single-byte increments).
 .macro BUMP
-.if ::C02
 ina
-.else
-   CLC
-   ADC #1
-.endif
 .endmacro
 
 ; BUMP_CC: A = A + 1 at a site where C is PROVEN CLEAR (document the

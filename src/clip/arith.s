@@ -482,24 +482,8 @@ REC_VERDICT_BELOW = 2
 ; ZP $70 = screen start hi byte, set per frame by the caller (the walk
 ; driver stores the back-buffer page; the Python harness sets it in
 ; flat tests).
-.if ::RASTERHW
-.import linedraw4                       ; src/raster.s -- IN THIS LINK since
-RASTER_ENTRY = linedraw4                ; 2026-09-05.  Was $A200 baked here
-                                        ; and kept equal to wherever
-                                        ; banked_bsp spliced the blob; the
-                                        ; linker owns the address now, so the
-                                        ; clipper calls the rasteriser BY
-                                        ; NAME and neither can drift.
-.elseif .not ::MASTER
-RASTER_ENTRY = $F610                    ; parasite: the resident tube glue's
-                                        ; DIAG emitter slot (tubedrv SKIPTO
-                                        ; &F610) -- the engine tail-calls the
-                                        ; emitter DIRECTLY, no patching
-.endif
-.if ::MASTER
 ; MASTER: the diagonal-line emit stub (see plot_h in clip/plot_axis.s).
 RASTER_ENTRY = raster_stub_m
-.endif
 
 ; === Zero-page workspace ===
 ; src/zp.inc is the single source of truth (one registry shared by the

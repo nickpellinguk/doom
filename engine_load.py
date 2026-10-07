@@ -1,10 +1,7 @@
-"""Shared loaders for engine binaries + generated tables into a py65 memory.
+"""Shared loader for the Master engine binaries into a py65 memory.
 
-One definition of "where things go" — load addresses are parsed from the
-SAME ld65 config the linker places code with (they cannot drift), symbol
-addresses come from the linked symbol map, table contents from angle_bbox.
-Replaces the per-test cloned load blocks that drifted (stale comments
-disagreed about TA_HI/VATOX addresses).
+One definition of "where things go": load addresses are parsed from the SAME
+ld65 config the linker places code with (they cannot drift).
 """
 import os
 import re
@@ -15,13 +12,12 @@ from symmap import sym
 _ROOT = asmbuild._ROOT
 
 
-def _regions(banked=0):
+def _regions():
     """Parse MEMORY areas from the engine ld65 config: [(start, file)]."""
-    cfg = open(os.path.join(_ROOT, asmbuild._CFGS[banked])).read()
+    cfg = open(os.path.join(_ROOT, asmbuild.CFG)).read()
     # BRACE-MATCHED, not cfg.index('SEGMENTS') (2026-09-05): the word
     # SEGMENTS inside a MEMORY comment truncated the block and silently
-    # dropped every area declared after it -- the engine simply was not
-    # loaded, and every gate died on a BRK at $0000.
+    # dropped every area declared after it.
     i = cfg.index('MEMORY')
     j = cfg.index('{', i) + 1
     depth = 1
@@ -35,13 +31,12 @@ def _regions(banked=0):
     return out
 
 
-def load_engine(mem, banked=0, c02=None):
-    """Build the whole engine and load every output region into py65 memory.
-    Regions sharing an output file concatenate in declaration order (the
-    umul8 pin's zero-filled jump-table gap is part of the file)."""
-    asmbuild.build('engine', banked=banked, c02=c02)
+def load_engine(mem):
+    """Build the engine and load every output region into py65 memory.
+    Regions sharing an output file concatenate in declaration order."""
+    asmbuild.build('engine')
     loaded = set()
-    for start, fname in _regions(banked):
+    for start, fname in _regions():
         if fname in loaded:
             continue                     # later areas append to the same file
         loaded.add(fname)
@@ -49,45 +44,18 @@ def load_engine(mem, banked=0, c02=None):
         mem[start:start + len(code)] = code
 
 
-def load_angle_module(mem, c02=None):
-    """Build + load the flat angle module (slope_div) and its tables:
-    code @ ang_head, F tables @ L8_TAB/AE_LO/AE_HI, viewangletox
-    (centre-column, phi+512 index, u8-clamped) @ VATOX."""
+def angle_table_contract():
+    """The angle tables' seed-time contract (tools/atanexp_cert.py is the one
+    source of the option-F tables; the engine bakes these facts)."""
     import angle_bbox as A
-    # Build the ENGINE link (not the slope_div-only link): the ZC segment
-    # (bbox corner zone arms, 2026-07-15) lives in the CODE region, and a
-    # standalone slope_div link would place it at a different address than
-    # the JSRs inside the ang bin expect. One link, one truth: load the
-    # engine's CODE bin and its ang bin.
-    asmbuild.build('engine', banked=0, c02=c02)
-    # one loader path: every flat region from the cfg (2026-07-20 — the
-    # segment consolidation left CODE/HIGH/HIGHX; addresses can't drift)
-    for start, fname in _regions(0):
-        code = open(os.path.join(_ROOT, fname), 'rb').read()
-        mem[start:start + len(code)] = code
-    l8, ae_lo, ae_hi = sym('L8_TAB'), sym('AE_LO'), sym('AE_HI')
-    vatox = sym('VATOX')
-    # option F tables (tools/atanexp_cert.py is the one source; the
-    # mirror loads the same json). Seed-time contract asserts:
     assert A.EPSILON_F == 12, 'EPSILON drifted from the baked bca_tail bias (EPSILON_F equate, ang/header_div.s)'
     assert A._TA0 == 0, 'TA0 drifted from the baked num==0 arm'
     assert A._ATANEXP[0] == 512, \
         'AE[0] must be 512: lf_ns ties ride k=0 with no fallback compare'
     assert max(A._ATANEXP) <= 512, \
         'ta > 512 would overflow comb\'s unmasked add arm (hi > $0F)'
-    for i in range(256):
-        mem[l8 + i] = A._L8[i] & 0xFF
-        mem[ae_lo + i] = A._ATANEXP[i] & 0xFF
-        mem[ae_hi + i] = (A._ATANEXP[i] >> 8) & 0xFF
-    for k in range(1025):
-        c = (A._vatox_lo[k + 512] + A._vatox_hi[k + 512]) // 2
-        mem[vatox + k] = max(0, min(255, c))
-    # bca_tail bakes the table ends as constants (clamp/==1024 arms skip
-    # the lookup): ilo(r=0) = VATOX[0]-1 -> 0, ihi(r=1024) = VATOX[1024]+1
-    # -> 255. Seed must match the baked immediates.
-    assert mem[vatox] == 0 and mem[vatox + 1024] == 255, \
+    # bca_tail bakes the VATOX ends as constants (clamp/==1024 arms skip
+    # the lookup): VATOX[0] = 0, VATOX[1024] = 255
+    v = lambda k: max(0, min(255, (A._vatox_lo[k + 512] + A._vatox_hi[k + 512]) // 2))
+    assert v(0) == 0 and v(1024) == 255, \
         'VATOX ends drifted from bca_tail baked constants (0/255)'
-    # Corner-phi memo validity: the KDXH plane ships $80-filled ($80 is an
-    # impossible dx hi byte, |corner - px| < 2048) — the probe's KDXH
-    # compare doubles as the never-written test; the EP plane is gone.
-    import abi

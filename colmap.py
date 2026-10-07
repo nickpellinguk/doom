@@ -25,7 +25,7 @@ one statement of the rules:
 Movers idle at their rest pose until triggered (the anim CFG wait
 sentinel 0 = hold forever; see anim_sectors).
 
-Table homes (bank WALK banked / flat):
+Table homes (bank WALK):
   COLSEG   $B8C0 / $7600   n*8: x1,y1,dx,dy (center-relative raw s16 LE)
   COLIDX   $B4A4 / +blob   36 * (u16 list offset, u8 count)
   COLLIST  follows COLIDX  u8 seg indices per 128-unit column
@@ -61,7 +61,7 @@ def build():
     global _built
     if _built is not None:
         return _built
-    import doom_wireframe as dw
+    import e1m1 as dw
     import collections
     CX, CY = dw.MAP_CENTER_X, dw.MAP_CENTER_Y
     RAWX_MAX = RAWX_MIN + 36 * 128
@@ -480,19 +480,6 @@ USE_TRACE = 60            # SPACE trace length (raw units; DOOM uses 64)
 #  moved into.)
 
 
-# Flat/tube home for the SPACE use-trace vectors.  Banked builds get them
-# from banked_bsp (ROM_DRV_USEVEC_C, bank A since the 2026-09-02 eviction);
-# the parasite has no banks, so they ship in the DATA file's CBITS run.
-# BY THE MAP, not a literal: the hardcoded $F680 survived the 512 B
-# parasite slide and colmap kept installing the vectors at the OLD home --
-# which the resident tube glue then occupied, so the copro traced SPACE
-# along emitter code bytes (tube_doors 2026-09-02: movers 2/4/5 dead).
-def _usevec_flat():
-    import symmap as _sm
-    return _sm.sym('ROM_DRV_USEVEC_C', banked=0, c02=1)
-USEVEC_FLAT = _usevec_flat()            # parasite CBITS data run ($F480)
-
-
 def use_vectors():
     """64 x 4: (ux, uy) s16 raw-unit SPACE trace vectors."""
     import math, struct
@@ -504,7 +491,7 @@ def use_vectors():
     return bytes(out)
 
 
-def blobs(flat=True):
+def blobs():
     """{address: bytes} for the build's homes.
     COLSEG then the COLIDX/COLLIST blob sit in the build's collision
     pocket; SS planes, MV_MINPASS and USETAB in the high-table area.
@@ -523,48 +510,21 @@ def blobs(flat=True):
         import abi as _abi3
         if len(m['colsegs']) > _abi3.COL_N_SOLID:
             del m['colsegs'][_abi3.COL_N_SOLID:]
-    # flat homes = the TUBE parasite map ($7500-$82FF is the replaced
-    # raster blob there; the flat py65 harness never installs these —
-    # only drivers move the player). Banked homes = bank WALK free
-    # windows (audited 2026-08-14), same bank as the node SoA so the
-    # whole movement test runs under one paging context.
+    # Homes = bank WALK free windows (audited 2026-08-14), same bank as
+    # the node SoA so the whole movement test runs under one paging
+    # context.
     # COLSEG stride is 9 since the P_SlideMove arc (2026-08-14): +1 baked
     # wall-angle byte (direction quantized to the 64-angle space) for the
     # slide projection. Banked: USETAB lives in BANK A ($BE00 — pmove_use
     # pages SEG for its list) so the widened COLSEG fits bank B.
     import abi as _abi
-    if flat:
-        # THE PARASITE MAP (2026-09-02): flat homes are the banked homes
-        # laid flat — every value comes from abi.py's *_FLAT twins (the
-        # gen_abi formulas), so the two builds can never drift again.
-        A = dict(idx=_abi.COLIDX_BASE_FLAT, colseg=_abi.COLSEG_BASE_FLAT,
-                 ss_vz=_abi.SS_VZ_BASE_FLAT,
-                 minpass=_abi.MV_MINPASS_FLAT, mv_ss_id=_abi.MV_SS_ID_FLAT,
-                 mv_ss_info=_abi.MV_SS_INFO_FLAT,
-                 usetab=_abi.USETAB_BASE_FLAT, usevec=USEVEC_FLAT,
-                 cymin=_abi.CYMIN_BASE_FLAT, cymax=_abi.CYMAX_BASE_FLAT,
-                 cyport=_abi.CYPORT_BASE_FLAT, sil=_abi.SIL_BASE_FLAT,
-                 colport=_abi.COLPORT_BASE_FLAT)
-    else:
-        # idx $B4A4 -> $AB00 -> $AF8A (both 2026-08-15): the first home
-        # overlapped the $B400-$B4FF SSMASK staging page (the 256B mask
-        # copy-down dragged COLIDX bytes into ANIM_SSMASK 164-220); the
-        # $AB00 fix landed ON THE RCACHE PSI PLANES ($A900-$AEFF,
-        # bca.s RC_P1L_0..RC_PH_1 — runtime-written; only harmless in
-        # tests because neither the fuzz nor the movement path renders).
-        # $AF8A = after RCACHE_STATE ($AF00+$89), before ANIM CFG $B300.
-        # LESSON: zero-runs in the shipped image are NOT free space —
-        # ships-zero runtime BSS looks identical; audit the equates.
-        # ss_vz $8C00 -> $8D00 2026-08-19: fifth of the five adjacent SS
-        # planes; ss_info died into SS_SI's top bits (MV_CEIL carries the
-        # per-mover ceiling flag it used to hold in b7)
-        A = dict(idx=_abi.COLIDX_BASE, colseg=_abi.COLSEG_BASE,
-                 ss_vz=_abi.SS_VZ_BASE,
-                 minpass=_abi.MV_MINPASS, mv_ss_id=_abi.MV_SS_ID,
-                 mv_ss_info=_abi.MV_SS_INFO,
-                 usetab=_abi.USETAB_BASE, cymin=_abi.CYMIN_BASE,
-                 cymax=_abi.CYMAX_BASE, cyport=_abi.CYPORT_BASE,
-                 sil=_abi.SIL_BASE, colport=_abi.COLPORT_BASE)
+    A = dict(idx=_abi.COLIDX_BASE, colseg=_abi.COLSEG_BASE,
+             ss_vz=_abi.SS_VZ_BASE,
+             minpass=_abi.MV_MINPASS, mv_ss_id=_abi.MV_SS_ID,
+             mv_ss_info=_abi.MV_SS_INFO,
+             usetab=_abi.USETAB_BASE, cymin=_abi.CYMIN_BASE,
+             cymax=_abi.CYMAX_BASE, cyport=_abi.CYPORT_BASE,
+             sil=_abi.SIL_BASE, colport=_abi.COLPORT_BASE)
     import math
     seg_blob = bytearray()
     cymin = bytearray(); cymax = bytearray(); cyport = bytearray()
@@ -624,7 +584,7 @@ def blobs(flat=True):
         pb += struct.pack('<hhhhBBBB', p[0], p[1], p[2], p[3],
                           p[7], p[4], p[5], p[6])
     import abi as _abi0
-    assert A['colport'] in (_abi0.COLPORT_BASE, _abi0.COLPORT_BASE_FLAT), 'colport homes drifted from abi'
+    assert A['colport'] == _abi0.COLPORT_BASE, 'colport home drifted from abi'
     # MV_SS probe list (2026-08-19 claw-back): the <=8 mover subsectors as
     # parallel id/info arrays, $FF-padded to 8 — pmove probes these twice
     # per MOVE instead of the render paying 8 cycles per visited subsector
@@ -672,17 +632,6 @@ def blobs(flat=True):
            A['mv_ss_id']: _ids, A['mv_ss_info']: _inf,
            A['usetab']: bytes(ub),
            A['colport']: bytes(pb)}
-    if flat:
-        # The tube driver's SPACE 'use' needs these; walk_drv reads the
-        # bank-C copy banked_bsp seeds, which the parasite cannot page to.
-        uv = use_vectors()
-        assert A['usevec'] + len(uv) <= 0x7000, 'USEVEC reaches VXCACHE'  # flat $6EFC (bank A laid flat, by construction)
-        out[A['usevec']] = uv
-    # (the bank-B $A900 / flat $8400 staging emits died 2026-08-18: at
-    #  $1A00 the ports ship directly inside LOW / the tube CODE file,
-    #  and anim_init's copy-down is gone with them)
-    if not flat:
-        pass
     # the asm dispatches on idx >= COL_N_SOLID (abi constant): pin it.
     # DOOM_TREE_SCREEN relaxes the pin for RENDER-ONLY measurement of
     # candidate BSP trees (the solid census varies per tree; collision
@@ -698,8 +647,8 @@ def blobs(flat=True):
     # ONE geometry since the parasite re-cut (2026-09-02): the flat homes
     # are the banked homes laid flat, so the range asserts are org-relative
     # and shared.  (The old per-build pocket asserts died with the maps.)
-    _borg = _abi.BANKB_ORG_FLAT if flat else _abi.BANKB_ORG
-    _aorg = _abi.BANKA_ORG_FLAT if flat else _abi.BANKA_ORG
+    _borg = _abi.BANKB_ORG
+    _aorg = _abi.BANKA_ORG
     assert A['idx'] + len(idx_blob) <= A['colseg'], 'COLIDX reaches COLSEG'
     assert A['cymax'] + len(cymax) <= A['colseg'], 'CYMAX overruns into COLSEG'
     assert A['cymin'] + len(cymin) <= A['cyport'], 'CYMIN reaches CYPORT'
@@ -720,8 +669,8 @@ def blobs(flat=True):
     return out
 
 
-def install(mem, flat=True):
-    b = blobs(flat)
+def install(mem):
+    b = blobs()
     for addr, blob in b.items():
         if isinstance(addr, str):
             continue
@@ -737,10 +686,10 @@ def find_ss(rx, ry, fx=0, fy=0):
     tie-broken (raw<<1 | frac>0); the general arm refines truncated
     near-ties with the fraction term. fx/fy are the world-fraction
     bytes ((prescaled-8.8 byte0 & $1F) << 3); 0 = an integer position.
-    With the fraction the verdict equals doom_wireframe.point_on_side
+    With the fraction the verdict equals e1m1.point_on_side
     on the true position EVERYWHERE, exact ties included (the 2026-08-14
     on-partition fuzz divergences died with the exact descent)."""
-    import doom_wireframe as dw
+    import e1m1 as dw
     rom = dw.packed_rom_main
     lay = dw.packed_layout
     md = lay['max_dirs']

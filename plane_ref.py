@@ -122,7 +122,7 @@ class PlaneRef(X.TexRef):
 
 
 if __name__ == '__main__':
-    import compare_renders as C
+    import poses as C
     import textured_ref as T
     R = PlaneRef()
     out = os.path.join(ROOT, 'build', 'master', 'plane')

@@ -10,11 +10,11 @@ solid columns close) at the Master's resolution and in its exact bytes.
             ceilings are sampled per BYTE column (4 px), so they come out
             as 4x2 fat pixels while walls are 2x2.
   Camera    the engine's: 90 degree HFOV, focal 128 across / 153.6 down at
-            256x160 (doom_wireframe's 1024x640 float camera scaled by 1/4),
+            256x160 (e1m1's 1024x640 float camera scaled by 1/4),
             the view cut to its top 136 lines and centred on line 68 (the
             control panel, master_panel, is the bottom 24),
             eye at floor + 41, angle byte -> radians as the engine.
-  Map       the engine's own tables (doom_wireframe: alternate BSP, segs,
+  Map       the engine's own tables (e1m1: alternate BSP, segs,
             seg_sectors with its one-way-wall rule).
   Walls     upper / middle / lower with sidedef x/y offsets and DOOM's
             pegging (ML_DONTPEGTOP $08, ML_DONTPEGBOTTOM $10). Two-sided
@@ -68,7 +68,7 @@ class TexturedRef:
             self.tex[t['name']] = (A.wall_bytes(t['id']), t['src_w'], t['src_h'])
         self.flat = {f['name']: A.flat_bytes(f['id']) for f in A.man['flats']}
         self.sky_byte = M.SKY_BYTE                  # cyan + white, hatched
-        import doom_wireframe as dw
+        import e1m1 as dw
         self.dw = dw
 
     # ── per frame ────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ class TexturedRef:
                     ztop = fh + self.tex[wt][2] if flags & DONTPEGBOTTOM else fc
                     self._wall(c, rc, rf, wt, u, ztop + yoff, ey)
                 else:
-                    # the engine's ONE-WAY WINDOWS (doom_wireframe
+                    # the engine's ONE-WAY WINDOWS (e1m1
                     # _ONEWAY_WALLED_SIDE): the back of each courtyard window
                     # ledge is solid seen from the room, and that side has no
                     # texture -- show sky, so the window reads as looking out
@@ -331,7 +331,7 @@ def to_png(fb, path, palette):
 
 if __name__ == '__main__':
     os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
-    import compare_renders as C
+    import poses as C
     import master_assets as M
     R = TexturedRef()
     out = os.path.join(ROOT, 'build', 'master', 'ref')

@@ -19,7 +19,7 @@ Writes build/master/plane/*.png. Prints PLANEREF: PASS.
 import math, os, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-import compare_renders as C
+import poses as C
 import master_assets as M
 import plane_ref as P
 import textured_ref as T
@@ -43,7 +43,7 @@ def ref_uv(r, c, h, pic):
 
 def self_uv(y, c, g, si):
     """Float evaluation of the model's own geometry for cell (y, c)."""
-    import doom_wireframe as dw
+    import e1m1 as dw
     v = F.view
     a = dw.byte_to_radians(v['ab'])
     sn, cs = math.sin(a), math.cos(a)

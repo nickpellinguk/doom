@@ -342,8 +342,8 @@ def _name(b):
 
 def map_usage():
     """Textures, flats and the stacking check from the engine's own map
-    data (doom_wireframe) and mover rules (anim_sectors.Mover)."""
-    import doom_wireframe as dw
+    data (e1m1) and mover rules (anim_sectors.Mover)."""
+    import e1m1 as dw
     secs, sides, lines = dw.sectors, dw.sidedefs, dw.linedefs
     nb = {}
     for ld in lines:

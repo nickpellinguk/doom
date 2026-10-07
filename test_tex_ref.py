@@ -16,7 +16,7 @@ Writes build/master/tex/*.png. Prints TEXREF: PASS.
 import math, os, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-import compare_renders as C
+import poses as C
 import master_assets as M
 import tex_ref as X
 import textured_ref as T

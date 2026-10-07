@@ -10,18 +10,17 @@ MASTERDIV: PASS / FAIL."""
 import os, random, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-os.environ['DOOM_CPU'] = '65c02'
 import pygame
 pygame.init()
 import abi
-import doom_wireframe as dw
+import e1m1 as dw
 from banked_bsp import MasterBspRender
 from symmap import sym
 
 R = MasterBspRender(dw.packed_layout, dw.packed_rom_main, dw.packed_rom_detail,
                     dw.packed_bbox_table, dw.MAP_CENTER_X, dw.MAP_CENTER_Y, dw.PRESCALE)
 bm = R.bm
-S = lambda n: sym(n, banked=2)
+S = lambda n: sym(n)
 MP, MB, MR, DIV = S('m_p'), S('m_b'), S('m_r'), S('div32')
 bm.select(abi.BANK_C)                   # div32's byte steps live in bank 6
 

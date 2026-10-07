@@ -82,12 +82,7 @@
 ; and exits in bank L2 on every path.
 ; ============================================================================
 ::bf_seg_front:
-.if ::C02
    LDA (zp_seg_hdr_p)                      ; v1 idx lo
-.else
-   LDY #0
-   LDA (zp_seg_hdr_p),Y                    ; v1 idx lo
-.endif
    STA zp_v1i_l
    CMP zp_seg_v_idx_l                      ; ONE compare: lo equality
    BNE chain_miss                          ; PROVES identity (pack invariant)
@@ -122,11 +117,7 @@
    STA zp_seg_sy1_bot_h
 hit_done:
 .endscope
-.if ::C02
    STZ zp_ys_done                          ; donation consumed
-.else
-   STY zp_ys_done                          ; donation consumed (Y = 0)
-.endif
    JMP v1_done_l0                          ; chain arc is pure ZP — L0 was
                                         ; never left, skip the re-page
 
@@ -143,16 +134,9 @@ chain_miss:                                ; A = header lo (banked in v1i_l)
 ; arc's deliberate non-clearing cannot leak a 1 either.  Census: 666/666
 ; executions wrote the value already present.  (The zp_ys_done store
 ; beside it IS load-bearing: the previous seg's y stage sets it.)
-.if ::C02
    STZ zp_seg_ep                           ; ep = 0: v1 -> VX1; any prev-seg
    STZ zp_ys_done                          ; donation dies here
    LDY #1                                  ; (C02 probe leaves Y undefined)
-.else
-   STY zp_seg_ep                           ; (Y = 0 from the probe load)
-   STY zp_ys_done
-   INY                                     ; Y = 1 (rides the probe's 0 —
-                                        ;  one byte cheaper than LDY #1)
-.endif
    LDA (zp_seg_hdr_p),Y                    ; v1 idx B
    STA zp_v1i_b
                                         ; (SXV bank contract: bank SEG in —
@@ -423,11 +407,9 @@ hgp_fwd:
 ; to the four-class arm cascade below (top/bottom x step-up/step-down),
 ; which loses its solid tests in exchange.
 ; ============================================================================
-.if ::MASTER
 .import mf_snap, mf_fill
    JSR mf_snap                             ; MASTER: snapshot the spans this
                                            ; seg overlaps (master/mfill.s)
-.endif
    BIT zp_seg_flags
    BVC portal_cascade                      ; V clear: two-sided seg
 solid_cascade:
@@ -467,9 +449,7 @@ sc_vs1:
    JSR vs_fresh2
 sc_vs2:
    JSR span_mark_solid                     ; zp_i clamps persisted (stage 3)
-.if ::MASTER
    JSR mf_fill                             ; MASTER: fill what it removed
-.endif
    JMP s_advance
 sc_esk:
    BMI sc_fb                               ; N rides from the fork's LDA:
@@ -593,10 +573,8 @@ ms_zero_rec:
 ms_solid:
    JSR span_mark_solid
 ms_advance:
-.if ::MASTER
    JSR mf_fill                             ; MASTER: fill what the portal's
                                            ; updates removed
-.endif
 
 ; ============================================================================
 ; STAGE 9 — ADVANCE.  Two entries: ::s_advance re-pages L0 for the next

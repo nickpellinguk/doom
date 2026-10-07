@@ -440,14 +440,9 @@ pym_pd:
 pym_ptail:
    CLC                                                                    ;# ||         0.5
    ADC zp_br_t0                            ; mid = hi(h*M8) + h           ;# ||||       0.7
-.if ::C02
    STA zp_br_res_l                         ; STZ join-pull (Eben, 2026-08-12):
    STZ zp_br_res_h                         ;  the shared STX dies for the
    BRA py_stored                           ;  constant-0 ext arm (-2 cyc)
-.else
-   LDX #0                                                                 ;# ||         0.5
-   JMP py_shift                                                           ;# ||||       0.7
-.endif
 ; --- COLD SUM-OVERFLOW ARMS (islanded 2026-09-05) -------------------------
 ; f(a+b) needs a NINE-bit index, so each multiply carries a second arm for
 ; the sums that reach the +256 window.  tools/qsq_audit.py recovers both

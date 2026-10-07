@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gate for textured_ref.py (step 2 of docs/master_textured_spec.md).
 
-Renders the frame-cycle poses (compare_renders.POSITIONS) and the
+Renders the frame-cycle poses (poses.POSITIONS) and the
 ground-truth verify poses, writes the reference images to
 build/master/ref/, and checks what any later 6502 frame will be held to:
   - every odd line repeats the line above it (Mode 2: a texel is 2 lines)
@@ -14,7 +14,7 @@ Prints TEXTUREDREF: PASS.
 import os, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-import compare_renders as C
+import poses as C
 import master_assets as M
 import master_panel
 import textured_ref as T

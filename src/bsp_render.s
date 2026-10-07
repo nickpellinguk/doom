@@ -15,7 +15,6 @@
 .include "bsp/seg_xform.s"
 .include "bsp/vrcache.s"
 .include "bsp/anim.s"
-.include "hud.s"
 .include "bsp/main_tail.s"
 .include "bsp/defq.s"
 .include "bsp/resolve_crossing.s"

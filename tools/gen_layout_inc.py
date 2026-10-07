@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Regenerate src/layout.inc from the live packed layout (single variant).
-Run after any packer/layout change; doom_wireframe asserts agreement on
+Run after any packer/layout change; e1m1 asserts agreement on
 import, so a stale inc fails the first harness run loudly."""
 import os, re, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pygame; pygame.init()
-import doom_wireframe as dw
+import e1m1 as dw
 lay = dw.packed_layout
 p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                  'src', 'layout.inc')

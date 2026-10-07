@@ -25,11 +25,10 @@ counted and capped. Everything else must match byte for byte.
 import os, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-os.environ['DOOM_CPU'] = '65c02'
 import pygame
 pygame.init()
-import doom_wireframe as dw
-import compare_renders as C
+import e1m1 as dw
+import poses as C
 import master_assets as M
 import plane_ref as P
 import textured_ref as T
@@ -42,7 +41,7 @@ F = P.PlaneRef()
 R = MasterBspRender(dw.packed_layout, dw.packed_rom_main, dw.packed_rom_detail,
                     dw.packed_bbox_table, dw.MAP_CENTER_X, dw.MAP_CENTER_Y, dw.PRESCALE)
 from symmap import sym
-_S = lambda n: sym(n, banked=2)
+_S = lambda n: sym(n)
 mem = R.bm
 s16 = lambda a: (mem[a] | mem[a + 1] << 8) - (65536 if mem[a + 1] & 0x80 else 0)
 eng, pend = {}, {}

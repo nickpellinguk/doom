@@ -204,14 +204,8 @@ mc_vertical:
 mcv_y1_cl:
    LDA #$FF
    STA zp_line_yl_l
-.if ::C02
    STZ zp_line_yl_h
    BRA mcv_y1_done                        ; always
-.else
-   LDA #0
-   STA zp_line_yl_h
-   BEQ mcv_y1_done
-.endif
 mcv_y1_neg:
    LDA zp_line_yr_h                        ; y1 above: y2 also above → out
    BMI mcv_rej
@@ -224,14 +218,8 @@ mcv_y1_done:
    BMI mcv_y2_neg
    LDA #$FF
    STA zp_line_yr_l
-.if ::C02
    STZ zp_line_yr_h
    BRA mcv_y2_done                        ; always
-.else
-   LDA #0
-   STA zp_line_yr_h
-   BEQ mcv_y2_done
-.endif
 mcv_y2_neg:
    ZERO zp_line_yr_l, zp_line_yr_h
 
@@ -672,11 +660,6 @@ s16r_done:
    RTS
 SEG_BANKC
 end_code:
-.if ::BANKED
 ; (output file: ld65 writes the CLIP_BK region ($8000) to
 ;  span_clip_bankc.bin — engine_banked.cfg MEMORY entry; the SAVE
 ;  directive of the old beebasm build is gone)
-.else
-; (output file: ld65 writes the CLIPJT+CLIP regions ($2000/$2030) to
-;  span_clip.bin — engine_flat.cfg MEMORY entries)
-.endif

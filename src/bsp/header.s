@@ -12,15 +12,12 @@
 
 ; --- CPU target: every builder MUST pass -D C02=0 (plain 6502) or -D C02=1
 ;     (enable 65C02 opcodes). STZ/INC A/PHX/etc are gated on C02 throughout. ---
-.if ::C02
 .setcpu "65C02"
-.endif
 ; ZERO a1[,a2[,a3[,a4]]]: zero up to four bytes. 65C02 = STZ each (A
 ; preserved, NO flags set); 6502 = one LDA #0 + STA each (A clobbered,
 ; Z set). Only use where nothing downstream needs A = 0 or the flags,
 ; and never with abs,Y operands (STZ has no ,Y mode).
 .macro ZERO a1, a2, a3, a4, a5, a6
-.if ::C02
 STZ a1
 .ifnblank a2
 STZ a2
@@ -37,25 +34,6 @@ STZ a5
 .ifnblank a6
 STZ a6
 .endif
-.else
-   LDA #0
-   STA a1
-.ifnblank a2
-   STA a2
-.endif
-.ifnblank a3
-   STA a3
-.endif
-.ifnblank a4
-   STA a4
-.endif
-.ifnblank a5
-   STA a5
-.endif
-.ifnblank a6
-   STA a6
-.endif
-.endif
 .endmacro
 
 ; ZERO_X / ZERO_Y: as ZERO but the NMOS arm clobbers X / Y instead of
@@ -66,12 +44,7 @@ STZ a6
 ; BUMP: A = A + 1. 65C02 = INC A (no carry); 6502 = CLC : ADC #1. Use only
 ; where the carry/overflow OUT is dead (negate, single-byte increments).
 .macro BUMP
-.if ::C02
 ina
-.else
-   CLC
-   ADC #1
-.endif
 .endmacro
 
 ; BUMP_CC: A = A + 1 at a site where C is PROVEN CLEAR (document the
@@ -87,14 +60,8 @@ ina
 ; NMOS: TAX:INX:TXA (6 cyc, 3 B — ties CLC:ADC#1:TAX on cycles, saves
 ; a byte, and never writes C/V, unlike BUMP's ADC).
 .macro BUMP_TAX
-.if ::C02
 ina
 TAX
-.else
-   TAX
-   INX
-   TXA
-.endif
 .endmacro
 
 ; bsp_render.asm — fresh 6502 BSP traversal + vertex transform + seg
@@ -230,27 +197,21 @@ NF_LLEAF = $40                          ; left child is a subsector
 ; kills them on the host: never rely on either (compute verdicts after,
 ; reload the register).
 .macro PAGE bank
-.if ::BANKED
    LDA #bank
    STA $FE30
-.endif
 .endmacro
 
 ; PAGE_X / PAGE_Y: as PAGE but clobber X / Y instead of A — lets a
 ; value RIDE A across a bank switch (flags still die on the host: the
 ; immediate load sets N/Z — compute verdicts AFTER the page, not before).
 .macro PAGE_X bank
-.if ::BANKED
    LDX #bank
    STX $FE30
-.endif
 .endmacro
 
 .macro PAGE_Y bank
-.if ::BANKED
    LDY #bank
    STY $FE30
-.endif
 .endmacro
 
 ; RNS_SELECT — pick the vectored round-to-nearest shifter and patch
@@ -498,25 +459,10 @@ L2_BBOX = ROM_BBOX_C                    ; alias (harness/loader points zp_rom_bb
 ; clamped to the trigger's zp_seg_fh/ch, projected at the endpoint
 ; recip. VDONE = the once-per-frame first-touch bitmap (byte index =
 ; the header key's B byte = idx>>3, bit = vc_bit_mask[idx&7]).
-.if ::BANKED
 VDESC      = CBANK_ORG + $1E00                     ; bank C (verticals run under C);
 VEXPL_LO   = CBANK_ORG + $2000                     ; bank C COMPACTION 2026-09-02 (Eben's
 VEXPL_HI   = CBANK_ORG + $2080                     ; plan): the upper C block pulled down
 VEXPL_CONT = CBANK_ORG + $1800                     ; to free the $BAC2-$BFFF tail
-.else
-; PARASITE (2026-09-02, the flat-first-class purge): bank-C data homes
-; are LINEAR -- flat = banked - $8000 + $D600, one offset for the whole
-; kept run ($8000-$9FFF -> $D600-$F5FF).  The ONE exception: VEXPL_LO/HI
-; (banked $A000) would land on the resident tube glue at $F600, so it
-; lives in the reclaimed client-OS page at $F800 (staged at $7C00 on
-; disc -- the loads run through the live OS -- and boot-copied up).
-; Legit because the copro makes no OS calls post-boot (SEI held, raw
-; FIFO; the host never touches R3/R4 so no NMIs); $FFFA+ vectors intact.
-VDESC      = $F400                      ; linear ($9E00 banked)
-VEXPL_LO   = $F800                      ; THE exception (banked $A000)
-VEXPL_HI   = $F880
-VEXPL_CONT = $EE00                      ; linear ($9800 banked)
-.endif
 ; (VDONE moved next to VXCACHE_VALID 2026-07-26 — see below; $0600 is
 ; fully FREE again.)
 

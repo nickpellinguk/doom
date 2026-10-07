@@ -1,18 +1,15 @@
 """Python wrapper for the 6502 span clipper subsystem.
 
-Loads span_clip.bin into py65, provides methods to call each entry point,
-and reads results back.  Used for comparison testing against EndpointClipSpans.
+Loads the engine link into py65, provides methods to call each clipper entry
+point, and reads results back. The base of the engine rig (bsp_render_6502,
+banked_bsp.MasterBspRender), and the span rig the Python traversal drives
+(e1m1.make_span_rig).
 """
 import os
 
-# CPU target: set DOOM_CPU=65c02 to build the engine with -D C02=1 and run it on
-# py65's 65C02 core; anything else = plain 6502. Drives both the build flag and
-# the MPU class so the build and the executor always agree.
-_C02 = '1' if os.environ.get('DOOM_CPU', '').lower() in ('65c02', 'c02', '1') else '0'
-if _C02 == '1':
-    from py65.devices.mpu65c02 import MPU
-else:
-    from py65.devices.mpu6502 import MPU
+# The Master's CPU is a 65C12: the engine is always the 65C02-opcode link,
+# run on py65's 65C02 core.
+from py65.devices.mpu65c02 import MPU
 
 
 # Engine addresses come from the linked symbol map (ld65 dbgfile) — no more
@@ -166,54 +163,18 @@ class SpanClip6502:
         # file-existence guards to rot (a deleted legacy .asm once silently
         # disabled the renderer load).
         from engine_load import load_engine
-        load_engine(mem, banked=0, c02=int(_C02))
+        load_engine(mem)
 
-        # Reciprocal mantissa table at $D500: M8[idx] for the 10-bit 9.1
-        # index (4 pages; S = bit_length(idx-1) is computed, not stored).
-        # Page 0 NIBBLE-SWAPPED (2026-08-10): the fast path indexes
-        # (vy_l & $F0) | vy_h; pages 1-3 linear (recip_hi ladder).
-        from fp import _RECIP_M8
-        import symmap as _sm, wad_packed as _wp
-        _m8 = _sm.sym('RECIP_M8', banked=0)
-        for i in range(256):
-            mem[_m8 + (((i & 0x0F) << 4) | (i >> 4))] = _RECIP_M8[i]
-        _m8h = _sm.sym('RECIP_M8H', banked=0)
-        for i in range(128, 256):
-            mem[_m8h + i - 128] = _RECIP_M8[i]     # far half (unswapped;
-                                                   # the linear pages died)
-        # RECIP_S, the junior-page shift table: assembled data in the LDATA
-        # region at $1E00 until 2026-08-17, a seeded table beside the mantissa
-        # pages since (banked: bank A $B300).
-        _s = _sm.sym('RECIP_S', banked=0)
-        for i, b in enumerate(_wp.srecip_table()):
-            mem[_s + i] = b
-
-        # NO NJ RASTERISER (2026-08-30).  The flat image IS the tube
-        # parasite now: the copro runs the engine and EMITS draw commands,
-        # the host rasterises.  The blob used to be loaded here at $7500 and
-        # then blind-zeroed by tube/build_tube_game before the emitters were
-        # written over it -- surgery that once wiped a LIVE region and gave
-        # a black screen.  Not shipping it is the fix.  The flat rig is a
-        # bisect tool only (DOOM_FLAT_RIG=1) and cannot draw diagonals.
-        self._has_rasteriser = False
-
-        # Screen buffer at $5800 (5120 bytes)
-        # THE PARASITE MAP (2026-09-02): the flat build has NO framebuffer
-        # — $EA00+ is CBITS territory and the old FB clear was shredding
-        # the clipper.  SCREEN_START = None makes clear_screen and the
-        # surface reader inert; pixel harnesses run the BANKED build.
+        # No main-RAM framebuffer (the Master's screens are in shadow RAM)
         self.SCREEN_START = None
         self.SCREEN_SIZE = 0
-        mem[_sym('RASTER_ZP_SCRSTRT')] = 0x58   # vestigial (banked FB hi)
 
         # BRK at halt address
         mem[0xFF00] = 0x00
 
-        # PLOT STUBS (2026-09-02): the parasite ships plot_h/plot_v as
-        # 3-byte patch slots and no rasteriser at RASTER_ENTRY — the tube
-        # builder writes the real emitters.  The bare rig plants RTS so a
-        # render runs to completion; _run's PLOT_PCS traps still record
-        # every emitted line from RASTER_ZP.
+        # PLOT STUBS: plot_h / plot_v / RASTER_ENTRY are RTS emit stubs on
+        # the Master; planted again here so a render runs to completion.
+        # _run's PLOT_PCS traps record every emitted line from RASTER_ZP.
         for _n in ('plot_h', 'plot_v', 'RASTER_ENTRY'):
             mem[_sym(_n)] = 0x60
 
@@ -261,36 +222,13 @@ class SpanClip6502:
         return self.last_cycles
 
     def clear_screen(self):
-        """Clear the framebuffer (no-op on the FB-less parasite map)."""
+        """Clear the framebuffer (a no-op: the Master's is shadow RAM)."""
         if self.SCREEN_START is None:
             return
         mem = self.mpu.memory
         start = self.SCREEN_START
         for i in range(self.SCREEN_SIZE):
             mem[start + i] = 0
-
-    def get_framebuffer_surface(self):
-        """Extract framebuffer as a pygame Surface (256×160, 1bpp)."""
-        import pygame
-        mem = self.mpu.memory
-        start = self.SCREEN_START
-        surf = pygame.Surface((256, 160))
-        surf.fill((0, 0, 0))
-        pxa = pygame.surfarray.pixels3d(surf)
-        for py in range(160):
-            char_row = py >> 3
-            scanline = py & 7
-            for byte_col in range(32):
-                addr = start + char_row * 256 + byte_col * 8 + scanline
-                byte = mem[addr]
-                if byte == 0:
-                    continue
-                for bit in range(8):
-                    if byte & (0x80 >> bit):
-                        px = byte_col * 8 + bit
-                        pxa[px, py] = (0, 200, 0)
-        del pxa
-        return surf
 
     def init(self):
         """Initialize: one full-screen span."""

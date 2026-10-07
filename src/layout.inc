@@ -158,20 +158,12 @@ OBJ_ART_END     = $FF              ; entry: template finished
 ; colmap's USEVEC owns $B800 -- and the LOD hex template pushed the blob
 ; past it (the old 25-entry blob ended at $B7FE by luck). Banked keeps
 ; the abutting home in the true 512-byte $A900-$AAFF hole.
-.if ::BANKED
 ; BANKED HOME IS IN BANK C (2026-08-29), abutting the driver's use vectors
 ; and clear of the HUD at $A400: the whole stamp loop runs under the one
 ; PAGE BANK_C the object prologue already does.  SEEDED BY PYTHON
 ; (banked_bsp) — the asserts are the only guard.
 OBJ_ART  = CBANK_ORG + $1B00
 .assert OBJ_ART + 4*LAY_N_OBJ_ART <= CBANK_ORG + $1E00, error, "banked art templates reach VDESC at CBANK_ORG+$1E00"
-.else
-; FLAT: the CBITS data block (parasite map): three page-aligned windows
-; at the top of the bank-C-bits run, below VEXPL/VDESC.  Python-seeded,
-; like the banked home.
-OBJ_ART  = $F100                   ; linear ($9B00 banked - $8000 + $D600)
-.assert OBJ_ART + 4*LAY_N_OBJ_ART <= $F400, error, "flat art templates reach VDESC"
-.endif
 ; (vertex block $800 -> $600 2026-08-11: the 4th plane slot died with
 ;  page decomposition — flat frees $B700-$B7FF, banked frees
 ;  $A800-$A9FF in L2; the flat object table lives in that freed run)
@@ -233,7 +225,6 @@ ROM_BPAL_BCH_C = BPAL_BASE + $80
 ; Driver tables in BANK C (2026-08-17): read only by walk_drv, which pages this
 ; bank for them. They were in bank A until its bottom was wanted for the
 ; main-RAM caches. Banked only — the flat harness runs no driver.
-.if ::BANKED
 ROM_DRV_SINCOS_C = CBANK_ORG + $1900               ; bank C (walk_drv pages for it)
 ROM_DRV_USEVEC_C = $96FC                ; EVICTED to bank A 2026-09-02: the
                                         ; SPACE use-trace vectors are read
@@ -242,14 +233,6 @@ ROM_DRV_USEVEC_C = $96FC                ; EVICTED to bank A 2026-09-02: the
                                         ; zero-cost -- one ROMSEL instead of
                                         ; C-then-SEG.  Fills the 260 B gap
                                         ; above the seg headers ($96FB).
-.else
-ROM_DRV_SINCOS_C = $EF00                ; linear ($9900 banked - $8000 +
-                                        ; $D600); senior page rides $F000
-                                        ; (past the CBITS region edge --
-                                        ; python-seeded, ld65 never sees it)
-ROM_DRV_USEVEC_C = BANKA_ORG + $16FC    ; BY CONSTRUCTION: the banked bank-A
-                                        ; home ($96FC) laid flat = $6EFC
-.endif
 .assert (ROM_BPAL_BFH_C & $FF) = 0, error, "BPAL page must be page-aligned"
 .assert (ROM_SS_FH_C & $FF) = 0, error, "SS height pages must be page-aligned"
 .assert (ROM_BBOX_C & $FF) = 0, error, "bbox base must stay page-aligned"

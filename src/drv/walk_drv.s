@@ -23,11 +23,9 @@
 ; ============================================================================
 .include "../abi.inc"
 .include "../layout.inc"
-.if ::MASTER
 ACC_D = $01                             ; ACCCON: display shadow
 ACC_X = $04                             ; CPU reads/writes shadow at $3000-$7FFF
 ACC_Y = $08                             ; HAZEL at $C000-$DFFF
-.endif          ; table homes (ROM_DRV_*) as CONSTANTS,
                                   ; per-build, rather than literals here
 
 angidx = DV_ANGIDX          ; view angle index 0..63 (angle byte = idx*4)
@@ -104,12 +102,10 @@ RAWY_MAX = $0490        ;  1168
 .import obj_anyb_fill
 .import zp_br_px, zp_br_py
 .import obj_key
-.if ::MASTER
 .import ok_flip
 .import ok_clear
 .import gun_draw
 .import split_init
-.endif
 .import fb_clr0
 .import fb_clr1
 .import fb_clr_back
@@ -174,29 +170,6 @@ drv:
     ; by the house rule nothing calls the OS after boot.
     ; OSBYTE 129 with Y=$FF is "read OS version" -- with any other Y it
     ; is INKEY and would WAIT for a key.
-.if .not ::MASTER
-    LDA #$81
-    LDX #0
-    LDY #$FF
-    JSR $FFF4   ; X = OS version
-    LDA #<(HUD_FONT_B)
-    LDY #>(HUD_FONT_B)
-    ; Known INKEY-256 answers: $FF = OS 0.10 (and jsbeeb's OS 1.2 image
-    ; answers $FF too — measured); 0/1/2 = OS 1.x / B+; $E0 = Electron.
-    ; The ANDY-font machines are the Master family: $FD = MOS 3.20,
-    ; $FC = Master ET, $F5 = Compact (MOS 5).  The old test (`>= $80 ->
-    ; B font`) swallowed ALL of those into the OS 0.10 arm and drew
-    ; Master HUDs from $C000 = filing-system workspace: the garbage HUD.
-    CPX #$F0
-    BCC drv_fontset   ; 0-2, $E0... = the $C000-font classes
-    CPX #$FF
-    BEQ drv_fontset   ; $FF = OS 0.10 / jsbeeb B
-    LDA #<(HUD_FONT_MASTER)
-    LDY #>(HUD_FONT_MASTER)
-drv_fontset:
-    STA DV_HUD_FONT
-    STY DV_HUD_FONT+1
-.endif                          ; MASTER: no font probe -- the HUD is HAZEL's,
                                 ; with its own font, and the loader has
                                 ; already overwritten HAZEL, where MOS 3.20
                                 ; keeps workspace: NO OS calls from here on
@@ -222,33 +195,20 @@ zpclr:
     STA $00,X
     INX
     BNE zpclr
-.if ::MASTER
     LDA #ACC_D | ACC_Y
     STA $FE34   ; MASTER: display SHADOW (both buffers live there) and
                 ; HAZEL held in for good (the filler runs from it; no OS
                 ; after this point). X is set only while writing pixels.
-.else
-    LDA #0
-    STA $FE34   ; Master: ACCCON off (harmless on B)
-.endif
     ; (respawn is NOT called here — see the end of init. It writes
     ;  pm_vz, which is a PM_SCRATCH slot overlaying THIS block.)
     ; --- CRTC: narrow 256x160 centred, cursor off (R12/R13 set per flip) ---
     LDA #1
     STA $FE00
-.if ::MASTER
     LDA #64     ; MASTER: Mode 1 timing (2MHz char clock): 64 chars = 256 px
-.else
-    LDA #32
-.endif
     STA $FE01
     LDA #2
     STA $FE00
-.if ::MASTER
     LDA #90     ; MASTER: Mode 1's 98 less 8 (centres 64 of 80)
-.else
-    LDA #45
-.endif
     STA $FE01
     LDA #6
     STA $FE00
@@ -352,11 +312,7 @@ vxinit:
     LDA #1
     ; (the forward-coherence bbox cache went 2026-09-04: no enable, no
     ;  D_FWD -- read_input no longer computes one)
-.if ::MASTER
     LDA #>MSCREEN1
-.else
-    LDA #$6C
-.endif
     STA backhi
     ; --- spawn pose LAST, with the clock seed, and for the same reason:
     ; respawn writes pm_vz = PM_SCRATCH+$3F = $1A3F, and PM_SCRATCH
@@ -387,7 +343,6 @@ vxinit:
     ; honest delta. (It said "and zero momentum" until 2026-08-29 —
     ; momentum retired 2026-08-22.)
     JSR mv_frame
-.if ::MASTER
     ; MASTER (step 1): no renderer output yet -- HAZEL paints the test
     ; pattern into BOTH shadow buffers once (X set: CPU writes shadow).
     LDA #ACC_D | ACC_X | ACC_Y
@@ -403,12 +358,6 @@ vxinit:
                                     ; them ON: holes the filler skipped)
     JSR split_init                  ; MASTER: the Mode 2 / Mode 1 panel
                                     ; raster split (its IRQ; CLI)
-.else
-    LDA #BANK_C
-    STA $FE30   ; the clears live in bank C
-    JSR ENG_FB_CLR0
-    JSR ENG_FB_CLR1
-.endif
 ; ---------------------------------------------------------------------------
 ; frame — main loop, one iteration per rendered frame (paced by flip_sched's
 ; vsync waits when the beam demands one; free-running otherwise).
@@ -511,11 +460,9 @@ frame:
     LDA #BANK_L0
     STA $FE30
     JSR ENG_RENDER_FRAME   ; (init is inline at render entry)
-.if ::MASTER
     LDA #BANK_C
     STA $FE30
     JSR gun_draw           ; the gun overlay (bank 6, step 6f)
-.endif
     JSR flip_sched
     JMP frame
 
@@ -548,14 +495,9 @@ drv_end:
 ; re-pages banks before every engine call). Clobbers A + whatever anim uses.
 anim_glue_init:
     LDA #0
-.if ::MASTER
     STA hud_prev
     LDA #1      ; MASTER (step 1): the cycles HUD is the deliverable -- on
     STA hud_en
-.else
-    STA hud_en
-    STA hud_prev   ; HUD off at boot
-.endif
     LDA #7
     STA $FE30
     ; (RNS stack-page copy retired 2026-07-12: the vectoring block lives
@@ -566,10 +508,6 @@ anim_glue_tick:
     STA $FE30   ; (ANIM_FIELDS is stored by mv_frame -- the
     JMP ENG_ANIM_TICK           ;  glue pocket has no room for the copy)
 key_hud:
-.if .not ::MASTER
-    JSR obj_key                                     ; "O": billboard objects
-                                                    ;  on/off (engine-side)
-.endif
     ; H key: toggle the debug HUD on the press edge only (hud_prev holds
     ; last frame's state, so holding the key flips it exactly once).
     LDA #$54
@@ -596,7 +534,6 @@ hud_glue:
     BNE hg_on
     RTS
 hg_on:
-.if ::MASTER
     ; MASTER: HAZEL draws the frame time (1MHz T2 ticks = microseconds,
     ; d2 from mv_frame) and the field count into the back buffer. The
     ; arguments go into HAZEL itself (MHZ_ARGS) once it is paged in: HAZEL
@@ -615,14 +552,6 @@ hg_on:
     LDA #ACC_D | ACC_Y
     STA $FE34
     RTS
-.else
-    LDA #6
-    STA $FE30   ; HUD code lives in bank C
-    JSR HUD_ENTRY                                   ; hud_draw
-    LDA #4
-    STA $FE30   ; restore a render bank
-    RTS
-.endif
                                         ; block (the vars left the driver span
                                         ; for the WORK segment, 2026-08-26)
 ; (was ORG DRV_CLR -- the sections are contiguous now; DRV_GLUE/DRV_CLR
@@ -708,11 +637,7 @@ fs_go:
     ASL A
     STA $FE01
     LDA backhi
-.if ::MASTER
     EOR #(>MSCREEN0 ^ >MSCREEN1)
-.else
-    EOR #($58 ^ $6C)
-.endif
     STA backhi   ; backhi = buffer coming off display
     ; arm the run-ahead pipeline for the next frame: clear the vsync
     ; latch, enqueue mode, empty queue. The next frame's plots queue
@@ -721,14 +646,7 @@ fs_go:
     ; waits are covered by render compute.
     LDA #2
     STA $FE4D
-.if ::MASTER
     RTS         ; MASTER: no plot queue -- the emit stubs run direct
-.else
-    LDA #BANK_C
-    STA $FE30   ; dv_emit_op lives in bank
-    JSR ENG_PLOTQ_ARM                               ;  C — page it to patch.
-    RTS
-.endif                                             ; (the next frame pages
                                                     ;  L0 itself, so leaving
                                                     ;  C live is fine.
                                                     ;  plotq_arm owns the

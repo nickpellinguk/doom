@@ -13,7 +13,7 @@ Prints FILLREF: PASS.
 import os, sys
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
-import compare_renders as C
+import poses as C
 import master_assets as M
 import fill_ref as Fm
 import textured_ref as T

@@ -24,7 +24,7 @@ is filled once, in front-to-back order, with no overdraw and no gaps.
   output    per screen LINE: the byte (Mode 2: both lines of a pair alike)
 
 The engine's span pool is reached through the packed Python reference with
-the py65 6502 span clipper behind it (doom_wireframe.Instrumented6502Spans),
+the py65 6502 span clipper behind it (e1m1.Instrumented6502Spans),
 the same pairing the regression's traversal gates use.
 
     python3 fill_ref.py      # render the regression poses into build/master/fill/
@@ -56,7 +56,7 @@ def sky_bitmap():
     """32 bytes, one bit per subsector: its ceiling is F_SKY1. The 6502
     filler's mf_skymap (master/mfill.s) is seeded with this; the subsector's
     sector is the front sector of its (packed) segs, as fill_ref uses."""
-    import doom_wireframe as dw
+    import e1m1 as dw
     out = bytearray(32)
     for ss, (cnt, first) in enumerate(dw.fp_ssectors):
         secs = {dw.fp_segs_vwh[j][1] for j in range(first, first + cnt)}
@@ -76,14 +76,14 @@ def _floor_interp(x, x0, y0, x1, y1):
 
 class master_view:
     """The engine models' view for the Master: LINES lines about HORIZON.
-    The Python engine (fp, endpoint_spans, wad_packed, doom_wireframe,
+    The Python engine (fp, endpoint_spans, wad_packed, e1m1,
     angle_seg) is shared with the Model B references and keeps its 160
     lines about 80 outside this context."""
     def __enter__(self):
-        import fp, endpoint_spans, wad_packed, doom_wireframe, angle_seg
+        import fp, endpoint_spans, wad_packed, e1m1, angle_seg
         self.saved = [(m, n, getattr(m, n)) for m, n in (
             (fp, 'FP_RENDER_H'), (fp, 'HALF_H'), (endpoint_spans, 'FP_RENDER_H'),
-            (doom_wireframe, 'FP_RENDER_H'), (doom_wireframe, 'HALF_H'),
+            (e1m1, 'FP_RENDER_H'), (e1m1, 'HALF_H'),
             (angle_seg, 'HALF_H'), (wad_packed, 'VIEW_BOT'))]
         for m, n, _ in self.saved:
             setattr(m, n, {'FP_RENDER_H': LINES, 'HALF_H': HORIZON,
@@ -99,7 +99,7 @@ class FillRef:
     def __init__(self):
         import pygame
         pygame.init()
-        import doom_wireframe as dw
+        import e1m1 as dw
         from endpoint_spans import _span_top, _span_bot, Y_BIAS
         self.dw, self.top, self.bot, self.bias = dw, _span_top, _span_bot, Y_BIAS
 
@@ -199,7 +199,7 @@ class FillRef:
 
 
 if __name__ == '__main__':
-    import compare_renders as C
+    import poses as C
     import textured_ref as T
     F = FillRef()
     out = os.path.join(ROOT, 'build', 'master', 'fill')

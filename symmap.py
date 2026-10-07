@@ -10,10 +10,8 @@ Usage:
     ENTRY_MARK_SOLID = symmap.sym('span_mark_solid')  # linked address
     ZP_ILO        = symmap.sym('zp_i_l')           # ZP equate
 
-Symbols are per build variant (BANKED/C02 change addresses); the variant
-follows DOOM_CPU like the rest of the harness. Names must be unique
-within their module; ambiguous (scope-repeated) names are excluded at
-generation time and raise here.
+Names must be unique within their module; ambiguous (scope-repeated) names
+are excluded at generation time and raise here.
 """
 import json
 import os
@@ -23,18 +21,14 @@ import asmbuild
 _cache = {}
 
 
-def _load(banked=0, c02=None):
-    if c02 is None:
-        c02 = asmbuild.env_c02()
-    if banked == 2:
-        c02 = 1                 # MASTER links only for the 65C12 (asmbuild)
-    key = (banked, int(c02))
+def _load():
+    key = 'engine'
     if key in _cache:
         return _cache[key]
     table = {}
     ambiguous = set()
-    asmbuild.build('engine', banked=banked, c02=c02)
-    dbg = os.path.join(asmbuild._ROOT, 'build', f'engine_b{banked}c{int(c02)}.dbg')
+    asmbuild.build('engine')
+    dbg = os.path.join(asmbuild._ROOT, 'build', 'engine_m.dbg')
     for name, val in _parse_dbg(dbg):
         if name in table and table[name] != val:
             ambiguous.add(name)
@@ -66,8 +60,8 @@ def _parse_dbg(path):
     return [(n, v) for n, v in seen.items() if n not in dup]
 
 
-def sym(name, banked=0, c02=None):
-    table, ambiguous = _load(banked, c02)
+def sym(name):
+    table, ambiguous = _load()
     if name in table:
         return table[name]
     if name in ambiguous:
@@ -75,9 +69,9 @@ def sym(name, banked=0, c02=None):
     raise KeyError(f'symbol {name!r} not found in engine map')
 
 
-def dump(banked=0, c02=None):
+def dump():
     """Write build/symbols.json for humans/tools; returns the path."""
-    table, _ = _load(banked, c02)
+    table, _ = _load()
     path = os.path.join(asmbuild._ROOT, 'build', 'symbols.json')
     with open(path, 'w') as f:
         json.dump({k: f'${v:04X}' for k, v in sorted(table.items())}, f, indent=1)

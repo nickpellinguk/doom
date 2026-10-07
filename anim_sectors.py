@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runtime sector-height animation (doors / lifts) — Python prototype.
 
-Requires the DOOM_ANIM=1 build (doom_wireframe: movers discovered from
+Requires the DOOM_ANIM=1 build (e1m1: movers discovered from
 linedef specials, their segs exempt from strip/NOVT, private VWH slots).
 
 Two-level state, mirroring the intended 6502 design:
@@ -31,7 +31,7 @@ import os
 
 # (DOOM_ANIM gate removed 2026-07-10: anim is the only variant)
 
-import doom_wireframe as dw
+import e1m1 as dw
 from wad_packed import (SEG_DTL_SIZE, SEG_HDR_SIZE, seg_hdr_off, SH_BPAL,
                         SD_FH, SD_CH, SD_BFH,
                         SD_BCH, SH_FLAGS, SF_SOLID, SF_NEEDBT, SF_NEEDBB,
@@ -257,7 +257,7 @@ class Mover:
             nbytes += 1
         # jamb explicit vspans (in-plane door/lift junctions): the MOVING
         # bound of the entry tracks the mover so the jamb edge grows and
-        # shrinks with it (doom_wireframe ANIM_JAMB; the 6502 mirrors via
+        # shrinks with it (e1m1 ANIM_JAMB; the 6502 mirrors via
         # the anim worker's VEXPL patch list). Flat homes $DE00/$DE80
         # match bsp_render_6502's installer.
         for ix, role in dw.ANIM_JAMB.get(sec, ()):
@@ -441,48 +441,31 @@ def _speed88(world_per_frame):
     return max(1, int(round(dw._prescale_height(world_per_frame * 256))))
 
 
-def gen_6502_tables(flat=True):
-    """{address: bytes} for the flat harness or the banked window space."""
+def gen_6502_tables():
+    """{address: bytes} in the banked window space (the Master map)."""
     import struct as _st
-    if flat:
-        # THE PARASITE MAP (2026-09-02): flat homes = banked homes laid
-        # flat; every address comes from the flat symbol map, so the two
-        # builds cannot drift.
-        import symmap as _sm
-        _f = lambda n: _sm.sym(n, banked=0)
-        A = dict(ssmask=_f('ANIM_SSMASK'), tabl0=_f('ANIM_TABL0'),
-                 cfg=_f('ANIM_CFG'), hdr=_f('ROM_SEG_HDR_C'),
-                 vex_lo=_f('VEXPL_LO'), vex_hi=_f('VEXPL_HI'),
-                 ss_fh=_f('ROM_SS_FH_C'), ss_ch=_f('ROM_SS_CH_C'),
-                 # BY THE MAP like the banked arm: the header-relative
-                 # fallback shipped BPAL patch pointers at the DEAD $7500
-                 # emitter home -- caught by the pure-concat gate
-                 # 2026-09-02, the same class as the banked broken-doors
-                 # bug this dict's own comment records.
-                 bpal=_f('BPAL_BASE'))
-    else:
-        # banked ss_fh/ss_ch BY THE MAP (the five SS planes live in bank B
-        # since 2026-08-19, no longer header-relative) — today's five
-        # stale-literal reds are why this is symmap, not a number
-        import symmap as _sm
-        _b = lambda n: _sm.sym(n, banked=1)      # BY THE MAP, no literals:
-        # vex_lo/vex_hi drifted to $A700/$A780 after the 2026-09-02 bank-C
-        # compaction pulled VEXPL down to $A100/$A180 -- and $A700 now sits
-        # INSIDE the rasteriser code, so the jamb patcher was corrupting
-        # RASTER_ENTRY (anim6502_check stack-imbalance crash).  Symbol-driven
-        # now, like the flat branch.
-        A = dict(ssmask=_b('ANIM_SSMASK'), tabl0=_b('ANIM_TABL0'),
-                 cfg=_b('ANIM_CFG'), hdr=_b('ROM_SEG_HDR_C'),
-                 vex_lo=_b('VEXPL_LO'), vex_hi=_b('VEXPL_HI'),
-                 ss_fh=_b('ROM_SS_FH_C'),
-                 ss_ch=_b('ROM_SS_CH_C'),
-                 # BPAL is NOT header-relative in the banked map: the
-                 # seg-header squeeze moved it to the top of bank A. The
-                 # header-relative form silently pointed the mover back-
-                 # pair patches at $9Dxx — free space at first, VXCACHE
-                 # once the caches moved in: THE broken-doors bug
-                 # (2026-08-19..21, census-invisible to every gate).
-                 bpal=_sm.sym('BPAL_BASE', banked=1))
+    # banked ss_fh/ss_ch BY THE MAP (the five SS planes live in bank B
+    # since 2026-08-19, no longer header-relative) — today's five
+    # stale-literal reds are why this is symmap, not a number
+    import symmap as _sm
+    _b = lambda n: _sm.sym(n)      # BY THE MAP, no literals:
+    # vex_lo/vex_hi drifted to $A700/$A780 after the 2026-09-02 bank-C
+    # compaction pulled VEXPL down to $A100/$A180 -- and $A700 now sits
+    # INSIDE the rasteriser code, so the jamb patcher was corrupting
+    # RASTER_ENTRY (anim6502_check stack-imbalance crash).  Symbol-driven
+    # now, like the flat branch.
+    A = dict(ssmask=_b('ANIM_SSMASK'), tabl0=_b('ANIM_TABL0'),
+             cfg=_b('ANIM_CFG'), hdr=_b('ROM_SEG_HDR_C'),
+             vex_lo=_b('VEXPL_LO'), vex_hi=_b('VEXPL_HI'),
+             ss_fh=_b('ROM_SS_FH_C'),
+             ss_ch=_b('ROM_SS_CH_C'),
+             # BPAL is NOT header-relative in the banked map: the
+             # seg-header squeeze moved it to the top of bank A. The
+             # header-relative form silently pointed the mover back-
+             # pair patches at $9Dxx — free space at first, VXCACHE
+             # once the caches moved in: THE broken-doors bug
+             # (2026-08-19..21, census-invisible to every gate).
+             bpal=_sm.sym('BPAL_BASE'))
     order = sorted(dw.ANIM_SECTORS)
     out = {}
     # SSMASK
@@ -532,19 +515,24 @@ def gen_6502_tables(flat=True):
             back_addrs += [B(i, 0) for i in m.front_segs if solid(i)]
         flag_segs = [i for i in m.touch_segs if dw.fp_segs_vwh[i][2] is not None]
         # jamb VEXPL patch targets: the entry byte holding the MOVING bound
-        # (bank C banked — the worker pages around these writes)
+        # (bank-C data, laid in main RAM at CBITS_M on the Master)
         vexpl_addrs = [(A['vex_hi'] if role == 'hi' else A['vex_lo']) + ix
                        for ix, role in dw.ANIM_JAMB.get(sec, ())]
         # Census guard (the tube lesson, twice now): every patch address
         # must land inside a KNOWN plane. Banked: front -> bank-B SS
         # pages, back -> the BPAL page. Anything else is a stale base.
-        if not flat:
-            for a in front_addrs:
-                assert (A['ss_fh'] & 0xFF00) <= a <= (A['ss_ch'] | 0xFF), \
-                    f'front patch addr {a:#x} outside the SS planes'
-            for a in back_addrs:
-                assert (_bpal_base & 0xFF00) <= a <= (_bpal_base | 0xFF), \
-                    f'back patch addr {a:#x} outside the BPAL page'
+        for a in front_addrs:
+            assert (A['ss_fh'] & 0xFF00) <= a <= (A['ss_ch'] | 0xFF), \
+                f'front patch addr {a:#x} outside the SS planes'
+        for a in back_addrs:
+            assert (_bpal_base & 0xFF00) <= a <= (_bpal_base | 0xFF), \
+                f'back patch addr {a:#x} outside the BPAL page'
+        # ...and the jamb targets inside the VEXPL planes (the Master's
+        # main-RAM copy: these once shipped the Model B bank-C addresses,
+        # and the worker wrote the mover's height into bank 6 code)
+        for a in vexpl_addrs:
+            assert A['vex_lo'] <= a < A['vex_hi'] + 0x80, \
+                f'jamb patch addr {a:#x} outside VEXPL_LO/HI'
         blk = bytearray([len(front_addrs), len(back_addrs),
                          len(flag_segs), len(vexpl_addrs)])
         for a in front_addrs + back_addrs:
@@ -592,8 +580,8 @@ def gen_6502_tables(flat=True):
     return out
 
 
-def install_6502_tables(mem, flat=True):
-    for addr, blob in gen_6502_tables(flat).items():
+def install_6502_tables(mem):
+    for addr, blob in gen_6502_tables().items():
         for i, b in enumerate(blob):
             mem[addr + i] = b
 

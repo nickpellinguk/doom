@@ -62,7 +62,7 @@ def _name(b):
 
 class Walls:
     def __init__(self, dw, tex, man):
-        """dw: doom_wireframe; tex: name -> (texel array, src_w, src_h) as
+        """dw: e1m1; tex: name -> (texel array, src_w, src_h) as
         textured_ref loads it; man: master_assets manifest (assets.json)."""
         self.dw = dw
         self.tex = tex
@@ -179,7 +179,7 @@ class Walls:
         'b6t': bytes at mb6_pt_tid (bank 6 tail), 'ix': bytes at mtex_ix},
         laid out by the MASTER link's labels (src/master/mfill.s)."""
         from symmap import sym
-        L = lambda n: sym(n, banked=2)
+        L = lambda n: sym(n)
         andy_base, b6t_base = L('man_slot_d'), L('mb6_pt_tid')
         assert andy_base == 0x8000
         andy = bytearray(0x1000)

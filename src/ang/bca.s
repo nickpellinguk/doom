@@ -411,15 +411,7 @@ yRmid:                                     ; row 6 (E): corners share R,
 ; exits return to OUR caller — the JSR/RTS shuttles at every stage are
 ; gone. Inside boxes escape via cx_inside -> full_vis directly.
    ; ============================================================================
-.if ::BANKED
 SEG_CODE
-.else
-SEG_HIGH                                   ; flat: the probe/serve block lives
-                                           ; in the HIGH island (CODE has no
-                                           ; room — the 75-byte overflow was
-                                           ; measured, not guessed) and the
-                                           ; miss bridges with one JMP
-.endif
 ; --- bbox_check_angle: rotation-coherent bbox visibility ----------------------
 ; Same contract as box_classify (in: zp_node_ch_l/zp_bbox_side, bca_pxs/
 ; pys, bca_afn; out: the C/V verdict + bca_ilo/ihi) and bit-identical
@@ -461,11 +453,7 @@ bcls_s0:
    CLASSIFY_TREE 0                                                        ;# |||||||||  7.6
 
 zc_end:
-.if BANKED
 SEG_CODE
-.else
-SEG_HIGH
-.endif
 ; --- Faithful DOOM R_CheckBBox, unsigned-BAM wraparound (FINEANGLES=4096).
 ; Our phi = -(DOOM view-relative angle), so DOOM angle1=-p1 (p1 = LEFT
 ; silhouette, checkcoord order), angle2=-p2 (RIGHT). All arithmetic is
@@ -830,10 +818,6 @@ czy:
 ; PLACEMENT: flat = the ANGX window; banked = linear in ANG_BK. Either
 ; way the entries, the width arms, lf_ns and the compose chain below
 ; are one contiguous run.
-.if ::BANKED = 0
-SEG_HIGHX
-angx_head:
-.endif
 CORNER_ENTRY corner_phi_nn, 1, 1, 6                                          ;# ||||       3.6
 CORNER_ENTRY corner_phi_np, 1, 0, 4                                          ;# |          0.6
 CORNER_ENTRY corner_phi_pp, 0, 0, 0                                          ;# |          0.5
@@ -1111,9 +1095,6 @@ nsxy_pos96:                                ; COMMON direction — no trampoline)
 nsxy_k255:
    LDA #255                                ; k clamp (AE tail flat there)
    JMP ns_khave
-.if ::BANKED = 0
-SEG_HIGH
-.endif
 
 
 ; --- The cache half of the check (2026-07-20: fully subsumed into this
@@ -1123,9 +1104,7 @@ SEG_HIGH
 ; miss. Moving frames enter at box_classify (bbox_visible's indirect
 ; JMP through zp_bv_entry) and never see the probe. Callers guarantee L2
 ; is paged. ---
-.if BANKED
 SEG_CODE
-.endif
 .export box_classify
 ; (class exports died 2026-09-04) ;    ; hud.s: the frame's class letter is
                                         ; zp_bv_entry's low byte vs these
@@ -1144,10 +1123,5 @@ corner_sx: .byte 0, 0
 corner_sy: .byte 0, 0
 SEG_CODE
 
-.if BANKED
 ; (ld65 writes this: SAVE "bsp_render_ang_bk.bin")
-.else
-.assert end <= $6200, error             ; flat CODE ceiling: the NJ blob
-                                        ; loads at $6200 (map reshuffle)
-.endif
 

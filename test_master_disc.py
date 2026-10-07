@@ -26,8 +26,8 @@ addrs = os.path.join(out, 'addrs.json')
 import master_panel
 import master_assets as M
 open(os.path.join(out, 'panel.bin'), 'wb').write(master_panel.panel_bytes())
-json.dump({'flip_sched': symmap.sym('flip_sched', banked=2),
-           'render_frame': symmap.sym('render_frame', banked=2),
+json.dump({'flip_sched': symmap.sym('flip_sched'),
+           'render_frame': symmap.sym('render_frame'),
            'hole_marker': M.mode2_byte((13, 0)),   # (13, 0): no art makes it
            'DV_ANGIDX': abi.DV_ANGIDX,
            'panel': [abi.MSCREEN0 + master_panel.PANEL_OFFSET,

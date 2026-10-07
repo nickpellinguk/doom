@@ -1,14 +1,11 @@
 .include "layout.inc"
 .include "zp.inc"
 ; CPU target: every builder MUST pass -D C02=0 (6502) or -D C02=1 (65C02 opcodes).
-.if C02
 .setcpu "65C02"
-.endif
 ; ZERO addr: zero a byte. 65C02 = STZ (A preserved); 6502 = LDA #0:STA (A
 ; clobbered) — only use where A is dead afterwards. (Same macro as the
 ; bsp/clip headers; the angle module grew C02 sites 2026-07-21.)
 .macro ZERO a1, a2, a3, a4, a5, a6
-.if ::C02
 STZ a1
 .ifnblank a2
 STZ a2
@@ -24,25 +21,6 @@ STZ a5
 .endif
 .ifnblank a6
 STZ a6
-.endif
-.else
-   LDA #0
-   STA a1
-.ifnblank a2
-   STA a2
-.endif
-.ifnblank a3
-   STA a3
-.endif
-.ifnblank a4
-   STA a4
-.endif
-.ifnblank a5
-   STA a5
-.endif
-.ifnblank a6
-   STA a6
-.endif
 .endif
 .endmacro
 ; SlopeDiv for the angle-space pipeline (M3 primitive, unit-tested standalone).
@@ -67,11 +45,7 @@ STZ a6
 ; table that lived here is GONE (2026-07-16): bsp_render .imports
 ; slope_div / bbox_check_angle directly (linker-resolved); ang_head
 ; marks the region head for engine_load.py's ang-bin placement.
-.if BANKED
 SEG_CODE
-.else
-SEG_HIGH
-.endif
 ; (.export bbox_check_angle died 2026-09-04 with the extent cache)
 .import span_has_gap                    ; fused visible exits (bca.s) chain
 ang_head:
