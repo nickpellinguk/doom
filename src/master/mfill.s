@@ -309,6 +309,8 @@ ss_sl:   .res 3                         ;  ($FF: none) -- the right strip's
 ss_sh:   .res 3                         ;  step extrapolates from them
 ss_hl:   .res 3                         ;  and that left step's B - T (step 7e:
 ss_hh:   .res 3                         ;  an equal one reuses the step)
+pp_used: .res 4                         ; per partial-line slot: one recorded
+                                        ;  since its kind's range opened (7k)
 t_hl:    .res 1                         ; this run's left B - T
 t_hh:    .res 1
 tx_x0:   .res 1                         ; the seg's first byte column
@@ -1735,43 +1737,76 @@ at:
    STA m_p+1
    RTS
 @dv:
-   LDA tx_d1                            ; num = d1 * a + d2 * b
-   STA m_a
-   LDA tx_d1+1
-   STA m_a+1
-   LDA at_a
-   STA m_b
-   LDA at_a+1
-   STA m_b+1
-   JSR mul16
-   LDX #3
-:  LDA m_p,X
-   STA t_tmp,X
-   DEX
-   BPL :-
+   ; step 7k: (d1 a + d2 b) / (a + b) = d1 + (d2 - d1) b / (a + b), so
+   ; floor = d1 + floor((d2 - d1) b / den), and for d2 < d1
+   ; d1 - ceil((d1 - d2) b / den), the ceiling as (P + den - 1) / den:
+   ; one multiply, the same integer
+   SEC
    LDA tx_d2
+   SBC tx_d1
    STA m_a
    LDA tx_d2+1
+   SBC tx_d1+1
    STA m_a+1
+   BCS @up                              ; d2 >= d1
+   SEC                                  ; |d2 - d1|
+   LDA #0
+   SBC m_a
+   STA m_a
+   LDA #0
+   SBC m_a+1
+   STA m_a+1
+@up:
+   PHP                                  ; (C: the sign)
    LDA at_b
    STA m_b
    LDA at_b+1
    STA m_b+1
-   JSR mul16
-   CLC
-   LDX #0
-:  LDA m_p,X
-   ADC t_tmp,X
-   STA m_p,X
-   INX
-   TXA
-   EOR #4
-   BNE :-
+   JSR mul16                            ; P = |d2 - d1| * b
    LDA at_den
    STA m_b
    LDA at_den+1
    STA m_b+1
-   JMP divq16
+   PLP
+   BCS @fl
+   SEC                                  ; the ceiling: P + den - 1
+   LDA m_b
+   SBC #1
+   STA t_tmp
+   LDA m_b+1
+   SBC #0
+   STA t_tmp+1
+   CLC
+   LDA m_p
+   ADC t_tmp
+   STA m_p
+   LDA m_p+1
+   ADC t_tmp+1
+   STA m_p+1
+   BCC @cl
+   INC m_p+2
+   BNE @cl
+   INC m_p+3
+@cl:
+   JSR divq16
+   SEC                                  ; d = d1 - q
+   LDA tx_d1
+   SBC m_p
+   STA m_p
+   LDA tx_d1+1
+   SBC m_p+1
+   STA m_p+1
+   RTS
+@fl:
+   JSR divq16
+   CLC                                  ; d = d1 + q
+   LDA tx_d1
+   ADC m_p
+   STA m_p
+   LDA tx_d1+1
+   ADC m_p+1
+   STA m_p+1
+   RTS
 
 ; ---- tx_getd: this byte's d for both strips (once), and the piece -------
 tx_getd:
@@ -4507,23 +4542,27 @@ mk_spans:
    LDA pl_k0
    STA mk_k
 @col:
-   LDA mk_k
-   CMP pl_k1
+   LDX mk_k
+   CPX pl_k1
    BEQ :+
    BCS @sent                            ; past the last: the empty sentinel
-:  TAX
-   LDA pl_kind
+:  LDA pl_kind
    BEQ :+
    LDA pe_ft,X
    STA mk_t2
    LDA pe_fb,X
-   STA mk_b2
-   BRA @go
+   BRA @same
 :  LDA pe_ct,X
    STA mk_t2
    LDA pe_cb,X
-   STA mk_b2
-   BRA @go
+@same:                                  ; step 7k: the last column's interval
+   STA mk_b2                            ;  again: nothing closes or opens
+   CMP mk_b1
+   BNE @go
+   LDA mk_t2
+   CMP mk_t1
+   BNE @go
+   JMP @adv
 @sent:
    LDA #$FF
    STA mk_t2
@@ -4583,6 +4622,7 @@ mk_spans:
    STA mk_b1
    PLA
    STA mk_t1
+@adv:
    LDA mk_k
    INC mk_k
    CMP pl_k1
@@ -4677,6 +4717,7 @@ pl_part:
    LSR A                                ; C = odd
    LDA pl_kind
    ROL A                                ; slot = kind * 2 + odd
+   TAY
    ASL A
    ASL A
    ASL A
@@ -4690,6 +4731,8 @@ pl_part:
    BNE @now
    LDA pl_y
    STA pp_all,X
+   LDA #1                               ; (the slot is in use: step 7k)
+   STA pp_used,Y
    RTS
 @now:
    LDA pl_y
@@ -4787,6 +4830,11 @@ pe_kind:
    STA ck1
    LDA #1
    STA pd_open,X
+   TXA                                  ; step 7k: its two partial-line
+   ASL A                                ;  slots hold nothing yet
+   TAX
+   STZ pp_used,X
+   STZ pp_used+1,X
    ; fall into pe_clr
 
 ; pe_clr: columns ck0..ck1 of kind pk_kind: no pair interval ($FF, 0),
@@ -4797,18 +4845,12 @@ pe_clr:
    ROR A                                ; kind << 7: its two slots' base
    STA pp_base
    LDX ck0
-@lp:
    LDA pk_kind
    BNE @f
+@c:                                     ; ceiling
    LDA #$FF
    STA pe_ct,X
    STZ pe_cb,X
-   BRA @pp
-@f:
-   LDA #$FF
-   STA pe_ft,X
-   STZ pe_fb,X
-@pp:
    TXA
    ORA pp_base
    TAY
@@ -4817,7 +4859,21 @@ pe_clr:
    STA pp_all+64,Y
    CPX ck1
    INX
-   BCC @lp
+   BCC @c
+   RTS
+@f:                                     ; floor
+   LDA #$FF
+   STA pe_ft,X
+   STZ pe_fb,X
+   TXA
+   ORA pp_base
+   TAY
+   LDA #$FF
+   STA pp_all,Y
+   STA pp_all+64,Y
+   CPX ck1
+   INX
+   BCC @f
    RTS
 
 ; pd_flush: X = kind: draw its pending spans -- MakeSpans over the pairs,
@@ -4847,7 +4903,11 @@ pd_flush:
 ; pp_slot: slot pp_s over the pending columns: each run of one line drawn
 ; as a line span (sl_draw)
 pp_slot:
-   LDA pp_s
+   LDX pp_s                             ; step 7k: nothing recorded in this
+   LDA pp_used,X                        ;  slot since the range opened: no
+   BNE :+                               ;  scan
+   RTS
+:  LDA pp_s
    ASL A
    ASL A
    ASL A
@@ -5010,6 +5070,95 @@ dq_r0 = zw_dh                           ; remainder lo (A: hi)
 dq_b0 = zw_ddh                          ; divisor
 dq_b1 = zw_rowm
 .segment "MB6C"
+
+; QMUL A0, B0: A (hi), mq_l (lo) = A0 * B0, one quarter-square 8 x 8
+; inline (step 7k: mf_mul8 without the call or the staging)
+.macro QMUL A0, B0
+.local pos, big, done
+   LDA A0
+   SEC
+   SBC B0
+   BCS pos
+   EOR #$FF
+   ADC #1                               ; (C = 0 from the SBC)
+pos:
+   TAY                                  ; Y = |a - b|
+   LDA A0
+   CLC
+   ADC B0
+   TAX                                  ; X = (a + b) & $FF
+   BCS big
+   SEC
+   LDA SQR_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR_HI,X
+   SBC SQR_HI,Y
+   BRA done
+big:                                    ; a + b >= 256 (C = 1)
+   LDA SQR2_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR2_HI,X
+   SBC SQR_HI,Y
+done:
+.endmacro
+
+; ---- mul16: m_p (32) = m_a * m_b (16 x 16), four quarter-square 8x8s
+; (zero high bytes skipped); m_a, m_b kept, Y kept. Step 7k: from MARITH
+; to bank 6 (every caller is bank-6 code), the 8x8s inline.
+mul16:
+   PHY
+   QMUL m_a, m_b                        ; a0 * b0
+   STA m_p+1
+   LDA mq_l
+   STA m_p
+   STZ m_p+2
+   STZ m_p+3
+   LDA m_a+1
+   BNE :+
+   JMP m16_a1z
+:
+   QMUL m_a+1, m_b                      ; a1 * b0, at byte 1
+   TAY
+   CLC
+   LDA mq_l
+   ADC m_p+1
+   STA m_p+1
+   TYA
+   ADC m_p+2                            ; (was 0: no carry out)
+   STA m_p+2
+m16_a1z:
+   LDA m_b+1
+   BNE :+
+   JMP m16_done
+:
+   QMUL m_a, m_b+1                      ; a0 * b1, at byte 1
+   TAY
+   CLC
+   LDA mq_l
+   ADC m_p+1
+   STA m_p+1
+   TYA
+   ADC m_p+2
+   STA m_p+2
+   BCC :+
+   INC m_p+3
+:  LDA m_a+1
+   BEQ m16_done
+   QMUL m_a+1, m_b+1                    ; a1 * b1, at byte 2
+   TAY
+   CLC
+   LDA mq_l
+   ADC m_p+2
+   STA m_p+2
+   TYA
+   ADC m_p+3
+   STA m_p+3
+m16_done:
+   PLY
+   RTS
+
 dq_core:
    LDX m_p
    STX dq_d0
@@ -5069,59 +5218,6 @@ divq16:
 .segment "MB6C"
 .segment "MARITH"
 ; ---- mul16 -----------------------------------------------------------------
-mul16:                                  ; m_p (32) = m_a * m_b (16 x 16),
-   PHY                                  ;  four quarter-square 8x8s; m_a,
-   LDA m_b                              ;  m_b kept
-   STA mq_b
-   LDA m_a
-   JSR mf_mul8                            ; a0 * b0
-   STA m_p+1
-   LDA mq_l
-   STA m_p
-   STZ m_p+2
-   STZ m_p+3
-   LDA m_a+1
-   BEQ @a1z
-   JSR mf_mul8                            ; a1 * b0, at byte 1
-   TAY
-   CLC
-   LDA mq_l
-   ADC m_p+1
-   STA m_p+1
-   TYA
-   ADC m_p+2                            ; (was 0: no carry out)
-   STA m_p+2
-@a1z:
-   LDA m_b+1
-   BEQ @done
-   STA mq_b
-   LDA m_a
-   JSR mf_mul8                            ; a0 * b1, at byte 1
-   TAY
-   CLC
-   LDA mq_l
-   ADC m_p+1
-   STA m_p+1
-   TYA
-   ADC m_p+2
-   STA m_p+2
-   BCC :+
-   INC m_p+3
-:  LDA m_a+1
-   BEQ @done
-   JSR mf_mul8                            ; a1 * b1, at byte 2
-   TAY
-   CLC
-   LDA mq_l
-   ADC m_p+2
-   STA m_p+2
-   TYA
-   ADC m_p+3
-   STA m_p+3
-@done:
-   PLY
-   RTS
-
 ; ---- div32: m_p (32) / m_b (16) -> quotient m_p (32), remainder m_r.
 ; Exact. Every E1M1 call has a quotient < 2^16, 95% an 8-bit divisor:
 ;   8-bit divisor, quotient < 2^16: two byte steps (d8_byte), skipped

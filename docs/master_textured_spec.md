@@ -123,7 +123,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$8FFF: textures and flats (to $82FF since step 6b); bank 6 $9000–$B4F2 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (1,037 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$8FFF: textures and flats (to $82FF since step 6b); bank 6 $9000–$B687 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (632 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1188,6 +1188,29 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7k. Set-up: geometry-heavy views (the start position). — DONE.**
+Profiled at the start (1056, -3616): the spawn view (angle $80, 838K
+cycles) and the room it turns to (angle 64, 1,776K, 32 segs), where
+per-span and per-seg set-up outweigh the inner loops. All exact, no model
+change:
+- *Partial-line slots.* `pl_part` marks its slot used (`pp_used`); a
+  kind's two slots are marked empty when its pending range opens, and
+  `pp_slot` skips a slot with nothing recorded instead of scanning every
+  pending column. `pe_clr` tests the kind once, not per column.
+- *mul16 inline.* The four quarter-square 8x8s are inline (`QMUL`: no
+  call, no staging through `mq_b` / `mq_t`); moved from MARITH to bank 6
+  (all 11 callers are bank-6 code). 217 -> 185 cycles a call.
+- *at: one multiply fewer.* (d1 a + d2 b) / (a + b) = d1 + (d2 - d1) b /
+  (a + b), so the floor is d1 + floor((d2 - d1) b / den), and for d2 < d1
+  d1 - ceil((d1 - d2) b / den), the ceiling as (P + den - 1) / den. The
+  dividend's hi word stays below den, so divq16 still applies. 2,285 ->
+  1,819 cycles a call.
+- *mk_spans.* A column whose pair interval equals the last one's closes
+  and opens nothing: straight to the next column.
+1056,-3616,64 1,776,391 -> 1,688,653 (-4.9%); 1056,-3616,128 838,076 ->
+810,074. 20 poses 25,937,187 -> 24,962,540 (-3.8%). Bank 6 code
+$9000-$B687 (632 B free); MARITH $7E20-$7F45.
 
 **7j. Set-up: trun without the copying. — DONE.** trun spent ~495
 cycles a run, most of it moving values between variables. Now:
