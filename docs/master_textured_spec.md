@@ -123,7 +123,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$8FFF: textures and flats (to $82FF since step 6b); bank 6 $9000–$B540 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (959 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$8FFF: textures and flats (to $82FF since step 6b); bank 6 $9000–$B4F2 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (1,037 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1188,6 +1188,26 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7j. Set-up: trun without the copying. — DONE.** trun spent ~495
+cycles a run, most of it moving values between variables. Now:
+- the part's K and Vtop are read from its record (`mb6_pt_k*`,
+  `mb6_pt_v*`, indexed by `t_part`) by `tv_divm` / `tv_v0`, not copied
+  into `t_kk` / `t_vt` (both gone);
+- the run's B - T goes straight into the divisor `m_b` as it is made (the
+  left strip with `t_hl` / `t_hh`, the right with its 7e compare), so the
+  divide no longer subtracts again: `tv_div` became `tv_divm`; only T is
+  copied to `q_t` (`q_b` is gone; it was a 4-byte loop);
+- the shared-v path no longer copies `l_v` / `l_step` back into `t_v` /
+  `t_step`: they still hold the left strip's;
+- the 7e step cache is written only on a miss (`ss_x` on every run);
+- `tcol` writes the texel column straight into `tw_ll`/`tw_lh` (Y = 0) or
+  `tw_rl`/`tw_rh` (Y = 2) and folds the masks into the add (`t_cl` /
+  `t_ch` gone).
+trun 495 -> 338 cycles a run (1056,-3616,32: 58,882 -> 40,170). 20 poses
+26,355,653 -> 25,937,187 (-1.6%); 1056,-3616,32 1,676,251 -> 1,654,363,
+1792,-3351,108 1,361,790 -> 1,337,743, 2500,-2600,67 884,409 -> 867,280.
+Byte-exact (no model change). Bank 6 code $9000-$B4F2 (1,037 B free).
 
 **7i. Set-up: the edge steppers and the normalise loops. — DONE.**
 Profiled by routine: the span-edge steppers (`next_col`, `adv`,

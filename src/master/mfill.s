@@ -277,19 +277,15 @@ t_i:     .res 1
 t_k:     .res 1
 t_sx:    .res 1
 t_tid:   .res 1
-t_vt:    .res 2
 t_step:  .res 2
 t_v:     .res 2
 t_rowm:  .res 1
 t_n:     .res 1
 t_ev:    .res 1
 t_od:    .res 1
-t_cl:    .res 1                         ; texel column base lo / hi
-t_ch:    .res 1
 c_tr:    .res 2                         ; the right strip's own T, B (x + 2;
 c_br:    .res 2                         ;  c_t..c_b and c_tr..c_br are pairs)
-q_t:     .res 2                         ; tstrip's T, B (same layout) and d
-q_b:     .res 2
+q_t:     .res 2                         ; the strip's T (tv_v0) and d (tcol)
 q_d:     .res 2
 tx_dr:   .res 2                         ; the right strip's d (x + 3)
 l_v:     .res 2                         ; the left strip's v and pair step
@@ -321,7 +317,6 @@ tx_ad:   .res 2                         ;  and value
 tx_kk:   .res 1                         ; tx_dat's step (-1, 0, 1)
 tx_lx:   .res 1                         ; the last byte column with an exact d
 tx_dp:   .res 2                         ;  (its x, and that d)
-t_kk:    .res 3                         ; the part's K
 ; ---- step 5: floors and ceilings (plane_ref.py is the executable spec) ----
 mf_ep:   .res 1                         ; frame epoch (pc_ep; 0 never valid)
 pl_up:   .res 2                         ; the frame's view terms: Up, Vp (4.12)
@@ -2056,38 +2051,31 @@ wall_run:
 ; Every line is written WHOLE: (left texel << 2) | right texel, FLIP of it
 ; on odd lines -- a 4x2 fat pixel, nothing read back.
 trun:
-   STA t_part
-   TAX
-   LDA mb6_pt_tid,X
+   STA t_part                           ; (step 7i: the part's K and Vtop
+   TAX                                  ;  are read from its record by
+   LDA mb6_pt_tid,X                     ;  tv_div / tv_v0, not copied)
    STA t_tid
-   LDA mb6_pt_v0,X
-   STA t_vt
-   LDA mb6_pt_v1,X
-   STA t_vt+1
-   LDA mb6_pt_k0,X
-   STA t_kk
-   LDA mb6_pt_k1,X
-   STA t_kk+1
-   LDA mb6_pt_k2,X
-   STA t_kk+2
    ; the left strip: its v from T, B at x; its column from d at x + 1
-   LDX #3
-:  LDA c_t,X                            ; c_t, c_b (4 bytes) -> q_t, q_b
-   STA q_t,X
-   DEX
-   BPL :-
+   LDA c_t
+   STA q_t
+   LDA c_t+1
+   STA q_t+1
+   SEC                                  ; B - T: the step's divisor
+   LDA c_b
+   SBC c_t
+   STA t_hl
+   STA m_b
+   LDA c_b+1
+   SBC c_t+1
+   STA t_hh
+   STA m_b+1
    ; step 7e: the band's last run in this seg had the same part and B - T:
    ; the same step, no division (K is the part's; exact)
-   SEC
-   LDA q_b
-   SBC q_t
-   STA t_hl
-   LDA q_b+1
-   SBC q_t+1
-   STA t_hh
    LDY b_kind
-   LDA ss_x,Y
-   CMP #$FF
+   LDA mf_x
+   LDX ss_x,Y
+   STA ss_x,Y                           ; (this byte's run, from here on)
+   CPX #$FF
    BEQ @sdiv                            ; (none yet in this seg)
    LDA t_part
    CMP ss_pt,Y
@@ -2100,16 +2088,27 @@ trun:
    BNE @sdiv
    LDA ss_sl,Y
    STA t_step
+   STA t_sl
    LDA ss_sh,Y
    STA t_step+1
+   STA t_sl+1
    BRA @sgot
 @sdiv:
-   JSR tv_div
-@sgot:
+   JSR tv_divm
+   LDY b_kind                           ; the band's step cache: this run
+   LDA t_part
+   STA ss_pt,Y
+   LDA t_hl
+   STA ss_hl,Y
+   LDA t_hh
+   STA ss_hh,Y
    LDA t_step                           ; (the left step, for the next byte)
    STA t_sl
+   STA ss_sl,Y
    LDA t_step+1
    STA t_sl+1
+   STA ss_sh,Y
+@sgot:
    JSR tv_v0
    LDA t_v
    STA l_v
@@ -2123,85 +2122,58 @@ trun:
    STA q_d
    LDA tx_d+1
    STA q_d+1
+   LDY #0                               ; -> tw_ll, tw_lh
    JSR tcol
-   LDA t_cl
-   STA tw_ll
-   LDA t_ch
-   STA tw_lh
    ; step 5n: a left step <= the seg's limit shares the left v (t_v,
    ; t_step are still the left strip's): none of the right v is made
    STZ tw_sh
+   STZ zw_ddh                           ; (shared: no delta step)
    LDA tw_slim
    CMP t_sl
    LDA tw_slim+1
    SBC t_sl+1
    BCC @own
-   DEC tw_sh                            ; ($FF: shared)
-   LDA l_v                              ; the right strip's v = the left's
-   STA t_v                              ;  (tr_screen, tr_vstep)
-   LDA l_v+1
-   STA t_v+1
-   LDA l_step
-   STA t_step
-   LDA l_step+1
-   STA t_step+1
-   BRA @rr
+   DEC tw_sh                            ; ($FF: shared; the right strip's
+   BRA @rr                              ;  v is the left's, as t_v / t_step)
 @own:
    ; the right strip: its own v from its own T, B (the midpoints with the
    ; next byte's), its own exact step; its column from d at x + 3
    JSR tr_lines
-   LDX #3
-:  LDA c_tr,X                           ; c_tr, c_br -> q_t, q_b
-   STA q_t,X
-   DEX
-   BPL :-
+   LDA c_tr
+   STA q_t
+   LDA c_tr+1
+   STA q_t+1
    ; its step exact (step 7g: no longer extrapolated from the left
    ; steps), reusing the left step when the heights match (7e)
-@rx:
    SEC                                  ; step 7e: Br - Tr = B - T: the left
-   LDA q_b                              ;  step (exact)
-   SBC q_t
-   CMP t_hl
+   LDA c_br                             ;  step (exact)
+   SBC c_tr
+   STA m_b
+   TAX
+   LDA c_br+1
+   SBC c_tr+1
+   STA m_b+1
+   CPX t_hl
    BNE @rdiv
-   LDA q_b+1
-   SBC q_t+1
    CMP t_hh
    BNE @rdiv
    LDA t_sl
    STA t_step
    LDA t_sl+1
    STA t_step+1
-   BRA @rr
+   BRA @rv
 @rdiv:
-   JSR tv_div                           ; exact: K / (Br - Tr)
-@rr:
-   LDY b_kind
-   LDA mf_x
-   STA ss_x,Y
-   LDA t_hl
-   STA ss_hl,Y
-   LDA t_hh
-   STA ss_hh,Y
-   LDA t_part
-   STA ss_pt,Y
-   LDA t_sl
-   STA ss_sl,Y
-   LDA t_sl+1
-   STA ss_sh,Y
-   STZ zw_ddh                           ; (shared: no delta step)
-   BIT tw_sh
-   BMI :+
+   JSR tv_divm                          ; exact: K / (Br - Tr)
+@rv:
    JSR tv_v0
    JSR tr_ddh
-:  LDA tx_dr
+@rr:
+   LDA tx_dr
    STA q_d
    LDA tx_dr+1
    STA q_d+1
+   LDY #tw_rl - tw_ll                   ; -> tw_rl, tw_rh
    JSR tcol
-   LDA t_cl
-   STA tw_rl
-   LDA t_ch
-   STA tw_rh
    LDX t_tid
    LDA mb6_tp_rowm,X
    STA zw_rowm
@@ -3197,24 +3169,19 @@ tr_ddh:
    ROL zw_ddh
    RTS
 
-; ---- tvstep: the run's v. In: q_t, q_b (s16 T, B), t_kk (K), t_vt (Vtop),
-; r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
+; ---- tvstep: the run's v. In: m_b (B - T, tv_divm), q_t (s16 T), the
+; part t_part's K and Vtop (its record), r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
 ; B <= T), t_v = Vtop + ((ys & ~1) - T) * step (mod 2^16) ----------------
-tv_div:
-   LDA t_kk
+tv_divm:                                ; (m_b = B - T, set by the caller)
+   LDX t_part                           ; K: the part's (step 7i)
+   LDA mb6_pt_k0,X
    STA m_p
-   LDA t_kk+1
+   LDA mb6_pt_k1,X
    STA m_p+1
-   LDA t_kk+2
+   LDA mb6_pt_k2,X
    STA m_p+2
    STZ m_p+3
-   SEC
-   LDA q_b
-   SBC q_t
-   STA m_b
-   LDA q_b+1
-   SBC q_t+1
-   STA m_b+1
+   LDA m_b+1
    BMI @z
    ORA m_b
    BEQ @z
@@ -3245,18 +3212,20 @@ tv_v0:
    AND m_a+1
    CMP #$FF
    BNE @mul
-   SEC                                  ; one line above T: v = Vtop - step
-   LDA t_vt
+   LDX t_part                           ; one line above T: v = Vtop - step
+   SEC
+   LDA mb6_pt_v0,X
    SBC t_step
    STA t_v
-   LDA t_vt+1
+   LDA mb6_pt_v1,X
    SBC t_step+1
    STA t_v+1
    BRA @dbl
 @top:
-   LDA t_vt
+   LDX t_part
+   LDA mb6_pt_v0,X
    STA t_v
-   LDA t_vt+1
+   LDA mb6_pt_v1,X
    STA t_v+1
    BRA @dbl
 @mul:
@@ -3265,12 +3234,13 @@ tv_v0:
    LDA t_step+1
    STA m_b+1
    JSR mul16
+   LDX t_part
    CLC
    LDA m_p
-   ADC t_vt
+   ADC mb6_pt_v0,X
    STA t_v
    LDA m_p+1
-   ADC t_vt+1
+   ADC mb6_pt_v1,X
    STA t_v+1
 @dbl:
    ASL t_step                           ; step is per LINE: a pair moves 2 steps
@@ -3279,19 +3249,16 @@ tv_v0:
 
 ; ---- tcol: q_d (d) -> t_cl / t_ch, the texel column: u = ub * 16 - start
 ; + d; index = (u & mask) >> shift, as hi((u & mask) << (8 - shift)) ----
-tcol:
+tcol:                                   ; (Y = 0: -> tw_ll / tw_lh; 2: ->
+   PHY                                  ;  tw_rl / tw_rh, step 7i)
+   LDX t_tid
    CLC                                  ; u = (ub * 16 - start) + d
    LDA cur_bl
    ADC q_d
+   AND mb6_tp_ml,X
    STA m_a
    LDA cur_bh
    ADC q_d+1
-   STA m_a+1
-   LDX t_tid
-   LDA m_a
-   AND mb6_tp_ml,X
-   STA m_a
-   LDA m_a+1
    AND mb6_tp_mh,X
    LDY mb6_tp_sl,X
 :  ASL m_a
@@ -3305,18 +3272,19 @@ tcol:
    ADC #0
    STA TP+1
    LDA (TP)
+   PLY
    PHA
    AND #7                               ; texel column = page + idx>>3,
    CLC                                  ;  byte idx&7, + row offset
    ADC mb6_tp_ro,X
-   STA t_cl
+   STA tw_ll,Y
    PLA
    LSR A
    LSR A
    LSR A
    CLC
    ADC mb6_tp_ph,X
-   STA t_ch
+   STA tw_lh,Y
    RTS
 
 ; ln_ptr: r_ys (unbiased line) -> PTR = the back buffer's byte column
