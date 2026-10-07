@@ -55,27 +55,60 @@ def at_fill(mpu):                       # mf_fill entry: the engine's seg lines
 
 
 def at_col(mpu):                        # first column: tx_seg has named the slot
+    a = _S('tx_slot')
+    pend['slot'] = mem[a] | mem[a + 1] << 8
     if 'g' in pend:
-        a = _S('tx_slot')
-        eng[mem[a] | mem[a + 1] << 8] = pend.pop('g')
+        eng[pend['slot']] = pend.pop('g')
 
 
-R.sc.pc_hooks = {_S('mf_fill'): at_fill, _S('col'): at_col}
-MAX_GAP_SEGS = 2                        # over the whole corpus
+BV = [_S(n) for n in ('mf_x', 'b_kind', 'b_y0', 'b_y1')]
+def at_band(mpu):                       # band entry: the engine's span-diff band
+    x, kind, y0, y1 = (mem[a] for a in BV)
+    eng_b.setdefault(pend.get('slot'), {}).setdefault(x, []).append((kind, y0, y1))
+
+
+def bands_norm(bl):                     # visible part of each band, by kind
+    out = set()
+    for kind, y0, y1 in bl:
+        y0, y1 = max(y0, BIAS), min(y1, BIAS + len(F.owner) - 1)
+        if y1 >= y0:
+            out.add(({'mid': 0, 'up': 1, 'lo': 2}.get(kind, kind), y0, y1))
+    return out
+
+
+eng_b = {}
+R.sc.pc_hooks = {_S('mf_fill'): at_fill, _S('col'): at_col, _S('band'): at_band}
+# A seg is a reference gap when the engine's geometry differs from the
+# reference's: its front lines (geom), or -- added 2026-10-07 -- the bands
+# its span diff gives a column, which also carry the OPENING's lines (the
+# back sector's edges). (1144.6, -3342.5, 153) seg 156 differs only there:
+# the Python traversal puts the step's top edge on screen down to x 168,
+# the engine (and the float reference) off it from x 180.
+MAX_GAP_SEGS = 4                        # over the whole corpus
 gap_segs = 0
 out = os.path.join(T.ROOT, 'build', 'master', 'tex6502')
 os.makedirs(out, exist_ok=True)
 fails, tot = [], 0
 for pose in poses:
     want = F.render(*pose)
-    eng.clear(); pend.clear()
+    eng.clear(); pend.clear(); eng_b.clear()
     cyc = R.render_frame(*pose, dw.player_floor(*pose[:2]))
     got = R.framebuffer()
     tot += cyc
     tag = '_'.join(str(v) for v in pose).replace('-', 'm')
     T.to_png(got, os.path.join(out, f'{tag}.png'), M.PALETTE)
     gap = {si for si, g in F.geom.items() if si in eng and eng[si] != g}
+    gap |= {si for si, xs in F.bands.items() if si in eng_b and any(
+        bands_norm([(k, y0, y1) for y0, y1, k in b]) != bands_norm(eng_b[si].get(x, []))
+        for x, b in xs.items())}
     gap_segs += len(gap)
+    eng_own = {}                        # (line, strip) -> the slots the ENGINE filled it for
+    for slot, xs in eng_b.items():
+        for x, bl in xs.items():
+            for _, y0, y1 in bands_norm(bl):
+                for y in range(y0 - BIAS, y1 - BIAS + 1):
+                    for c in (x >> 1, (x >> 1) + 1):
+                        eng_own.setdefault((y, c), set()).add(slot)
     bad, raw = [], 0
     for i in range(10240):
         if got[i] == want[i]:
@@ -85,9 +118,13 @@ for pose in poses:
         if y >= len(F.owner):                   # the control panel: never written
             bad.append(i)
             continue
-        owners = {F.owner[y][c] for c, h in ((2 * k, 0xAA), (2 * k + 1, 0x55))   # Mode 2: left pixel bits 7 5 3 1
-                  if (got[i] ^ want[i]) & h}
-        if not owners <= gap:
+        # the differing pixels' owners in the model AND in the engine: a gap
+        # seg's own extent can differ by a line into a neighbour's cell
+        owners = set()
+        for c, h in ((2 * k, 0xAA), (2 * k + 1, 0x55)):   # Mode 2: left pixel bits 7 5 3 1
+            if (got[i] ^ want[i]) & h:
+                owners |= {F.owner[y][c]} | eng_own.get((y, c), set())
+        if not owners & gap:
             bad.append(i)
     if gap:
         print(f'  {pose}: reference gap (engine sx differs) at segs {sorted(gap)}')

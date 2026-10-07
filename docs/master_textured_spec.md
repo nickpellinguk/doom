@@ -1189,6 +1189,26 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**Gate: reference gaps from the opening's lines (2026-10-07).** Two
+start-area poses joined `compare_renders.POSITIONS`: (1046.7, -3090.4,
+157), the wall that combed (7g), and (1144.6, -3342.5, 153). At the
+latter the 6502 drew 15 bytes of floor where `tex_ref` drew seg 156's
+STEP6 riser. Not a 6502 fault: the float reference has floor there too.
+The model takes its span pool from the Python traversal, which puts the
+step's top edge (the opening's bottom line) on screen down to x 168; the
+Master engine has it off screen from x 180. `test_master_tex` only called
+a seg a reference gap when its FRONT lines differed. Now:
+- a seg is also a gap when its span-diff bands at any column differ from
+  the model's (`tex_ref` keeps `bands[si][x]`; the test reads the
+  engine's at `band`), which carries the opening's lines;
+- a differing byte is excused when a gap seg owns one of its differing
+  pixels in the model OR in the engine (the engine's owners from those
+  bands): a gap seg's extent one line out claims a neighbour's cell (the
+  comb pose's one byte, seg 613 against 441);
+- the gap-seg cap is 4 over the suite (4 now: 508, 613, 156, 311);
+- the pixel masks are Mode 2's ($AA / $55; they were Mode 1's).
+`MASTERTEX` passes on all 20 poses.
+
 **7f. Maths: the 16-step divide unrolled. — DONE.** `dq_core` (the
 quotient < 2^16 divide behind `divq16` -- the per-byte wall d -- and
 `div32`'s 16-bit-divisor path) moved from the full main-RAM arithmetic

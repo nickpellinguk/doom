@@ -132,6 +132,7 @@ class TexRef(Fm.FillRef):
 
     def render(self, px, py, ab):
         self.geom = {}                      # si -> the hook's (sx1 sx2 ft1 ft2 fb1 fb2)
+        self.bands = {}                     # si -> x -> the span-diff bands (biased)
         self.owner = [[None] * Fm.STRIPS for _ in range(Fm.LINES)]   # cell -> si
         return super().render(px, py, ab)
 
@@ -195,6 +196,7 @@ class TexRef(Fm.FillRef):
             n = self._span_at(after, x)
             bands = [(ot, ob, 'mid')] if n is None else [(ot, self.top(n, x) - 1, 'up'),
                                                           (self.bot(n, x) + 1, ob, 'lo')]
+            self.bands.setdefault(si, {})[x] = bands
             T = Fm._floor_interp(x, sx1, ft1, sx2, ft2) + Bz
             B_ = Fm._floor_interp(x, sx1, fb1, sx2, fb2) + Bz
             # the right strip's own lines, for its own v (the extents of
