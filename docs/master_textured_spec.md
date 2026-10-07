@@ -123,7 +123,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B840: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divide `dq_core` (7f), free to $B8FF (191 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B7FC: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divide `dq_core` (7f), free to $B8FF (259 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1172,6 +1172,22 @@ loads Y = U before `JMP (sf_ent,X)`. 59 -> 58 cycles a byte; 18 poses
 the screen column.) Its column-0 body then stores `STA (PTR) / LDY #1`
 (3 cycles a block of four); 18 poses 22,813,838 -> 22,796,456,
 byte-exact.
+
+**7g. Fix: the right strip's step is exact again. — DONE.** Reported on
+jsbeeb: the lower parts of close angled walls (step risers, lower
+textures) combed -- in every byte the right pixel sat a row or so off the
+left one. Cause: step 5g extrapolated the right strip's step from the
+left strip's (stepL + ((stepL - stepL_prev) >> 1)); v is measured from
+the wall's top line T, so the step's small error is multiplied by the
+distance from T and shows on parts far below it. It predates 7d (the
+5.3 delta carries the same start v), and the 18 gate poses have no such
+wall. Measured over 40 random start-area poses as right pixels 2+ rows
+off their neighbours' midpoint: the float reference ~0-1.5%, the exact
+step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
+23 -> 1 bytes). Now `sr = K // (Br - Tr)` always (model and 6502; the
+7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
+within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
+byte-exact. Bank 6 code $9500-$B7FC.
 
 **7f. Maths: the 16-step divide unrolled. — DONE.** `dq_core` (the
 quotient < 2^16 divide behind `divq16` -- the per-byte wall d -- and

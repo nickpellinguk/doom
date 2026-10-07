@@ -2126,42 +2126,15 @@ trun:
    BRA @rr
 @own:
    ; the right strip: its own v from its own T, B (the midpoints with the
-   ; next byte's); its step extrapolated from the left strip's steps (the
-   ; same band kind and part on the previous byte), else exact; its column
-   ; from d at x + 3
+   ; next byte's), its own exact step; its column from d at x + 3
    JSR tr_lines
    LDX #3
 :  LDA c_tr,X                           ; c_tr, c_br -> q_t, q_b
    STA q_t,X
    DEX
    BPL :-
-   LDY b_kind
-   LDA mf_x
-   SEC
-   SBC #4
-   CMP ss_x,Y
-   BNE @rx
-   LDA t_part
-   CMP ss_pt,Y
-   BNE @rx
-   SEC                                  ; stepR = sl + ((sl - prev) >> 1)
-   LDA t_sl
-   SBC ss_sl,Y
-   STA m_a
-   LDA t_sl+1
-   SBC ss_sh,Y
-   CMP #$80
-   ROR A
-   STA m_a+1
-   ROR m_a
-   CLC
-   LDA t_sl
-   ADC m_a
-   STA t_step
-   LDA t_sl+1
-   ADC m_a+1
-   STA t_step+1
-   BRA @rr
+   ; its step exact (step 7g: no longer extrapolated from the left
+   ; steps), reusing the left step when the heights match (7e)
 @rx:
    SEC                                  ; step 7e: Br - Tr = B - T: the left
    LDA q_b                              ;  step (exact)

@@ -53,10 +53,9 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             at x and x + 2); the run extents, part and piece are the byte's.
             Step 5g: the right strip's lines are the midpoints of the
             byte's and the next byte's, Tr = T + ((T(x + 4) - T) >> 1), and
-            its step extrapolates from the left strip's steps (the same
-            band kind and part on the previous byte):
-                stepR = stepL + ((stepL - stepL_prev) >> 1)   (s16)
-            else it is exact, K // (Br - Tr).
+            its step is exact, K // (Br - Tr) (step 7g: 5g extrapolated it
+            from the left steps, stepL + ((stepL - stepL_prev) >> 1), which
+            combed the lower parts of close angled walls).
             Step 5n: a run whose two strips' v would differ by less than
             3/8 of a texel SHARES the left strip's v (T, B, step) -- each
             strip keeps its own u. The test is geometric and cheap: per
@@ -188,7 +187,6 @@ class TexRef(Fm.FillRef):
                             dl=dL, dh=dH, A=A, B=B)   # (the 6502 debug view)
         d_prev = None                       # (x, d) of the last byte with d
         s_lim = shared_limit(sx2 - sx1, max(abs(ft2 - ft1), abs(fb2 - fb1)))
-        sslot = {}                          # band kind -> (x, part, stepL)
         for x in xs:
             o = self._span_at(before, x)
             if o is None:
@@ -241,14 +239,11 @@ class TexRef(Fm.FillRef):
                 if part != MW.NONE and max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_):
                     K = W.parts[part]['K']
                     sl = (K // (B_ - T)) & 0xFFFF if B_ > T else 0
-                    pv = sslot.get(which)
-                    if pv is not None and pv[0] == x - 4 and pv[1] == part:
-                        df = (sl - pv[2]) & 0xFFFF
-                        df -= 0x10000 if df & 0x8000 else 0
-                        sr = (sl + (df >> 1)) & 0xFFFF
-                    else:
-                        sr = (K // (Br - Tr)) & 0xFFFF if Br > Tr else 0
-                    sslot[which] = (x, part, sl)
+                    # the right strip's own step, exact (step 7g: the 5g
+                    # extrapolation from the previous byte's left step was
+                    # off enough, times the distance from T, to comb the
+                    # lower parts of close angled walls)
+                    sr = (K // (Br - Tr)) & 0xFFFF if Br > Tr else 0
                     share = sl <= s_lim
                     if not share:
                         # step 7d: the right strip's row is the left v's
