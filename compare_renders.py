@@ -43,6 +43,13 @@ POSITIONS = [
     # the zp_ys_v1ok cull-leak reproducer (6509a23). Walker positions
     # live on this grid; integer poses never sample it.
     (1792.34375, -3351.375, 108),
+    # close angled walls whose lower parts combed on the Master (step 7g,
+    # 2026-10-07): the right strip's extrapolated step, times the distance
+    # from the wall's top line, put the right pixel a row off the left
+    (1046.7, -3090.4, 157),
+    # a random start-area pose where the Master's 6502 left 20 bytes that
+    # differ from tex_ref with no reference-gap seg (found 2026-10-07)
+    (1144.6, -3342.5, 153),
 ]
 
 

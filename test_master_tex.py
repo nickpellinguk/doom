@@ -85,7 +85,7 @@ for pose in poses:
         if y >= len(F.owner):                   # the control panel: never written
             bad.append(i)
             continue
-        owners = {F.owner[y][c] for c, h in ((2 * k, 0xCC), (2 * k + 1, 0x33))
+        owners = {F.owner[y][c] for c, h in ((2 * k, 0xAA), (2 * k + 1, 0x55))   # Mode 2: left pixel bits 7 5 3 1
                   if (got[i] ^ want[i]) & h}
         if not owners <= gap:
             bad.append(i)

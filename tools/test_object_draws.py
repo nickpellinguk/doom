@@ -25,8 +25,12 @@ from symmap import sym
 # corpus census -- any drop is a lost draw.  LAMP fell 11 -> 8 when the
 # candelabras were removed outright (they had borrowed the template and
 # accounted for three of the corpus's stamps).
-EXPECT = {'HEX': 9, 'LAMP': 6,
-          'POTION': 7, 'HELMET': 25, 'BOXS': 1, 'BOXM': 2, 'VEST': 1}
+EXPECT = {'HEX': 11, 'LAMP': 6,
+          'POTION': 9, 'HELMET': 25, 'BOXS': 1, 'BOXM': 2, 'VEST': 2}
+# (HEX 9 -> 11, POTION 7 -> 9, VEST 1 -> 2, 2026-10-07: two start-area
+#  poses joined compare_renders.POSITIONS -- the Master's combing wall and
+#  its plane-overdraw reproducer -- and see two more hex billboards, two
+#  potions and a vest; no other count moved.)
 # (POTION 9 -> 7, 2026-09-01: the armour-room strip removed the only two
 #  zigzag-room potions the corpus ever had in view; the room's helmets
 #  never stamped from the corpus positions, so HELMET holds at 23.)
