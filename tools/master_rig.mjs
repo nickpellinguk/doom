@@ -256,8 +256,11 @@ async function engineMode() {
             await s.runFrames(1);
             const fb = new Uint8Array(s._completeFb8);
             const a = rowM2(fb, y135)[1], b = rowM2(fb, y136)[0];
-            if (ref === null) ref = a;
-            if (a !== ref) early++;
+            // the reference: the first field whose line 135 HAS Mode 2
+            // colours (a field can draw it all dark; which field comes first
+            // moves with the frame rate)
+            if (ref === null || ref < 0) ref = a;
+            else if (a !== ref) early++;
             if (b >= 0) late++;
             const seen = new Set();
             for (let y = 137; y < 160; y++) for (let x = 0; x < W; x++) {
@@ -279,7 +282,7 @@ async function engineMode() {
         if (palT.some((t) => t >= PAL_BY)) fails.push(`split: panel palette not done by line 137 (${fmt(Math.max(...palT))})`);
         if (panelOdd || panelRC < 50) fails.push(`panel colours wrong: ${panelOdd} fields odd, ${panelRC}/50 with red + cyan`);
         if (cyc.size < 3) fails.push(`colour cycle not running: ${cyc.size} palette states for 8..15 over 50 fields`);
-        if (ref < 0) fails.push("split check: line 135 has no Mode 2 colours to test");
+        if (ref < 0) fails.push("split check: line 135 has no Mode 2 colours in any of 50 fields");
         // (early is information only: line 135's right end moves with the
         // view and the colour cycle; the CRTC timing above is the test)
         if (late) fails.push(`raster split late: Mode 2 colours in the panel in ${late} of 50 fields`);
