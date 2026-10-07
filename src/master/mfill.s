@@ -5159,7 +5159,10 @@ div32:
    CMP m_b
    BCS dv_slj
    LDY m_b
-   STY d8_c+1
+   CPY #129                             ; step 7h: a divisor <= 128 takes the
+   BCS :+                               ;  unrolled byte steps in bank 6
+   JMP dv8f
+:  STY d8_c+1
    STY d8_s+1
    STZ m_p+2                            ; (A = remainder seed; flags kept)
    CMP #0
@@ -5203,8 +5206,9 @@ dv_w16:
    CMP m_b
    LDA m_p+3
    SBC m_b+1
-   BCS dv_slj
-   LDA m_p+2
+   BCC :+
+   JMP dv_slow
+:  LDA m_p+2
    STA m_r
    LDA m_p+3
    STZ m_p+2
@@ -5246,6 +5250,68 @@ dv_slow:
 .segment "MB6C"
 ; d8_byte: (A:d8_by) / d (patched, 8-bit), A < d -> d8_by = quotient,
 ; A = remainder. X used.
+; ---- dv8f (step 7h): div32's 8-bit path for a divisor <= 128 (A = the
+; remainder seed m_p+2 < m_b, m_p+3 = 0, PHY done). The remainder stays
+; below 128, so each bit is ROL A / CMP / SBC with no overflow test, the
+; quotient bit shifted in by ROL from the carry; unrolled, in the zero page
+; the wall / span loops own (dq_*: set-up code is the only caller).
+dv8f:
+   LDX m_b
+   STX dq_b0
+   STZ m_p+2
+   CMP #0                               ; a zero remainder and a byte < m_b:
+   BNE @b1                              ;  quotient byte 0, no steps
+   LDX m_p+1
+   CPX m_b
+   BCS @b1
+   STZ m_p+1
+   TXA
+   BRA @b0
+@b1:
+   LDX m_p+1
+   STX dq_d0
+   JSR d8_fast
+   LDX dq_d0
+   STX m_p+1
+@b0:
+   CMP #0
+   BNE @l0
+   LDX m_p
+   CPX m_b
+   BCS @l0
+   STZ m_p
+   TXA
+   BRA @end
+@l0:
+   LDX m_p
+   STX dq_d0
+   JSR d8_fast
+   LDX dq_d0
+   STX m_p
+@end:
+   STA m_r
+   STZ m_r+1
+   PLY
+   RTS
+
+; d8_fast: A (remainder < dq_b0 <= 128) : dq_d0 / dq_b0 -> quotient dq_d0,
+; remainder A. ASL brings the first dividend bit out; each ROL dq_d0 then
+; shifts the quotient bit (the carry: 1 after SBC, 0 after BCC) in and the
+; next dividend bit out.
+d8_fast:
+   ASL dq_d0
+.repeat 8
+.scope
+   ROL A
+   CMP dq_b0
+   BCC nx
+   SBC dq_b0
+nx:
+   ROL dq_d0
+.endscope
+.endrepeat
+   RTS
+
 d8_byte:
    LDX #8
 d8_lp:

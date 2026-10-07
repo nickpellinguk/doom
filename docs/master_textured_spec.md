@@ -123,7 +123,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B7FC: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divide `dq_core` (7f), free to $B8FF (259 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B895: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (106 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -1188,6 +1188,21 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7h. Maths: div32 picks a faster byte path by itself. — DONE.** The wall
+step divisions (K // h, left strip and, since 7g, right) take div32's
+8-bit-divisor path, ~500 cycles a call. div32 already chose its path per
+call (8-bit, 16-bit, slow); now an 8-bit divisor <= 128 (a wall under 128
+lines -- most) goes to `dv8f` (bank 6): the remainder stays below 128, so
+each quotient bit is `ROL A / CMP / BCC / SBC / ROL` with no overflow test,
+the quotient shifted in from the carry, unrolled (`d8_fast`) in the
+set-up-only zero page (`dq_d0`, `dq_b0`); the zero-remainder byte skip is
+kept. Mean 321 cycles a call for divisors <= 128. `test_master_div`
+(new, in `run_regression`) runs 5,090 divisions on the 6502 -- every 8-bit
+divisor with edge and random dividends, 16-bit divisors, quotients >= 2^16
+-- against Python; routing divisors to 254 into the fast path fails it.
+20 poses 28,040,724 -> 27,828,978 (-0.76%), byte-exact (no model change).
+Bank 6 code $9500-$B895 (106 B free).
 
 **Gate: reference gaps from the opening's lines (2026-10-07).** Two
 start-area poses joined `compare_renders.POSITIONS`: (1046.7, -3090.4,
