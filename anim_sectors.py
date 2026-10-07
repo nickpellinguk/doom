@@ -441,8 +441,10 @@ def _speed88(world_per_frame):
     return max(1, int(round(dw._prescale_height(world_per_frame * 256))))
 
 
-def gen_6502_tables(flat=True):
-    """{address: bytes} for the flat harness or the banked window space."""
+def gen_6502_tables(flat=True, master=False):
+    """{address: bytes} for the flat harness or the banked window space;
+    master=True takes the Master link's map (its bank-C data, VEXPL among it,
+    lives in main RAM at CBITS_M, not in the bank-C window)."""
     import struct as _st
     if flat:
         # THE PARASITE MAP (2026-09-02): flat homes = banked homes laid
@@ -465,7 +467,8 @@ def gen_6502_tables(flat=True):
         # since 2026-08-19, no longer header-relative) — today's five
         # stale-literal reds are why this is symmap, not a number
         import symmap as _sm
-        _b = lambda n: _sm.sym(n, banked=1)      # BY THE MAP, no literals:
+        _bv = 2 if master else 1
+        _b = lambda n: _sm.sym(n, banked=_bv)    # BY THE MAP, no literals:
         # vex_lo/vex_hi drifted to $A700/$A780 after the 2026-09-02 bank-C
         # compaction pulled VEXPL down to $A100/$A180 -- and $A700 now sits
         # INSIDE the rasteriser code, so the jamb patcher was corrupting
@@ -482,7 +485,7 @@ def gen_6502_tables(flat=True):
                  # pair patches at $9Dxx — free space at first, VXCACHE
                  # once the caches moved in: THE broken-doors bug
                  # (2026-08-19..21, census-invisible to every gate).
-                 bpal=_sm.sym('BPAL_BASE', banked=1))
+                 bpal=_sm.sym('BPAL_BASE', banked=_bv))
     order = sorted(dw.ANIM_SECTORS)
     out = {}
     # SSMASK
@@ -545,6 +548,13 @@ def gen_6502_tables(flat=True):
             for a in back_addrs:
                 assert (_bpal_base & 0xFF00) <= a <= (_bpal_base | 0xFF), \
                     f'back patch addr {a:#x} outside the BPAL page'
+            # ...and the jamb targets inside the VEXPL planes of THIS build's
+            # map: the Master's images once shipped Model B's bank-C VEXPL
+            # addresses, and the worker wrote the mover's height into bank 6
+            # code (step 7l)
+            for a in vexpl_addrs:
+                assert A['vex_lo'] <= a < A['vex_hi'] + 0x80, \
+                    f'jamb patch addr {a:#x} outside VEXPL_LO/HI'
         blk = bytearray([len(front_addrs), len(back_addrs),
                          len(flag_segs), len(vexpl_addrs)])
         for a in front_addrs + back_addrs:

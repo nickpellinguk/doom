@@ -1189,6 +1189,19 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**Fix: the mover jamb pointers (2026-10-07).** The anim table TABL0 (bank 4
+$BA7C-$BA9F) holds, per mover, the addresses of the VEXPL entry bytes that
+carry a door or lift jamb's moving bound. `anim_sectors.gen_6502_tables`
+took them from the Model B banked map ($A03F, $A0AB, $A0AC: Model B's
+bank-C VEXPL) for the Master images too. On the Master VEXPL is in main RAM
+($7800 / $7880, CBITS_M), and $A0xx with bank 6 paged is the fill's cold
+code (`gun_b1` in the 7k build): a moving jamb wrote its height into code,
+and its vertical span never moved. `gen_6502_tables` now takes the Master
+map for the Master images ($783F, $78AB, $78AC) and asserts every jamb
+target lies in VEXPL (both builds). Those three pointers are the disc's
+only change; the Model B builds are byte-identical. Found while excising
+the Model B tree (branch `master-only`, where the same fix landed).
+
 **7k. Set-up: geometry-heavy views (the start position). — DONE.**
 Profiled at the start (1056, -3616): the spawn view (angle $80, 838K
 cycles) and the room it turns to (angle 64, 1,776K, 32 segs), where

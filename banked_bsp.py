@@ -112,7 +112,7 @@ def build_banked(flatr, master=False):
     la[bdst('RECIP_S'):bdst('RECIP_S') + 256] = _wp.srecip_table()
     if dw.ANIM_SECTORS:
         import anim_sectors as _an0
-        for addr, blob in _an0.gen_6502_tables(flat=False).items():
+        for addr, blob in _an0.gen_6502_tables(flat=False, master=master).items():
             if 0xBA00 <= addr < 0xBB00:           # TABL0 @ $BA00 (bank A, moved 2026-09-02)
                 la[addr - 0x8000:addr - 0x8000 + len(blob)] = blob
             # (SSMASK no longer routed here: its blob is keyed at its
@@ -299,7 +299,7 @@ def build_banked(flatr, master=False):
     cpy(bdst('L2_BBOX'), _vsym('ROM_BBOX_C'), len(flatr.bbox_table))
     if dw.ANIM_SECTORS:
         import anim_sectors as _an
-        for addr, blob in _an.gen_6502_tables(flat=False).items():
+        for addr, blob in _an.gen_6502_tables(flat=False, master=master).items():
             if 0xB300 <= addr < 0xB400:          # CFG @ $B300 (bank B)
                 lb[addr - 0x8000:addr - 0x8000 + len(blob)] = blob
             elif addr == 0xB400:                 # SSMASK: bank-B HOME (the
