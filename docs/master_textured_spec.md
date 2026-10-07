@@ -123,11 +123,11 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$94FF: textures and flats (1.3K used since step 6b); bank 6 $9500–$B895: the fill's cold set-up code (steps 5f–5h), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (106 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (19.8K), flats (5.25K); bank 6 $8000–$8FFF: textures and flats (to $82FF since step 6b); bank 6 $9000–$B540 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (959 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
-| Main $6D38–$6FE9 | Cold per-seg wall and plane set-up |
+| Main $6D38–$6FFF | Free (step 7i: the cold per-seg set-up `tx_seg` moved to bank 6) |
 | Main $4FB1–$5574 | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
 
 **Budget (E1M1, measured by `master_assets.py`):**
@@ -1188,6 +1188,36 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7i. Set-up: the edge steppers and the normalise loops. — DONE.**
+Profiled by routine: the span-edge steppers (`next_col`, `adv`,
+`st_val`, `st_peek`, `clamp_ln`) were 10-13% of a frame, and two
+per-seg loops shifted 32-40-bit weights one bit at a time. All exact: no
+model change, `MASTERTEX` byte-for-byte as before.
+- *Biased remainder.* A stepper keeps rb = r - W + 2^16, so the wrap test
+  r + R >= W is the carry out of rb + R (no compare); the wrap then does
+  rb -= W (borrow out: C = 0) and y += Qs1, the step +/- 1 precomputed
+  (fields 2/3, the old unused q). `ST_STEP` 71 / 119 cycles (no wrap /
+  wrap) -> 55 / 73.
+- *8-bit span-edge steppers.* OT, OB, NT, NB have W = the span's u8
+  denominator and are read as a byte: `ST_STEP8` moves only the low bytes
+  (rb = r - W + 2^8), 31 / 33 cycles.
+- *No read correction.* A negative slope starts from |D| k + W - 1, the
+  ceiling, so y is read as stored: `st_val` is gone and `adv` reads
+  `st_f` directly (844 calls a frame on the floor-heavy pose); `st_peek`
+  is a carry test and one add.
+- *Inline clamps.* T and B's screen clamps are inline (`clamp_ln` gone).
+- *Byte-at-a-time normalise.* `tx_seg`'s A, B weights (until both fit a
+  byte) and `at`'s a, b (until both < 2^15) shift a whole byte while
+  either is >= 2^16 (resp. 2^23): at least 9 more single shifts are due
+  then, so the result is the same.
+- *Memory.* `tx_seg` moved from MFILLM (main $6D38, 4 B free) to bank 6,
+  and bank 6's code region now starts at $9000 (was $9500; the texels end
+  at $8300, `master_assets` packs below $9000). $9000+ is above ANDY, so
+  `tx_seg` runs with ANDY paged. Main $6D38-$6FFF (712 B) is free.
+20 poses 27,828,978 -> 26,355,653 (-5.3%); 1056,-3616,32 1,775,380 ->
+1,676,251, 1792,-3351,108 1,447,466 -> 1,361,790, 2500,-2600,67 929,579 ->
+884,409. Bank 6 code $9000-$B540 (959 B free).
 
 **7h. Maths: div32 picks a faster byte path by itself. — DONE.** The wall
 step divisions (K // h, left strip and, since 7g, right) take div32's

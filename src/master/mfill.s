@@ -686,13 +686,9 @@ adv:
    LDX #ST_OB
    JSR st_init8
 @oval:
-   LDX #ST_OT
-   JSR st_val
-   LDA ln_y
+   LDA st_f+ST_OT                       ; (step 7i: y read as it is)
    STA c_ot
-   LDX #ST_OB
-   JSR st_val
-   LDA ln_y
+   LDA st_f+ST_OB                       ; (step 7i: y read as it is)
    STA c_ob
    ; --- live span at x: the cursor only moves right ---
 @lc:
@@ -729,13 +725,9 @@ adv:
    LDX #ST_NB
    JSR st_init8
 @nval:
-   LDX #ST_NT
-   JSR st_val
-   LDA ln_y
+   LDA st_f+ST_NT                       ; (step 7i: y read as it is)
    STA c_nt
-   LDX #ST_NB
-   JSR st_val
-   LDA ln_y
+   LDA st_f+ST_NB                       ; (step 7i: y read as it is)
    STA c_nb
    LDA #1
    STA c_new
@@ -744,25 +736,39 @@ adv:
    STZ c_new
 @lines:
    ; --- T and B at x, clamped for comparison against the visible band ---
-   LDX #ST_T
-   JSR st_val
-   LDA ln_y
+   LDA st_f+ST_T
    STA c_t
-   LDA ln_y+1
-   STA c_t+1
-   LDX #Y_BIAS                          ; clamp(T, 48, VIS_YMAX + 1)
-   LDY #VIS_YMAX + 1
-   JSR clamp_ln
+   LDX st_f+ST_T+1
+   STX c_t+1
+   BMI @tlo                             ; clamp(T, 48, VIS_YMAX + 1)
+   BNE @thi
+   CMP #Y_BIAS
+   BCC @tlo
+   CMP #VIS_YMAX + 1
+   BCC @tc
+@thi:
+   LDA #VIS_YMAX + 1
+   BRA @tc
+@tlo:
+   LDA #Y_BIAS
+@tc:
    STA c_tc
-   LDX #ST_B
-   JSR st_val
-   LDA ln_y
+   LDA st_f+ST_B
    STA c_b
-   LDA ln_y+1
-   STA c_b+1
-   LDX #Y_BIAS - 1                      ; clamp(B, 47, VIS_YMAX)
-   LDY #VIS_YMAX
-   JSR clamp_ln
+   LDX st_f+ST_B+1
+   STX c_b+1
+   BMI @blo                             ; clamp(B, 47, VIS_YMAX)
+   BNE @bhi
+   CMP #Y_BIAS - 1
+   BCC @blo
+   CMP #VIS_YMAX
+   BCC @bc
+@bhi:
+   LDA #VIS_YMAX
+   BRA @bc
+@blo:
+   LDA #Y_BIAS - 1
+@bc:
    STA c_bc
    ; --- the bands ---
    LDA c_new
@@ -795,41 +801,64 @@ adv:
    LDA c_ob
    STA b_y1
    JSR band
-; ST_STEP B: advance stepper B (a constant offset) by four pixels, inline
+; ST_STEP B: advance stepper B (a constant offset) by four pixels, inline.
+; Step 7i: r is held biased, rb = r - W + 2^16, so r + R >= W is the carry
+; out of rb + R: no compare. Then rb -= W (C = 1 in, borrow out: C = 0),
+; and y takes Qs1 = Qs +/- 1 in one add; else y += Qs (C = 0).
 .macro ST_STEP B
-.local done
-   CLC                                  ; r += R
+.local wrap, done
+   CLC
    LDA st_f+B+4
    ADC st_f+B+10
    STA st_f+B+4
    LDA st_f+B+5
    ADC st_f+B+11
+   BCS wrap
    STA st_f+B+5
-   CLC                                  ; y += Qs
-   LDA st_f+B+0
+   LDA st_f+B+0                         ; y += Qs (C = 0)
    ADC st_f+B+8
    STA st_f+B+0
    LDA st_f+B+1
    ADC st_f+B+9
    STA st_f+B+1
-   LDA st_f+B+4                         ; r >= W: r -= W, y += inc
-   CMP st_f+B+6
-   LDA st_f+B+5
-   SBC st_f+B+7
-   BCC done
+   BRA done
+wrap:
+   TAX                                  ; rb -= W (C = 1 in)
    LDA st_f+B+4
-   SBC st_f+B+6                         ; (C = 1 from the compare)
+   SBC st_f+B+6
    STA st_f+B+4
-   LDA st_f+B+5
+   TXA
    SBC st_f+B+7
    STA st_f+B+5
-   CLC
-   LDA st_f+B+0
-   ADC st_f+B+12
+   LDA st_f+B+0                         ; y += Qs1 (C = 0: the borrow)
+   ADC st_f+B+2
    STA st_f+B+0
    LDA st_f+B+1
-   ADC st_f+B+13
+   ADC st_f+B+3
    STA st_f+B+1
+done:
+.endmacro
+
+; ST_STEP8 B: the same for a span edge stepper (OT, OB, NT, NB): W is the
+; span's u8 denominator and y is read as a byte, so only the low bytes
+; move (rb = r - W + 2^8)
+.macro ST_STEP8 B
+.local wrap, done
+   CLC
+   LDA st_f+B+4
+   ADC st_f+B+10
+   BCS wrap
+   STA st_f+B+4
+   LDA st_f+B+0                         ; y += Qs (C = 0)
+   ADC st_f+B+8
+   STA st_f+B+0
+   BRA done
+wrap:
+   SBC st_f+B+6                         ; rb -= W (C = 1 in, 0 out)
+   STA st_f+B+4
+   LDA st_f+B+0                         ; y += Qs1
+   ADC st_f+B+2
+   STA st_f+B+0
 done:
 .endmacro
 
@@ -864,16 +893,14 @@ next_col:
    ST_STEP ST_T                         ; (inline: phase 1)
    ST_STEP ST_B
    LDA mf_oi
-   BPL :+
-   JMP nc_no_o
-:  ST_STEP ST_OT
-   ST_STEP ST_OB
+   BMI nc_no_o
+   ST_STEP8 ST_OT
+   ST_STEP8 ST_OB
 nc_no_o:
    LDA mf_ns
-   BPL :+
-   JMP nc_no_n
-:  ST_STEP ST_NT
-   ST_STEP ST_NB
+   BMI nc_no_n
+   ST_STEP8 ST_NT
+   ST_STEP8 ST_NB
 nc_no_n:
    JMP col
 
@@ -881,12 +908,12 @@ nc_no_n:
 ; STEPPERS. Each tracks y(x) = y0 +/- floor(|D| * k / W) for k = x - x0
 ; exactly as x steps by 4 (one byte column): |D| * k = q * W + r with
 ; 0 <= r < W, and 4|D| = Q * W + R, so a step is r += R, q += Q, then one
-; conditional
-; r -= W, q += 1. A negative slope reads y0 - (q + (r != 0)) (floor of a
-; negative quotient). W = 0 is a constant y0 (a zero-width line). The
-; set-up pays one multiply and two divides; each step a few adds.
-; Field offsets in st_* (X = stepper base): y0 0/1, q 2/3, r 4/5, W 6/7,
-; Q 8/9, R 10/11, neg 12, const 13.
+; conditional r -= W, q += 1. A negative slope is y0 - ceil(|D| * k / W),
+; the floor of (|D| * k + W - 1) / W (step 7i: so y is read as it is,
+; no correction). W = 0 is a constant y0 (a zero-width line). The set-up
+; pays one multiply and two divides; each step a few adds.
+; Field offsets in st_* (X = stepper base): y 0/1, Qs1 2/3 (y's step on a
+; wrap), rb 4/5 (r - W + 2^16), W 6/7, Qs 8/9 (y's step), R 10/11.
 ; ============================================================================
 ST_T  = 0
 ST_B  = 14
@@ -923,22 +950,13 @@ st_init8:
    ; fall into st_init
 
 ; st_init: si_y0, si_d (|D|), si_neg, si_w, si_k  -> stepper X. A stepper
-; holds y itself (phase 1 speed-up): y = y0 + q (y0 - q when negative),
-; remainder r, and steps by r += R, y += Qs (+/-Q); r >= W: r -= W, y +=
-; inc (+/-1). A negative slope reads y - (r != 0). A constant (W = 0) is
-; y0 with W = $FFFF and Qs = R = 0: its step never moves it.
+; holds y itself: y = y0 + q (y0 - q when negative), the biased remainder
+; rb = r - W + 2^16 (r + R >= W is then the carry of rb + R), and steps by
+; rb += R, y += Qs (+/-Q); on the carry rb -= W, y += Qs1 (Qs +/- 1).
+; A constant (W = 0) is y0 with rb = R = 0: its step never moves it.
 st_init:
    STX si_x
-   LDA si_neg
-   BEQ :+
-   LDA #$FF                             ; inc: -1
-   STA st_f+12,X
-   STA st_f+13,X
-   BRA :++
-:  LDA #1                               ; inc: +1
-   STA st_f+12,X
-   STZ st_f+13,X
-:  LDA si_w
+   LDA si_w
    STA st_f+6,X
    LDA si_w+1
    STA st_f+7,X
@@ -948,9 +966,8 @@ st_init:
    STA st_f+0,X
    LDA si_y0+1
    STA st_f+1,X
-   LDA #$FF
-   STA st_f+6,X
-   STA st_f+7,X
+   STZ st_f+2,X
+   STZ st_f+3,X
    STZ st_f+4,X
    STZ st_f+5,X
    STZ st_f+8,X
@@ -968,15 +985,39 @@ st_init:
    LDA si_k+1
    STA m_b+1
    JSR mul16
+   LDA si_neg
+   BEQ @fl
+   SEC                                  ; negative: the ceiling, |D| * k
+   LDA si_w                             ;  + W - 1
+   SBC #1
+   STA m_a
+   LDA si_w+1
+   SBC #0
+   STA m_a+1
+   CLC
+   LDA m_p
+   ADC m_a
+   STA m_p
+   LDA m_p+1
+   ADC m_a+1
+   STA m_p+1
+   BCC @fl
+   INC m_p+2
+   BNE @fl
+   INC m_p+3
+@fl:
    LDA si_w
    STA m_b
    LDA si_w+1
    STA m_b+1
    JSR div32
    LDX si_x
+   SEC                                  ; rb = r - W (+ 2^16)
    LDA m_r
+   SBC si_w
    STA st_f+4,X
    LDA m_r+1
+   SBC si_w+1
    STA st_f+5,X
    LDA si_neg                           ; y = y0 +/- q
    BNE @yneg
@@ -1020,88 +1061,54 @@ st_init:
    STA st_f+10,X
    LDA m_r+1
    STA st_f+11,X
-   LDA si_neg                           ; Qs = +/-Q
+   LDA si_neg
    BNE @qneg
-   LDA m_p
+   LDA m_p                              ; Qs = Q, Qs1 = Q + 1
    STA st_f+8,X
+   CLC
+   ADC #1
+   STA st_f+2,X
    LDA m_p+1
    STA st_f+9,X
+   ADC #0
+   STA st_f+3,X
    RTS
 @qneg:
-   SEC
-   LDA #0
-   SBC m_p
+   LDA m_p                              ; Qs1 = -Q - 1 = ~Q, Qs = ~Q + 1
+   EOR #$FF
+   STA st_f+2,X
+   CLC
+   ADC #1
    STA st_f+8,X
-   LDA #0
-   SBC m_p+1
+   LDA m_p+1
+   EOR #$FF
+   STA st_f+3,X
+   ADC #0
    STA st_f+9,X
    RTS
 
-
-; st_val: ln_y = stepper X's current y (s16)
-st_val:
-   LDA st_f+0,X
-   STA ln_y
-   LDA st_f+1,X
-   STA ln_y+1
-   LDA st_f+13,X                        ; negative: y - (r != 0)
-   BPL @rts
-   LDA st_f+4,X
-   ORA st_f+5,X
-   BEQ @rts
-   LDA ln_y
-   BNE :+
-   DEC ln_y+1
-:  DEC ln_y
-@rts:
-   RTS
-
-; st_peek: ln_y = stepper X's y one step on (4 pixels), its state kept --
-; exactly a step then st_val
+; st_peek: ln_y = stepper X's y one step on (4 pixels), its state kept
 st_peek:
-   CLC                                  ; r' = r + R, y' = y + Qs
+   CLC                                  ; the carry of rb + R: a wrap
    LDA st_f+4,X
    ADC st_f+10,X
-   STA m_r
    LDA st_f+5,X
    ADC st_f+11,X
-   STA m_r+1
-   CLC
    LDA st_f+0,X
-   ADC st_f+8,X
+   BCS @w
+   ADC st_f+8,X                         ; y + Qs (C = 0)
    STA ln_y
    LDA st_f+1,X
    ADC st_f+9,X
    STA ln_y+1
-   LDA m_r                              ; r' >= W: r' -= W, y' += inc
-   CMP st_f+6,X
-   LDA m_r+1
-   SBC st_f+7,X
-   BCC @val
-   LDA m_r
-   SBC st_f+6,X
-   STA m_r
-   LDA m_r+1
-   SBC st_f+7,X
-   STA m_r+1
-   CLC
-   LDA ln_y
-   ADC st_f+12,X
+   RTS
+@w:
+   CLC                                  ; y + Qs1
+   ADC st_f+2,X
    STA ln_y
-   LDA ln_y+1
-   ADC st_f+13,X
+   LDA st_f+1,X
+   ADC st_f+3,X
    STA ln_y+1
-@val:
-   LDA st_f+13,X                        ; negative: y' - (r' != 0)
-   BPL @rts
-   LDA m_r
-   ORA m_r+1
-   BEQ @rts
-   LDA ln_y
-   BNE :+
-   DEC ln_y+1
-:  DEC ln_y
-@rts:
    RTS
 
 ; tr_lines: the right strip's lines (once per byte): the midpoints of the
@@ -1685,13 +1692,28 @@ at:
    STA at_n+4
 @nm:
    LDA at_a+3
-   ORA at_a+2
    ORA at_b+3
+   BNE @by
+   LDA at_a+2
    ORA at_b+2
+   BMI @by
    BNE @sh
    LDA at_a+1
    ORA at_b+1
    BPL @ok                              ; both < $8000
+   BRA @sh
+@by:                                    ; step 7i: >= 2^23, at least 9
+   LDX #0                               ;  shifts due: a whole byte first
+:  LDA at_a+1,X                         ;  (the same as 8 single shifts)
+   STA at_a,X
+   LDA at_b+1,X
+   STA at_b,X
+   INX
+   CPX #3
+   BNE :-
+   STZ at_a+3
+   STZ at_b+3
+   BRA @nm
 @sh:
    LSR at_a+3
    ROR at_a+2
@@ -4001,10 +4023,12 @@ neg_ah:
 ; ============================================================================
 ; Cold set-up code in MAIN RAM (the HAZEL code area is full): routines that
 ; only ever run with ACCCON X clear -- never inside a screen-write loop --
-; may live below $8000. MFILLM: the slack after the clipper code (CBITS);
-; MFILLV: the tail of the object dispatch page (VPTABM; objects are off).
+; may live below $8000. MFILLV: the tail of the object dispatch page
+; (VPTABM; objects are off). Step 7i: tx_seg moved from MFILLM (the
+; clipper's slack, full) to bank 6, which now starts at $9000 -- above
+; ANDY's $8000-$8FFF, so it runs with ANDY paged.
 ; ============================================================================
-.segment "MFILLM"
+.segment "MB6C"
 ; ---- tx_seg ----------------------------------------------------------------
 tx_seg:
    ; slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo / LAY_HDR_STRIDE
@@ -4209,28 +4233,37 @@ tx_seg:
    STA tx_rb,X
    DEX
    BPL :-
-   ; A, B: the raw weights shifted together until both fit a byte
+   ; A, B: the raw weights shifted together until both fit a byte. Step
+   ; 7i: while either is >= 2^16 at least 9 more shifts are due, so a
+   ; whole byte goes at once (the same result as 8 single shifts)
 @ab:
-   LDA tx_ra+1
-   ORA tx_ra+2
+   LDA tx_ra+2
    ORA tx_ra+3
    ORA tx_ra+4
-   ORA tx_rb+1
    ORA tx_rb+2
    ORA tx_rb+3
    ORA tx_rb+4
-   BEQ @abok
-   LSR tx_ra+4
-   ROR tx_ra+3
-   ROR tx_ra+2
-   ROR tx_ra+1
-   ROR tx_ra
-   LSR tx_rb+4
-   ROR tx_rb+3
-   ROR tx_rb+2
-   ROR tx_rb+1
-   ROR tx_rb
+   BEQ @abb
+   LDX #0
+:  LDA tx_ra+1,X
+   STA tx_ra,X
+   LDA tx_rb+1,X
+   STA tx_rb,X
+   INX
+   CPX #4
+   BNE :-
+   STZ tx_ra+4
+   STZ tx_rb+4
    BRA @ab
+@abb:                                   ; < 2^16: bit by bit (two bytes)
+   LDA tx_ra+1
+   ORA tx_rb+1
+   BEQ @abok
+   LSR tx_ra+1
+   ROR tx_ra
+   LSR tx_rb+1
+   ROR tx_rb
+   BRA @abb
 @abok:
    ; den0 = A * (xh - xl); n0 = dL * den0
    LDA tx_ra
@@ -5066,26 +5099,6 @@ divq16:
    RTS
 
 .segment "MB6C"
-; ---- clamp_ln: A = clamp(ln_y (s16), X, Y) as u8 ------------------------
-clamp_ln:
-   STX m_r                              ; lo
-   STY m_r+1                            ; hi
-   LDA ln_y+1
-   BMI @lo                              ; negative -> lo
-   BNE @hi                              ; >= 256 -> hi
-   LDA ln_y
-   CMP m_r
-   BCC @lo
-   CMP m_r+1
-   BCS @hi
-   RTS
-@lo:
-   LDA m_r
-   RTS
-@hi:
-   LDA m_r+1
-   RTS
-
 .segment "MARITH"
 ; ---- mul16 -----------------------------------------------------------------
 mul16:                                  ; m_p (32) = m_a * m_b (16 x 16),

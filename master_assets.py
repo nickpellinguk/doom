@@ -85,9 +85,9 @@ def clipped(name, img):
         x0, cw = CLIP[name]
         img = img[:, x0:x0 + cw]
     return img
-# Bank 6 stops at $9500: above it the fill's cold code and the gun overlay
-# (engine_master.cfg B6CM) and the mb6 tables.
-DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0x9500)]
+# Bank 6 stops at $9000 (step 7i; was $9500): above it the fill's cold code
+# and the gun overlay (engine_master.cfg B6CM) and the mb6 tables.
+DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0x9000)]
 
 
 def mode2_byte(pixels):
