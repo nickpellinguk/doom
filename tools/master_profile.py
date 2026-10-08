@@ -59,6 +59,7 @@ JOBS = [
     ('wall set-up per seg', ['tx_seg', 'at', 'l16t', 'ld_dress', 'set_cur']),
     ('wall set-up per byte/run', ['trun', 'tv_div', 'tv_v0', 'tcol', 'tx_getd', 'tr_lines',
                                   'wall_run', 'st_peek', 'sh_lim']),
+    ('far tone spans (7n)', ['sm_go2', 'sml_go', 'sm_rows', 'sm_done', 'sm_jp', 'sm_ul']),
     ('column walk + span edges', ['mf_fill', 'col', 'adv', 'next_col', 'st_init8', 'st_init',
                                   'st_step', 'st_val', 'band', 'clamp_ln', 'ln_ptr', 'ln_ptrk',
                                   'mf_range', 'mf_snap']),
@@ -70,7 +71,8 @@ JOBS = [
 INCLUSIVE = ['mf_fill', 'mf_snap', 'band', 'wall_run', 'tv_div', 'tv_v0', 'tcol', 'tx_getd',
              'tx_seg', 'at', 'pl_pair', 'mk_spans', 'sp_setup', 'pl_rowc', 'uvat', 'st_step',
              'st_val', 'st_peek', 'div32', 'divq16', 'mul16', 'mul8x32']
-LOOP_HEADS = ['sl_lp', 'trun', 'sp_go2', 'sl_go', 'mf_fill', 'col', 'band', 'tx_getd']
+LOOP_HEADS = ['sl_lp', 'trun', 'sp_go2', 'sl_go', 'sm_go2', 'sml_go', 'mf_fill', 'col', 'band',
+              'tx_getd']
 WALL_PAIR_LABELS = ([f'te_{v}{j}' for v in range(4) for j in range(4)]
                     + [f'ts_{v}{j}' for v in range(4) for j in range(4)])
 SPAN_PAIR_LABELS = [f'sf_r{q}' for q in range(4)]
