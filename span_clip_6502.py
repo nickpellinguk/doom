@@ -72,6 +72,14 @@ POOL_TR     = _sym('POOL_TR')
 POOL_BR     = _sym('POOL_BR')
 POOL_XSTART = _sym('POOL_XSTART')
 POOL_XEND   = _sym('POOL_XEND')
+POOL_BXLO   = _sym('POOL_BXLO')
+POOL_BDEN   = _sym('POOL_BDEN')
+
+
+class Span(tuple):
+    """A read_spans 8-tuple that also carries the BOTTOM line's own anchor
+    (bxlo, bxhi): the pool keeps one per side, and a fused edge rewrites
+    one side only (2026-10-08). Equality is the 8-tuple's."""
 POOL_OT     = _sym('POOL_OT')
 POOL_OB     = _sym('POOL_OB')
 POOL_IT     = _sym('POOL_IT')
@@ -391,10 +399,13 @@ class SpanClip6502:
             if slot == 0:                   # means pool corruption
                 return spans
             xlo = mem[POOL_TXLO + slot]
-            spans.append((mem[POOL_XSTART + slot], mem[POOL_XEND + slot],
-                          xlo, (xlo + mem[POOL_TDEN + slot]) & 0xFF,
-                          mem[POOL_TL + slot], mem[POOL_BL + slot],
-                          mem[POOL_TR + slot], mem[POOL_BR + slot]))
+            sp = Span((mem[POOL_XSTART + slot], mem[POOL_XEND + slot],
+                       xlo, (xlo + mem[POOL_TDEN + slot]) & 0xFF,
+                       mem[POOL_TL + slot], mem[POOL_BL + slot],
+                       mem[POOL_TR + slot], mem[POOL_BR + slot]))
+            sp.bxlo = mem[POOL_BXLO + slot]
+            sp.bxhi = (sp.bxlo + mem[POOL_BDEN + slot]) & 0xFF
+            spans.append(sp)
             slot = mem[POOL_NEXT + slot]
         raise RuntimeError('read_spans: NEXT chain exceeds pool size')
 

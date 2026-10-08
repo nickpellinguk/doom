@@ -275,7 +275,10 @@ def _span_top(s, x):
     return _interp(x, s[2], s[4], s[3], s[6])
 
 def _span_bot(s, x):
-    """Bot y at column x using the span's line."""
+    """Bot y at column x using the span's line (its own anchor when the
+    span came from the 6502 pool: span_clip_6502.Span)."""
+    if hasattr(s, 'bxlo'):
+        return _interp(x, s.bxlo, s[5], s.bxhi, s[7])
     return _interp(x, s[2], s[5], s[3], s[7])
 
 def _span_top_ceil(s, x):

@@ -89,8 +89,13 @@ class Instrumented6502Spans(EndpointClipSpans):
 
     def _check(self):
         saved = _span_clip_6502.total_cycles
-        if _span_clip_6502.read_spans() != self.spans:
+        rs = _span_clip_6502.read_spans()
+        if rs != self.spans:
             _frame_clip_match[0] = False
+        else:
+            # agreed: take the pool's copies, which also carry each span's
+            # BOTTOM-line anchor (span_clip_6502.Span; 2026-10-08)
+            self.spans = rs
         _span_clip_6502.total_cycles = saved  # don't count read_spans in HUD
 
     @staticmethod
@@ -2485,6 +2490,7 @@ from wad_packed import (read_u8, read_s8, read_u16, read_s16, write_u16, write_s
                         SD_VWH_FT1, SD_VWH_FB1, SD_VWH_FT2, SD_VWH_FB2,
                         SD_VWH_BT1, SD_VWH_BB1, SD_VWH_BT2, SD_VWH_BB2,
                         SF_SAMEDIR, SF_SOLID, SF_NEEDBT, SF_NEEDBB, SF_NOVT1, SF_NOVT2,
+                        SF_STEPUP_T, SF_STEPUP_B,
                         VC_VX, VC_VY, VC_VYIDX, VC_SX, VYCACHE_ENTRY)
 
 use_packed = True    # packed ROM path is now the sole FP renderer
@@ -2979,13 +2985,15 @@ def packed_render_seg(si, clips, ctx, vz, surface, ram, deferred=None):
             # crossing-quantization divergence class for simplicity).
             if need_bt and not _skip_top:
                 clips.draw_fused(sx1, bt1, sx2, bt2, 'top')
-            elif (not need_bt) and bch > ch:
+            elif (not need_bt) and (flags & SF_STEPUP_T):   # bch > ch, or
+                                                    # equal across a flat change
                 if not (_AP_SKIP_ENABLE and
                         clips.line_above_spans(sx1, ft1, sx2, ft2)):
                     clips.draw_fused(sx1, ft1, sx2, ft2, 'top')
             if need_bb and not _skip_bot:
                 clips.draw_fused(sx1, bb1, sx2, bb2, 'bot')
-            elif (not need_bb) and bfh < fh:
+            elif (not need_bb) and (flags & SF_STEPUP_B):   # bfh < fh, or
+                                                    # equal across a flat change
                 if not (_AP_SKIP_ENABLE and
                         clips.line_below_spans(sx1, fb1, sx2, fb2)):
                     clips.draw_fused(sx1, fb1, sx2, fb2, 'bot')

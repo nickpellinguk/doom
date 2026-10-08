@@ -1191,6 +1191,38 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7y. Floor and ceiling boundaries at equal heights. — DONE.** With the
+nukage room's lift (sector 59) lowered to -48, level with the nukage
+(NUKAGE3), its floor (FLOOR4_8) painted over the nearer nukage floor. Two
+faults, both in shared code, the model and the 6502 alike:
+- *No boundary.* A two-sided seg closed the floor at its own front line
+  only for a drop (SF_STEPUP_B, back floor lower) and the ceiling only for
+  a rise (SF_STEPUP_T): an equal height drew nothing in the wireframe
+  engine, so the clipper left the opening alone and the farther sector's
+  plane filled the nearer one. Bits 1/0 of the seg flags (the retired
+  APEDGE1/2, shipped 0) now mark a floor / ceiling FLAT change across the
+  seg (SF_FLATDIFF_F / _C, the packer), and STEPUP_B / _T is also set at an
+  equal height across a flat change -- in the packer, the Python mover
+  patcher and the 6502 anim worker (`anim.s`: the equal arm tests the bit;
+  the worker's mask already kept bits 1/0). The cascade (Python) now
+  dispatches on the flags as `seg_emit.s` always did.
+- *The bottom line read with the top's anchor.* Since 2026-08-22 the span
+  pool keeps an anchor per side (POOL_TXLO/TDEN, POOL_BXLO/BDEN), but the
+  filler's snapshot (`mf_snap`, `sn_bxlo` / `sn_bden` new) and its OB / NB
+  steppers, and the model's span reader, used the top's for both. Harmless
+  while one seg wrote both lines or the top was flat; a bottom-only fused
+  edge (as above) was misplaced. `span_clip_6502.read_spans` returns
+  `Span` tuples carrying (bxlo, bxhi), `endpoint_spans._span_bot` uses
+  them, and the engine's clip wrapper adopts the pool's spans after a
+  mark_solid it agrees with (its own copies dropped the anchor).
+Checked: the 6502 anim worker's flags equal the Python patcher's for both
+lifts, half-way and at the bottom; with lift 59 lowered the 6502 renders 4
+poses in the nukage room byte for byte as the model, and its floor edge
+follows the float reference's. Agreement over the 24 poses: surfaces
+95.03% -> 95.43%; walls 94.74% -> 94.50% within one texel over 784 more
+wall cells (lower walls the floor used to cover), ~480 more cells right.
+24 poses 27,413,592 -> 27,604,983 (+0.70%: more boundaries closed).
+
 **7x. The start room's window ledges raised to 13 wu. — DONE.** Close to
 the two windows by the thin STARTAN3 pillar, the 24 wu STARTAN3 sill under
 each window was missing: the ledge's floor showed down to the walkway's.

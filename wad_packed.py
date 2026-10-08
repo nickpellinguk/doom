@@ -173,6 +173,14 @@ SF_NOVT1  = 0x10   # RETIRED in the packed byte (ships 0 since the
 SF_NOVT2  = 0x20   # descriptors) — bits REUSED as SF_STEPUP_T/B below
 SF_STEPUP_T = 0x10  # back ceiling > front ceiling (recorded ft emits) — baked
 SF_STEPUP_B = 0x20  # back floor < front floor (recorded fb emits) — baked
+# Master textured port (2026-10-08): bits 1/0 (the retired APEDGE1/2,
+# shipped 0) now mark a two-sided seg whose front and back FLOOR / CEILING
+# flats differ. An equal-height boundary then closes the plane at its own
+# front line (STEPUP_B / STEPUP_T), as a drop does: without it the farther
+# sector's flat painted over the nearer one (the lift lowered level with
+# the nukage). Read only by the flag derivations (packer, anim worker).
+SF_FLATDIFF_F = 0x02
+SF_FLATDIFF_C = 0x01
 SF_APEDGE1 = 0x02  # emit aperture edge at v1 when NOVT1 suppresses the
                    # vertical (swapped with SOLID 2026-08-11: cold path)
 SF_APEDGE2 = 0x01  # emit aperture edge at v2 when NOVT2 suppresses the vertical
@@ -1126,9 +1134,16 @@ def build_packed(vertexes, fp_vertexes, nodes, fp_ssectors, fp_segs,
             else:
                 if bs[1] < ch: flags |= SF_NEEDBT
                 if bs[0] > fh: flags |= SF_NEEDBB
-                if bs[1] > ch: flags |= SF_STEPUP_T   # baked step-up verdicts:
-                if bs[0] < fh: flags |= SF_STEPUP_B   # the cascade's bch/bfh
-                                                      # header reads die
+                fs = fp_sectors[front_idx]
+                if bs[2] != fs[2]: flags |= SF_FLATDIFF_F
+                if bs[3] != fs[3]: flags |= SF_FLATDIFF_C
+                # baked step-up verdicts (the cascade's bch/bfh header
+                # reads die): a step, or an equal height across a flat
+                # change (the plane boundary is the front line)
+                if bs[1] > ch or (bs[1] == ch and flags & SF_FLATDIFF_C):
+                    flags |= SF_STEPUP_T
+                if bs[0] < fh or (bs[0] == fh and flags & SF_FLATDIFF_F):
+                    flags |= SF_STEPUP_B
         # (NOVT/APEDGE flag baking RETIRED 2026-07-24: verticals come
         # from the per-vertex span descriptors — SF_NOVT1/2 and
         # SF_APEDGE1/2 ship as ZERO; the constants remain for old

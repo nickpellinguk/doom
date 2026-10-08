@@ -35,7 +35,7 @@ import e1m1 as dw
 from wad_packed import (SEG_DTL_SIZE, SEG_HDR_SIZE, seg_hdr_off, SH_BPAL,
                         SD_FH, SD_CH, SD_BFH,
                         SD_BCH, SH_FLAGS, SF_SOLID, SF_NEEDBT, SF_NEEDBB,
-                        SF_STEPUP_T, SF_STEPUP_B)
+                        SF_STEPUP_T, SF_STEPUP_B, SF_FLATDIFF_F, SF_FLATDIFF_C)
 
 _LAYOUT = dw.packed_layout
 _ROM_MAIN = dw.packed_rom_main          # bytearray — shared with _p_rom_main
@@ -249,8 +249,10 @@ class Mover:
             else:
                 if bch < fch: f |= SF_NEEDBT
                 if bfh > ffh: f |= SF_NEEDBB
-                if bch > fch: f |= SF_STEPUP_T
-                if bfh < ffh: f |= SF_STEPUP_B
+                # (SF_FLATDIFF_F/C, bits 1/0, survive the mask: a flat
+                # change at an equal height closes the plane too)
+                if bch > fch or (bch == fch and f & SF_FLATDIFF_C): f |= SF_STEPUP_T
+                if bfh < ffh or (bfh == ffh and f & SF_FLATDIFF_F): f |= SF_STEPUP_B
             _ROM_MAIN[o] = f
             for mem, base in _attached:
                 mem[base['seg_hdr'] + seg_hdr_off(i) + SH_FLAGS] = f

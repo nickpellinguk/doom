@@ -385,6 +385,8 @@ at_end:
 ;     f = *hdr & ~(SOLID|NEEDBT|NEEDBB)        # & $B3
 ;     if bch <= fh or bfh >= ch: f |= SOLID
 ;     else: if bch < ch: f |= NEEDBT ; if bfh > fh: f |= NEEDBB
+;           STEPUP_T iff bch > ch or (= and FLATDIFF_C, bit 0); STEPUP_B
+;           iff bfh < fh or (= and FLATDIFF_F, bit 1) -- bits 1/0 survive
 ;     *hdr = f
 SEG_HIGH
 anim_l0_worker:
@@ -527,11 +529,17 @@ alw_units_ok:
    LDA alw_bch
    SEC
    SBC alw_ch
-   BEQ alw_nott                            ; equal: neither
-   BMI alw_bt
+   BEQ alw_eqt                             ; equal: STEPUP_T iff the flats
+   BMI alw_bt                              ;  differ (SF_FLATDIFF_C, $01)
+alw_sut:
    LDA alw_f
    ORA #$10                                ; SF_STEPUP_T
    BNE alw_stt                             ; (always: bit set)
+alw_eqt:
+   LDA #$01
+   BIT alw_f
+   BNE alw_sut
+   BEQ alw_nott
 alw_bt:
    LDA alw_f
    ORA #$04                                ; SF_NEEDBT
@@ -542,11 +550,17 @@ alw_nott:
    LDA alw_fh
    SEC
    SBC alw_bfh
-   BEQ alw_nobb                            ; equal: neither
-   BMI alw_bb
+   BEQ alw_eqb                             ; equal: STEPUP_B iff the flats
+   BMI alw_bb                              ;  differ (SF_FLATDIFF_F, $02)
+alw_sub:
    LDA alw_f
    ORA #$20                                ; SF_STEPUP_B
    BNE alw_stb                             ; (always: bit set)
+alw_eqb:
+   LDA #$02
+   BIT alw_f
+   BNE alw_sub
+   BEQ alw_nobb
 alw_bb:
    LDA alw_f
    ORA #$08                                ; SF_NEEDBB

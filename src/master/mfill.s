@@ -166,6 +166,10 @@ pc_du:        .res VIEW_PAIRS                   ;  column 32
 pc_vc:        .res VIEW_PAIRS
 pc_dv:        .res VIEW_PAIRS
 pc_lv:        .res VIEW_PAIRS                   ;  and its level (1: the far tone, 7n)
+sn_bxlo:      .res 32                   ; snapshot: the BOTTOM line's own anchor
+sn_bden:      .res 32                   ;  (POOL_BXLO / BDEN; 2026-10-08 -- read
+                                        ;  as the top's, a bottom-only fused
+                                        ;  edge was misplaced)
 
 .segment "MSQR"                         ; HAZEL $D800 (engine_master.cfg HZQ)
 sqr_quad_m: .res $600                   ; SQR_MIR_LO on the Master (abi.inc)
@@ -491,6 +495,10 @@ mf_snap:
    STA sn_bl,Y
    LDA POOL_BR,X
    STA sn_br,Y
+   LDA POOL_BXLO,X
+   STA sn_bxlo,Y
+   LDA POOL_BDEN,X
+   STA sn_bden,Y
    INY
 @next:
    LDA POOL_NEXT,X
@@ -695,6 +703,11 @@ adv:
    LDX #ST_OT
    JSR st_init8
    LDY mf_oi
+   LDA sn_bxlo,Y                        ; the bottom line's own anchor
+   STA si_xlo
+   LDA sn_bden,Y
+   STA si_w
+   STZ si_w+1
    LDA sn_bl,Y
    STA si_a0
    LDA sn_br,Y
@@ -734,6 +747,11 @@ adv:
    LDX #ST_NT
    JSR st_init8
    LDX mf_ns
+   LDA POOL_BXLO,X                      ; the bottom line's own anchor
+   STA si_xlo
+   LDA POOL_BDEN,X
+   STA si_w
+   STZ si_w+1
    LDA POOL_BL,X
    STA si_a0
    LDA POOL_BR,X
