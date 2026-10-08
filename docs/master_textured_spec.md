@@ -124,7 +124,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C65B (free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (9.5K, step 7m), flats (5.25K), all in bank 5 to $BAFF; bank 6 $8000–$8FFF: free (step 7m; textures and flats to $82FF before); bank 6 $9000–$B687 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (632 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (9.1K, step 7m), flats (5.25K), all in bank 5 to $B9FF; bank 6 $8000–$8FFF: free (step 7m; textures and flats to $82FF before); bank 6 $9000–$B687 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), free to $B8FF (632 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
@@ -133,11 +133,11 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
-- Wall column data: 303 stored columns × 32 B = 9,696 B (step 7m; 367
+- Wall column data: 292 stored columns × 32 B = 9,344 B (step 7m; 367
   columns, 11,744 B, before; 634 columns, 19.8K, at step 4, with
   COMPUTE2 clipped and the BRNBIG masked middles dropped).
 - Flats: 21 × 256 B = 5,376 B (5.25K).
-- Textures and flats together: bank 5 $8000–$BAFF (15,104 B, step 7m);
+- Textures and flats together: bank 5 $8000–$B9FF (14,848 B, step 7m);
   bank 6 $8000–$8FFF is free and $9000–$B8FF holds the fill's cold code.
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
@@ -1193,7 +1193,7 @@ byte-exact. Bank 6 code $9500-$B7FC.
 
 **7m. Texture art: fewer unique columns. — DONE.** Columns are
 deduplicated within a texture, so art that repeats costs nothing extra.
-Five 32-row textures were redrawn to repeat (`art/walls/*.txt`, no code
+Six 32-row textures were redrawn to repeat (`art/walls/*.txt`, no code
 or format change):
 - *BIGDOOR2, BIGDOOR4*: mirrored about column 15 (column 31 stays the
   black seam): a centre split, 27 -> 16 columns each.
@@ -1205,8 +1205,10 @@ or format change):
   window strip runs the width). 32 -> 21 columns.
 - *EXITDOOR*: the machine mirrored about column 14; the tube bands sit
   under the tubes. 28 -> 22 columns.
-- *Result*: 367 -> 303 stored columns, 11,744 -> 9,696 B (-2,048 B). All
-  21 flats now fit bank 5 ($8000-$BAFF), so bank 6 $8000-$8FFF holds no
+- *PLANET1*: its first 16-column bank is a copy of the third (banks 2
+  and 4 kept; bank 4's strips were already one column). 41 -> 30 columns.
+- *Result*: 367 -> 292 stored columns, 11,744 -> 9,344 B (-2,400 B). All
+  21 flats now fit bank 5 ($8000-$B9FF), so bank 6 $8000-$8FFF holds no
   textures. `master_assets` now writes every region's bank image, empty
   ones too (the rig reads both). Cycle totals unchanged.
 - Considered, not done: storing the vertically periodic textures
