@@ -124,7 +124,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C69F (with `pc_lv`, step 7n; free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8FFF: free (step 7m; textures and flats to $82FF before); bank 6 $9000–$B89F (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free to $B8FF (96 B, step 7u); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8F3F: the wall step's reciprocal tables and per-part m / table page (step 7v; free since 7m, textures and flats to $82FF before); bank 6 $9000–$B8D9 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free to $B8FF (38 B, step 7v); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7F57 | The fill's multiply and divide routines (step 5c; `pl_hq` / `pl_dh` / `pl_dhn`, step 7o; `mf_mul8` removed, 7p) |
@@ -138,7 +138,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
   COMPUTE2 clipped and the BRNBIG masked middles dropped).
 - Flats: 21 × 256 B = 5,376 B (5.25K).
 - Textures and flats together: bank 5 $8000–$B7FF (14,336 B, step 7m);
-  bank 6 $8000–$8FFF is free and $9000–$B8FF holds the fill's cold code.
+  bank 6 $8000–$8F3F holds the wall step tables (step 7v) and $9000–$B8FF the fill's cold code.
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
 - **Total in the banks: ~54K of 64K.** Since step 4 ANDY holds the per-seg
@@ -1191,6 +1191,33 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7v. The run's step from a reciprocal table. — DONE.** `tv_divm`'s
+K // (B - T) was a 16-bit-quotient shift-subtract per run (~340 cycles for
+B - T <= 128 after 7u, ~530 to 255). Every E1M1 K but two is an 8-bit
+number of texel rows shifted left, so K is now kept to 8 significant bits,
+K = m << z (128 <= m <= 255; `master_walls.step_mz`: COMPUTE2's 4/7 and
+NUKE24's 2/3 scales move -0.2%, every other part is unchanged), and for
+h = B - T <= 255
+    step = (m * RT_z[h] + 128) >> 8,  RT_z[h] = (2^(8+z) + h // 2) // h
+-- byte-aligned, two quarter-square 8x8s, no shifts. One 16-bit table per
+exponent z in the level (E1M1: z = 7..12, six), RT 0 where it would not fit
+16 bits (h <= 2^(z-8)): that h, and h > 255, divide K // h exactly as
+before (so 7s's fine first v, h >= 512, is untouched). Model:
+`master_walls.wall_step` (tex_ref's `_step`); the prototype's per-h
+normalised table with a variable shift was dropped for this. Memory: the
+tables (`mb6_rc`, 2 pages per z, room for 7) and per part `mb6_pt_m` and
+`mb6_pt_rp` (its z's table page) fill bank 6 $8000-$8F3F, free since 7m
+(ld65 area `B6RM`; ANDY covers it only during `tx_seg`'s dressing look-ups,
+never in a wall run); master_assets' bank 6 region is now empty. The
+inline 8x8s grew `tv_divm`: its divide exits sit ahead of it (branch
+range) and `d8_fast` moved to MARITH (main RAM, beside `div32`, its only
+caller's caller) to keep bank 6 code below $B900. Six `ST_*` stepper
+offsets moved above their first use (ca65 had fallen back to absolute
+addressing for them). Wall cells vs the float reference 94.77% within one
+texel (94.76%), exact 80.02% (80.22%). The window view 1,933,865 ->
+1,890,181 (-2.3%); 23 poses 26,170,363 -> 25,793,616 (-1.44%). Bank 6
+code $9000-$B8D9 (38 B free); MARITH $7E20-$7FA2 (93 B free).
+
 **7u. The run's step: the byte steps direct. — DONE.** Profiling the
 slowest view found so far (just inside the four red pillars by the start,
 looking out of the window to the slime-pool courtyard; (1000,-3350,16),
@@ -1610,22 +1637,6 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
 
 ## 8. Open items
 
-- **Reciprocal-table step (prototype, `recip_ref.py`, not gated).** The
-  run's step K // (B - T) for h = B - T <= 255 (87% of `tv_divm` calls) as
-  one 8 x 16 multiply: K rounded to 8 significant bits (m << z, 128 <= m
-  <= 255; 38 of the 40 E1M1 K already are, COMPUTE2's 4/7 and NUKE24's
-  2/3 scales move -0.2%), RECIP[h] = (2^(16 + L) - 1) // h with L =
-  bitlen(h) - 1 (512 B; bank 6 $8000-$8FFF is free and paged in the wall
-  runs), step = (m * RECIP[h] + 2^(s-1)) >> s, s = 16 + L - z (4..16).
-  h > 255 stays exact (near walls; 7s's fine first v only fires there).
-  Findings: the step is within +-1 of K // h apart from the two rounded
-  parts; 1.32% of the model's wall cells change, none by more than a texel
-  row; float-reference agreement unchanged at 94.76% within one texel
-  (exact 80.22% -> 80.09%; truncating instead of rounding: 94.72%).
-  Estimated 6502 cost ~150 cycles against ~340 (h <= 128, 7u) and ~530
-  (129-255): ~2.8% at the window view, ~1.8% over the regression set.
-  `tex_ref` now takes its step from `_step` (no change) so the prototype
-  overrides only that.
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a
   1/width table, u linear across the seg (one exact midpoint d when the

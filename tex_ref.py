@@ -77,6 +77,9 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             for free), stepped per LINE PAIR (a texel is 2 lines of the same
             byte; a pair moves 2 * step):
                 step = K // (B - T),  K = 2048 * th * (fc - fh) // src_h
+                (step 7v: K to 8 significant bits, m << z, and for
+                B - T <= 255 the step (m * RT_z[B - T] + 128) >> 8 from a
+                reciprocal table: master_walls.wall_step)
                 v(y) = Vtop + (y_even - T) * step         (mod 65536)
                 Vtop = floor(2048 * th * (ztop - fc + yoff) / src_h)
             T, B are the filler's own floored line values at x (the even
@@ -292,9 +295,10 @@ class TexRef(Fm.FillRef):
         return ('b', shade)
 
     def _step(self, pi, h):
-        """The run's line step (5.11) for part pi over h = B - T lines:
-        K // h, 0 when h <= 0."""
-        return (self.W.parts[pi]['K'] // h) & 0xFFFF if h > 0 else 0
+        """The run's line step (5.11) for part pi over h = B - T lines
+        (step 7v: master_walls.wall_step -- (m * RT_z[h] + 128) >> 8 from
+        the reciprocal tables for h <= 255, else K // h; 0 when h <= 0)."""
+        return MW.wall_step(self.W.parts[pi], h)
 
     def _v(self, pi, yb, T, B, step=None, ys=None):
         """v (5.11) of line yb's pair, from lines T, B (or the given step).

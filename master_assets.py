@@ -87,7 +87,9 @@ def clipped(name, img):
     return img
 # Bank 6 stops at $9000 (step 7i; was $9500): above it the fill's cold code
 # and the gun overlay (engine_master.cfg B6CM) and the mb6 tables.
-DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0x9000)]
+# (step 7v: bank 6 $8000-$8FFF now holds the wall step tables: the bank 6
+# region is empty, kept so the bank image exists)
+DEFAULT_REGIONS = [(5, 0x8000, 0xC000), (6, 0x8000, 0x8000)]
 
 # Step 7n: the flats' far tone. Past a few lines from the horizon a plane
 # byte covers many flat texels and the 16x16 flats alias; there a line

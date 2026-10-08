@@ -116,7 +116,7 @@ man_ss_fc:    .res $C4                  ;  ceiling flat id ($FF: sky)
 .segment "MB6T"                         ; bank 6 tail, above the texels
 mb6_pt_tid:   .res $A0                  ; per part (<= 160): texture id
 mb6_pt_k0:    .res $A0                  ;  K = 2048*th*(fc-fh)//src_h, bytes
-mb6_pt_k1:    .res $A0                  ;  0-2 (v step per line = K // h)
+mb6_pt_k1:    .res $A0                  ;  0-2 (to 8 significant bits, 7v)
 mb6_pt_k2:    .res $A0
 mb6_pt_v0:    .res $A0                  ;  Vtop (5.11) lo / hi
 mb6_pt_v1:    .res $A0
@@ -134,6 +134,13 @@ mb6_fl_bank:  .res $20                  ; per flat (23): sideways bank
 mb6_fl_page:  .res $20                  ;  its 256-byte page (16x16 bytes)
 mb6_mcx:      .res 2                    ; map centre x * 1024 (mod 2^16)
 mb6_mcy:      .res 2                    ; -map centre y * 1024 (mod 2^16)
+
+.segment "MB6R"                         ; bank 6 $8000 (step 7v; ANDY not paged)
+mb6_rc:       .res $E00                 ; RT_z[h] = (2^(8+z) + h/2) / h, h 1-255,
+                                        ;  per exponent z: a lo page, a hi page
+                                        ;  (0: does not fit, the divide instead)
+mb6_pt_m:     .res $A0                  ; per part: K = m << z, m (8 bits)
+mb6_pt_rp:    .res $A0                  ;  its z's lo-table page (hi = + 1)
 
 .segment "MTEXIX"                       ; main RAM: read with ACCCON X clear
 mtex_ix:      .res $420                 ; column index bytes, every texture
@@ -203,6 +210,12 @@ ln_neg:  .res 1
 ln_y:    .res 2
 ; steppers (see STEPPERS below)
 st_f:    .res 84
+ST_T  = 0                               ; st_f's steppers (st_init)
+ST_B  = 14
+ST_OT = 28
+ST_OB = 42
+ST_NT = 56
+ST_NB = 70
 mf_oi:   .res 1                         ; snapshot index the OT/OB steppers hold
 mf_ns:   .res 1                         ; live slot the NT/NB steppers hold
 mf_lc:   .res 1                         ; live-list cursor
@@ -918,12 +931,7 @@ nc_no_n:
 ; Field offsets in st_* (X = stepper base): y 0/1, Qs1 2/3 (y's step on a
 ; wrap), rb 4/5 (r - W + 2^16), W 6/7, Qs 8/9 (y's step), R 10/11.
 ; ============================================================================
-ST_T  = 0
-ST_B  = 14
-ST_OT = 28
-ST_OB = 42
-ST_NT = 56
-ST_NB = 70
+; (ST_T .. ST_NB: defined with st_f, above)
 
 ; st_init8: a span edge -- y0 = si_a0, D = si_a1 - si_a0, W = si_w (den),
 ; k = x - si_xlo (u8 values; the clipper's floor interpolation)
@@ -2205,7 +2213,7 @@ trun:
    STA t_step+1
    BRA @rv
 @rdiv:
-   JSR tv_divm                          ; exact: K / (Br - Tr)
+   JSR tv_divm                          ; K over Br - Tr (7v)
 @rv:
    JSR tv_v0
    JSR tr_ddh
@@ -3226,36 +3234,48 @@ tr_ddh:                                 ; (step 7t: 16 bits, 4 pair steps'
    ROL zw_ddh
    RTS
 
+; QMUL A0, B0: A (hi), mq_l (lo) = A0 * B0, one quarter-square 8 x 8
+; inline (step 7k: mf_mul8 without the call or the staging)
+.macro QMUL A0, B0
+.local pos, big, done
+   LDA A0
+   SEC
+   SBC B0
+   BCS pos
+   EOR #$FF
+   ADC #1                               ; (C = 0 from the SBC)
+pos:
+   TAY                                  ; Y = |a - b|
+   LDA A0
+   CLC
+   ADC B0
+   TAX                                  ; X = (a + b) & $FF
+   BCS big
+   SEC
+   LDA SQR_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR_HI,X
+   SBC SQR_HI,Y
+   BRA done
+big:                                    ; a + b >= 256 (C = 1)
+   LDA SQR2_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR2_HI,X
+   SBC SQR_HI,Y
+done:
+.endmacro
+
 ; ---- tvstep: the run's v. In: m_b (B - T, tv_divm), q_t (s16 T), the
 ; part t_part's K and Vtop (its record), r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
 ; B <= T), t_v = Vtop + ((ys & ~1) - T) * step (mod 2^16) ----------------
-tv_divm:                                ; (m_b = B - T, set by the caller)
-   LDX t_part                           ; K: the part's (step 7i)
-   LDA m_b+1                            ; step 7u: 0 < B - T <= 128 and K's top
-   BNE @w                               ;  byte below it (a 16-bit quotient):
-   LDA m_b                              ;  the two unrolled byte steps direct,
-   BEQ @z                               ;  no div32 dispatch (exact, as div32)
-   CMP #129
-   BCS @w
-   STA dq_b0
-   LDA mb6_pt_k2,X
-   CMP dq_b0
-   BCS @w
-   LDA mb6_pt_k0,X                      ; (the lo byte parked in t_step)
-   STA t_step
-   LDA mb6_pt_k1,X
-   STA dq_d0
-   LDA mb6_pt_k2,X                      ; (the remainder seed)
-   JSR d8_fast
-   LDX dq_d0
-   STX t_step+1
-   LDX t_step
-   STX dq_d0
-   JSR d8_fast
-   LDX dq_d0
-   STX t_step
-   RTS
-@w:
+; (tv_divm's divide and zero exits, ahead of it: the inline 8x8s put
+;  them out of branch range below)
+tvd_rs:
+   STY m_b                              ; m_b = h again (B - T < 256)
+   STZ m_b+1
+tvd_w:
    LDA mb6_pt_k0,X
    STA m_p
    LDA mb6_pt_k1,X
@@ -3264,19 +3284,55 @@ tv_divm:                                ; (m_b = B - T, set by the caller)
    STA m_p+2
    STZ m_p+3
    LDA m_b+1
-   BMI @z
+   BMI tvd_z
    ORA m_b
-   BEQ @z
+   BEQ tvd_z
    JSR div32
    LDA m_p
    STA t_step
    LDA m_p+1
    STA t_step+1
    RTS
-@z:
+tvd_z:
    STZ t_step
    STZ t_step+1
    RTS
+tv_divm:                                ; (m_b = B - T, set by the caller)
+   LDX t_part                           ; K: the part's (step 7i)
+   LDA m_b+1                            ; step 7v: 0 < B - T <= 255: the step is
+   BNE tvd_w                               ;  (m * RT_z[h] + 128) >> 8, two 8x8s
+   LDY m_b                              ;  (RT 0: does not fit, the divide)
+   BEQ tvd_z
+   LDA mb6_pt_rp,X                      ; the part's z tables
+   STA tvd_tl+2
+   INC A
+   STA tvd_th+2
+   LDA mb6_pt_m,X
+   STA m_a
+tvd_tl:
+   LDA mb6_rc,Y                         ; (patched: RT lo page)
+   STA m_b
+tvd_th:
+   LDA mb6_rc,Y                         ; (patched: RT hi page)
+   STA m_b+1
+   ORA m_b
+   BEQ tvd_rs                              ; (Y = h)
+   QMUL m_a, m_b                        ; m * RT lo: hi in A, lo in mq_l
+   STA t_step
+   LDA mq_l
+   CMP #$80                             ; C = the rounding bit (the hi byte
+   LDA t_step                           ;  is <= $FE: no carry out)
+   ADC #0
+   STA t_step
+   QMUL m_a, m_b+1                      ; m * RT hi (X, Y used)
+   STA t_step+1
+   CLC
+   LDA mq_l
+   ADC t_step
+   STA t_step
+   BCC :+
+   INC t_step+1
+:  RTS
 
 ; tv_v0: t_v from t_step (the line step), then t_step doubled (the pair's)
 tv_v0:
@@ -5289,38 +5345,6 @@ dq_b0 = zw_ddh                          ; divisor
 dq_b1 = zw_rowm
 .segment "MB6C"
 
-; QMUL A0, B0: A (hi), mq_l (lo) = A0 * B0, one quarter-square 8 x 8
-; inline (step 7k: mf_mul8 without the call or the staging)
-.macro QMUL A0, B0
-.local pos, big, done
-   LDA A0
-   SEC
-   SBC B0
-   BCS pos
-   EOR #$FF
-   ADC #1                               ; (C = 0 from the SBC)
-pos:
-   TAY                                  ; Y = |a - b|
-   LDA A0
-   CLC
-   ADC B0
-   TAX                                  ; X = (a + b) & $FF
-   BCS big
-   SEC
-   LDA SQR_LO,X
-   SBC SQR_LO,Y
-   STA mq_l
-   LDA SQR_HI,X
-   SBC SQR_HI,Y
-   BRA done
-big:                                    ; a + b >= 256 (C = 1)
-   LDA SQR2_LO,X
-   SBC SQR_LO,Y
-   STA mq_l
-   LDA SQR2_HI,X
-   SBC SQR_HI,Y
-done:
-.endmacro
 
 ; ---- mul16: m_p (32) = m_a * m_b (16 x 16), four quarter-square 8x8s
 ; (zero high bytes skipped); m_a, m_b kept, Y kept. Step 7k: from MARITH
@@ -5589,6 +5613,7 @@ dv8f:
    PLY
    RTS
 
+.segment "MARITH"                      ; (step 7v: out of bank 6, full)
 ; d8_fast: A (remainder < dq_b0 <= 128) : dq_d0 / dq_b0 -> quotient dq_d0,
 ; remainder A. ASL brings the first dividend bit out; each ROL dq_d0 then
 ; shifts the quotient bit (the carry: 1 after SBC, 0 after BCC) in and the
@@ -5607,6 +5632,7 @@ nx:
 .endrepeat
    RTS
 
+.segment "MB6C"
 d8_byte:
    LDX #8
 d8_lp:

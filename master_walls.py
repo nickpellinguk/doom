@@ -16,8 +16,10 @@ what a seg is dressed in.
                   i * tw // n (no multiply: 25 of the 32 textures have
                   n = tw = src_w / 4, shift 6)
   PARTS           one textured wall part: (texture id, K, Vtop)
-                    K    = 2048*th*(fc - fh) // src_h  (0 if fc <= fh); the
-                           5.11 step per line pair is K // h, h = B - T
+                    K    = 2048*th*(fc - fh) // src_h  (0 if fc <= fh),
+                           rounded to 8 significant bits m << z (step 7v);
+                           the 5.11 step per line is wall_step(part, h),
+                           h = B - T
                     Vtop = 2048*th*(ztop - fc + yoff) // src_h  (s16 mod
                            2^16), ztop from DOOM's pegging rules
   DRESSINGS       what one seg (or one piece of a merged seg) wears:
@@ -60,6 +62,43 @@ def _name(b):
     return b.rstrip(b'\0').decode().upper()
 
 
+# ---- step 7v: the run's step from a reciprocal table ----------------------
+# K is kept to 8 significant bits, K = m << z (128 <= m <= 255; 0 for an
+# untextured height). For h = B - T <= 255 the step is
+#     step = (m * RT_z[h] + 128) >> 8,  RT_z[h] = (2^(8+z) + h // 2) // h
+# one 16-bit table per z in the level (bank 6 $8000: 2 pages each), and
+# K // h where RT_z[h] would not fit 16 bits (stored 0) or h > 255.
+RT_ZMAX = 7                         # tables that fit below mb6_pt_m
+
+
+def step_mz(K):
+    """K -> (m, z): K rounded to 8 significant bits, ~ m << z."""
+    if K <= 0:
+        return 0, 0
+    z = max(K.bit_length() - 8, 0)
+    m = (K + ((1 << (z - 1)) if z else 0)) >> z
+    if m > 255:
+        m, z = m >> 1, z + 1
+    return m, z
+
+
+def recip_t(z, h):
+    """RT_z[h] (1 <= h <= 255), 0 where it would not fit 16 bits."""
+    t = ((1 << (8 + z)) + h // 2) // h
+    return t if t < 0x10000 else 0
+
+
+def wall_step(p, h):
+    """The run's line step (5.11) for part p over h = B - T lines."""
+    if h <= 0:
+        return 0
+    if h <= 255:
+        t = recip_t(p['z'], h)
+        if t:
+            return ((p['m'] * t + 128) >> 8) & 0xFFFF
+    return (p['K'] // h) & 0xFFFF
+
+
 class Walls:
     def __init__(self, dw, tex, man):
         """dw: e1m1; tex: name -> (texel array, src_w, src_h) as
@@ -96,11 +135,13 @@ class Walls:
             return NONE
         p = self.tparams[self.tid[name]]
         K = (2048 * p['th'] * (fc - fh)) // p['sh'] if fc > fh else 0
+        m, z = step_mz(K)
+        K = m << z                      # step 7v: 8 significant bits
         vtop = ((2048 * p['th'] * (ztop - fc + yoff)) // p['sh']) & 0xFFFF
         key = (self.tid[name], K, vtop)
         if key not in self._part_ix:
             self._part_ix[key] = len(self.parts)
-            self.parts.append(dict(tid=key[0], K=K, vtop=vtop))
+            self.parts.append(dict(tid=key[0], K=K, vtop=vtop, m=m, z=z))
         return self._part_ix[key]
 
     def _dressing(self, sd, flags, ubase, front, back):
@@ -233,6 +274,21 @@ class Walls:
                 bput(f'mb6_pt_k{j}', i, (p['K'] >> (8 * j)) & 0xFF)
             bput('mb6_pt_v0', i, p['vtop'] & 0xFF)
             bput('mb6_pt_v1', i, p['vtop'] >> 8)
+        # step 7v: the step tables and per-part m / table page (bank 6 $8000)
+        b6r_base = L('mb6_rc')
+        assert b6r_base == 0x8000
+        b6r = bytearray(0x1000)
+        zs = sorted(set(p['z'] for p in self.parts if p['m']))
+        assert len(zs) <= RT_ZMAX, 'too many step-table exponents'
+        for k, z in enumerate(zs):
+            for h in range(1, 256):
+                t = recip_t(z, h)
+                b6r[k * 0x200 + h] = t & 0xFF
+                b6r[k * 0x200 + 0x100 + h] = t >> 8
+        for i, p in enumerate(self.parts):
+            k = zs.index(p['z']) if p['m'] else 0
+            b6r[L('mb6_pt_m') - b6r_base + i] = p['m']
+            b6r[L('mb6_pt_rp') - b6r_base + i] = (b6r_base >> 8) + 2 * k
         ix = bytearray()
         ix_base = L('mtex_ix')
         assert len(self.tparams) <= 0x20
@@ -267,6 +323,7 @@ class Walls:
         bput('mb6_mcy', 1, cy >> 8)
         assert L('mb6_mcy') + 2 - b6t_base <= len(b6t)
         return {'andy': bytes(andy), 'b6t': bytes(b6t), 'b6t_base': b6t_base,
+                'b6r': bytes(b6r),
                 'ix': bytes(ix), 'ix_base': ix_base}
 
     def report(self):
@@ -298,6 +355,8 @@ def rig_images():
         t6 = im['b6t_base'] - 0x8000
         assert len(R.A.banks[6][1]) <= t6, 'bank 6 texels reach the mb6 tail'
         b6[t6:t6 + len(im['b6t'])] = im['b6t']
+        assert len(R.A.banks[6][1]) == 0, 'bank 6 $8000-$8FFF holds the step tables'
+        b6[0:len(im['b6r'])] = im['b6r']
         _RIG = dict(b5=bytes(b5), b6=bytes(b6), andy=im['andy'], ix=im['ix'],
                     ix_base=im['ix_base'],
                     b6_tex_end=0x8000 + len(R.A.banks[6][1]))
