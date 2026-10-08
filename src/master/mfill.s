@@ -5455,33 +5455,89 @@ d8_n:
 .segment "MB6C"
 sm_lv:   .byte 0                        ; sp_setup: this row's level
 sm_b:    .byte 0                        ; the far tone
-sm_f:    .byte 0                        ;  and FLIP of it
 
-; sm_go2: sp_n bytes from PTR + Y, a line pair each (sp_go2's contract)
+; The far loops' zero page: the tone and FLIP of it (su, sv: a far row
+; has no U, V)
+sm_zb   = su
+sm_zf   = sv
+
+; sm_go2: sp_n bytes from PTR + Y, a line pair each (sp_go2's contract).
+; Duff's device as sp_go2: four bodies (LDA zp : STA (PTR),Y : INY :
+; LDA zp : STA (PTR),Y at fixed offsets), entered so the span's last byte
+; ends a block; only the block end moves PTR on, by 32.
 sm_go2:
    LDA #ACC_DXY
    STA $FE34
    LDX sm_b
+   STX sm_zb
    LDA flip,X
-   STA sm_f
-   LDX sp_n
-sm_lp:
-   LDA sm_b
-   STA (PTR),Y                          ; even line
-   INY
-   LDA sm_f
-   STA (PTR),Y                          ; odd line: FLIP
-   TYA
+   STA sm_zf
+   LDA sp_n                             ; blocks = ceil(n / 4)
    CLC
-   ADC #7                               ; the next byte column
-   TAY
-   BCC :+
+   ADC #3
+   LSR A
+   LSR A
+   STA sf_nb
+   LDA #0                               ; q = -n & 3: the last byte ends a
+   SEC                                  ;  block
+   SBC sp_n
+   AND #3
+   ASL A
+   TAX                                  ; X = q * 2
+   ASL A
+   ASL A
+   STA sf_q                             ; q * 8
+   TYA                                  ; PTR (lo 0) + Y - 8q: the block's
+   SEC                                  ;  column 0
+   SBC sf_q
+   STA PTR
+   LDA PTR+1
+   SBC #0
+   STA PTR+1
+   JMP (sm_ent,X)
+sm_lp:
+sm_e0:
+   LDA sm_zb
+   STA (PTR)                            ; even line (column 0)
+   LDY #1
+   LDA sm_zf
+   STA (PTR),Y                          ; odd line: FLIP
+sm_e1:
+   LDA sm_zb
+   LDY #8
+   STA (PTR),Y
+   INY
+   LDA sm_zf
+   STA (PTR),Y
+sm_e2:
+   LDA sm_zb
+   LDY #16
+   STA (PTR),Y
+   INY
+   LDA sm_zf
+   STA (PTR),Y
+sm_e3:
+   LDA sm_zb
+   LDY #24
+   STA (PTR),Y
+   INY
+   LDA sm_zf
+   STA (PTR),Y
+   DEC sf_nb
+   BEQ sm_end
+   CLC                                  ; the next four columns
+   LDA PTR
+   ADC #32
+   STA PTR
+   BCC sm_lp
    INC PTR+1
-:  DEX
-   BNE sm_lp
+   BRA sm_lp
+sm_end:
    LDA #ACC_DY
    STA $FE34
    RTS
+sm_ent:
+   .word sm_e0, sm_e1, sm_e2, sm_e3
 
 ; sml_go: sp_n bytes of line pl_y from PTR + Y (sl_go's contract)
 sml_go:
@@ -5493,10 +5549,10 @@ sml_go:
    BCC :+
    TAX
    LDA flip,X
-:  STA sm_f
+:  STA sm_zb
    LDX sp_n
 sml_lp:
-   LDA sm_f
+   LDA sm_zb
    STA (PTR),Y
    TYA
    CLC
