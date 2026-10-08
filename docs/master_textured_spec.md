@@ -1530,6 +1530,16 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   (`st_init8`, `adv`, `next_col`, ~3.9K), `tx_seg` itself (~2K) and the
   texel writes (~1.5K). Its floor and ceiling cells are 79% textured
   (not far tone). Not yet worth the 6502 work on its own.
+- **The plane flush, measured** (every `pd_flush`, 16 on-map poses: 181
+  flushes, 11.3 a frame, 22.3% of all frame cycles, 26.7K each): drawing
+  38% (64 cycles a byte, both lines), set-up 62% -- row maths 29%
+  (`pl_row`, ~1.3K per row and height; only 6% recompute a (row, D)
+  already made that frame, so it is not cache thrash), per-span set-up
+  14% (`sp_setup` + `uvat`, ~960 a span), the sweep 14% (`mk_spans`, 128
+  a column swept), partial lines 5%. All-in 170 cycles per drawn byte.
+  Flushes drawing over 64 bytes are 88% of the time; the 83 that draw no
+  span bytes are pure sweep (1.7K each, 3%). Large rooms: flushes are
+  27-33% of the frame, 12% drawing, 15-21% set-up.
 
 - **Stacked-texture safety under movers**: checked by the converter at full
   door and lift travel. NUKE24 shows at most 24 units at full lift travel
