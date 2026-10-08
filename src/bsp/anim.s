@@ -600,13 +600,11 @@ alw_ret:
 ; The quad lives on OS-owned pages (vector page + workspace) that no disc
 ; file can load, and never needs loading: f(n) = n*n >> 2 falls out of the
 ; recurrence f(n+1) = f(n) + ((n+1) >> 1). 1,024 bytes in ~13k cycles,
-; once per boot. Callers: anim_init (walk_drv and the tube driver both
-; come through it) and banked_boot's DRV directly (ENG_SQR_FILL).
+; once per boot. Caller: anim_init (walk_drv comes through it).
 ; The harnesses poke identical values; bare-boot's FB compare against the
 ; poked model is the exactness gate. Clobbers A, X, Y, zp_anim_w pair.
-; (The COLPORT copy-down used to live in this slot: the ports ship at
-; $1A00 now, inside LOW / the tube CODE file. Do not resurrect $A900
-; staging — it overlays the psi planes.)
+; (The COLPORT copy-down used to live in this slot: the ports ship in
+; bank B now. Do not resurrect $A900 staging.)
 ; ============================================================================
 SEG_HIGH
 sqr_fill:

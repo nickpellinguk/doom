@@ -1020,9 +1020,7 @@ dcl_cb_top_done_j:
 ; --- dcl_cb_top_at / dcl_cb_bot_at: boundary value at column Y -------
 ; interp_store's own shortcuts serve the constant/endpoint cases.
 ; In MAIN (BANKC is at its ceiling): JSR-reached cold code, and main
-; RAM is always mapped under the clip's bank-C paging.  BOTH BUILDS
-; since 2026-09-02 (the flat-first-class purge): the parasite's CODE
-; carries exactly what banked's does -- 22K identity is BYTE identity.
+; RAM is always mapped under the clip's bank-C paging.
 SEG_HIGH
 dcl_cb_top_at:
    LDX zp_save0

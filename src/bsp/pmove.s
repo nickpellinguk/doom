@@ -3,8 +3,8 @@
 ;
 ; The rules live in colmap.py (the canonical python model + the pack-time
 ; table generator); this file is their 6502 expression. Tables (all in
-; BANK_WALK banked — the same bank as the node SoA, so one paging context
-; covers the whole test; flat homes = the tube parasite map):
+; BANK_WALK — the same bank as the node SoA, so one paging context
+; covers the whole test):
 ;   COLIDX_BASE  36 x (u16 list addr, u8 count) per 128-unit column,
 ;                then the u8 seg-index lists
 ;   COLSEG_BASE  n x 8: x1,y1,dx,dy (center-relative raw s16 LE) — the
@@ -46,8 +46,6 @@ pm_exy     = PM_SCRATCH+$26             ;  by pmove_use; oldx..exy runs)
 ; loops + the bounds/axis loops).
 PM_SCRATCH = DRV_ORG                    ; NOT a private copy: the overlay IS
                                         ; the driver's init block (abi.inc);
-                                        ; ONE home since the parasite map —
-                                        ; flat carries the driver at $0F00 too
 pm_bx0     = PM_SCRATCH+$00             ; box bounds; ORDER LOAD-BEARING
 pm_by0     = PM_SCRATCH+$02             ;  (pm_bx0,X / pm_bx1,X, X=0/2)
 pm_bx1     = PM_SCRATCH+$04

@@ -518,9 +518,9 @@ def gen_6502_tables():
         # (bank-C data, laid in main RAM at CBITS_M on the Master)
         vexpl_addrs = [(A['vex_hi'] if role == 'hi' else A['vex_lo']) + ix
                        for ix, role in dw.ANIM_JAMB.get(sec, ())]
-        # Census guard (the tube lesson, twice now): every patch address
-        # must land inside a KNOWN plane. Banked: front -> bank-B SS
-        # pages, back -> the BPAL page. Anything else is a stale base.
+        # Census guard: every patch address must land inside a KNOWN
+        # plane: front -> the bank-B SS pages, back -> the BPAL page.
+        # Anything else is a stale base.
         for a in front_addrs:
             assert (A['ss_fh'] & 0xFF00) <= a <= (A['ss_ch'] | 0xFF), \
                 f'front patch addr {a:#x} outside the SS planes'

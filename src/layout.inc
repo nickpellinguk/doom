@@ -54,7 +54,7 @@ ROM_DIRS_C    = BANKA_ORG + $3700       ; DIR planes ship in BOTH banks
 ; Positions use the SAME page-decomposed encoding as the vertex planes
 ; (u8 offset + page nibble), so an object stages exactly like a vertex.
 ; --- TRIPWIRE: first-writer-wins corruption catcher (debug) ------------
-; Hunting the tube's player-X corruption: the middle byte of the player X
+; Hunting a player-X corruption: the middle byte of the player X
 ; position is $EE while standing at the spawn column, and something moves
 ; it. TW sites latch the FIRST checkpoint id to observe the change, so the
 ; id that comes back names the phase the corruption happened in.
@@ -86,10 +86,7 @@ OBJ_DRAW = 1                            ; static-object billboards.  ON
                                         ; Set 0 to get a green gate back.
 LAY_N_OBJ   = 50                   ; static objects (wad_packed):
                                    ; 2026-09-01 the armour-room strip
-                                   ; took 58 -> 52; ONE value since the
-                                   ; parasite re-cut — the flat legacy
-                                   ; 14-object gather is DEAD, both
-                                   ; builds ship the full planes
+                                   ; took 58 -> 52
 LAY_OBJ_BITS_LEN   = 25            ; generated: (n_ss+7)//8 — the per-ss
                                    ; "has objects" bitmap length; the
                                    ; OBJ_ART home abuts it (a hardcoded

@@ -30,13 +30,6 @@ CLASSES.  Not every literal is equally bad, so they are separated:
   TABLE     table/plane homes above the arena, including per-build
             .if BANKED splits.
   HIGH      $C000+ -- flat-build-only homes.
-  TUBE      a literal operand in the BEEBASM tube sources that names
-            ENGINE storage.  Unpoliced until 2026-08-31, and it is where
-            both of that day's rotation bugs lived: tubedrv wrote the
-            pose into &00/&02 and test_walk_convergence replayed
-            $1C/$1D/$7F/$BA, all of them addresses that had moved.
-            Host-side zero page (hostg/hostt run on the other CPU) and
-            memory-mapped I/O are excluded.
   PYSEED    a literal INDEX into mpu.memory in a Python harness.  Same
             copy-of-a-fact, and worse in one way: the engine's literals
             at least sit next to the code that owns them, while a
@@ -108,36 +101,6 @@ PYMEM = re.compile(r'\bmem(?:ory)?\[\s*(0[xX][0-9A-Fa-f]{1,4}|\d{1,5})\s*\]')
 PY_OK = set(range(0x01D0, 0x0200)) | set(range(0xFFF0, 0x10000)) | {0xFF00}
 
 
-# BEEBASM instruction operands: LDA &1234 / STA &12 / LDA (&12),Y.
-# Only the PARASITE sources are scanned -- hostg.asm and hostt.asm run on
-# the host CPU, where the zero page is the host's own and nothing the
-# linker places can move it.  Hardware ($FExx/$FFxx and the OS bytes the
-# tube protocol pokes) is excluded: it cannot be relocated.
-BEEB = re.compile(r'\b(?:LDA|STA|LDX|STX|LDY|STY|ADC|SBC|AND|ORA|EOR|CMP|'
-                  r'CPX|CPY|BIT|INC|DEC|ASL|LSR|ROL|ROR|JMP|JSR)\s+'
-                  r'\(?&([0-9A-F]{1,4})\b')
-BEEB_FILES = ('tubedrv.asm', 'emit.asm', 'coprot.asm')
-
-
-def scan_tube():
-    out = []
-    for f in BEEB_FILES:
-        p = os.path.join(ROOT, 'tube', f)
-        if not os.path.exists(p):
-            continue
-        rel = os.path.relpath(p, ROOT)
-        for i, ln in enumerate(open(p), 1):
-            if ln.lstrip().startswith('\\'):
-                continue
-            for m in BEEB.finditer(ln.split('\\')[0]):
-                a = int(m.group(1), 16)
-                if a >= 0xFE00:
-                    continue                    # I/O and the OS vectors
-                out.append(dict(file=rel, line=i, name=f'&{m.group(1)}',
-                                addr=a, cls='TUBE', comment=''))
-    return out
-
-
 def scan_py():
     """Literal memory indices in the Python harnesses."""
     out = []
@@ -164,7 +127,7 @@ def scan_py():
 
 
 def main():
-    rows = scan() + scan_py() + scan_tube()
+    rows = scan() + scan_py()
     by = collections.Counter(r['cls'] for r in rows)
 
     if '--list' in sys.argv:
@@ -195,18 +158,17 @@ def main():
 
     print("BAKED ADDRESSES -- storage written as a literal")
     print("  (rule: declare it in a segment, let ld65 place it, use the LABEL)\n")
-    order = ['WORK', 'TABLE', 'HIGH', 'ABI', 'PYSEED', 'TUBE', 'ZP']
+    order = ['WORK', 'TABLE', 'HIGH', 'ABI', 'PYSEED', 'ZP']
     for c in order:
         note = {'ZP': 'hand-allocated ABI, not gated',
                 'ABI': 'cross-language contract; linker cannot police these',
                 'WORK': 'THE strip target -- no reason to be literals',
                 'TABLE': 'table/plane homes, incl. per-build splits',
                 'HIGH': 'flat-build-only homes',
-                'PYSEED': 'literal mem[] index in a harness -- use symmap',
-                'TUBE': 'literal operand in the parasite BEEBASM sources'}[c]
+                'PYSEED': 'literal mem[] index in a harness -- use symmap'}[c]
         print(f"  {by[c]:4d}  {c:6s} {note}")
     gated = sum(by[c] for c in ('WORK', 'TABLE', 'HIGH', 'ABI',
-                                'PYSEED', 'TUBE'))
+                                'PYSEED'))
     print(f"\n  {gated:4d}  TOTAL non-ZP (the number that must go down)")
 
     print("\n  by file:")
@@ -220,7 +182,7 @@ def main():
             prev = json.load(open(BASELINE)).get('non_zp')
         # An explicit --rebaseline WINS over the ratchet.  It has to: the
         # only legitimate way for the count to rise is a widened SCAN --
-        # adding the PYSEED and TUBE classes on 2026-08-31 surfaced sites
+        # adding the PYSEED class on 2026-08-31 surfaced sites
         # that had always been there -- and the check below would refuse
         # to record the new, larger, honest number.
         if '--rebaseline' not in sys.argv and prev is not None and gated > prev:

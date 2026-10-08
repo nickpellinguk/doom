@@ -60,11 +60,6 @@ RAWX_MAX = $0A10        ;  2576
 RAWY_MIN = $F9D0        ; -1584 (same WORLD clamp; center moved -3250->-3248)
 RAWY_MAX = $0490        ;  1168
 
-; BOTH BUILDS since 2026-09-02 (the flat-first-class purge): the
-; parasite SHIPS the banked walk driver verbatim -- 22K identity is
-; BYTE identity.  It never RUNS on the copro (tubedrv is the driver
-; there), so its HW touches (CRTC, keyboard, T1) are inert bytes.
-
 .importzp pa_ptr                      ; borrowed as the driver's own
                                         ; table pointer: it is the angle
                                         ; module's, dead between frames, and
@@ -613,8 +608,8 @@ fs_guard:
     JMP fs_guard
 fs_go:
     ; CRTC screen start = address/8: R12 = backhi>>3, R13 = (backhi$7)<<5
-    ; Screen start = base/8, NO bias — matches banked_boot.asm and both
-    ; tube hosts (crtc12/crtc13 = $08/$80, $0B/$00, $0D/$80). A -2
+    ; Screen start = base/8, NO bias (crtc12/crtc13 = $08/$80, $0B/$00,
+    ; $0D/$80). A -2
     ; character bias was briefly shipped here on a bad measurement: the
     ; pattern used to measure it was being overwritten by the renderer
     ; mid-frame. tools/crtc_probe.asm settles it with no engine running

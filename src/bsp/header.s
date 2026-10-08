@@ -187,15 +187,8 @@ NF_LLEAF = $40                          ; left child is a subsector
 ; (bbox_visible, bcac_index, the seg_xform vxcache indexers):
 .assert (VXCACHE_BASE & $FF) = 0, error, "VXCACHE_BASE must be page-aligned"
 
-; PAGE is BANKED-ONLY (Eben, 2026-09-04: "don't do ROMSEL writes in the
-; parasite").  It emitted in both builds from 2026-09-02 to keep the 22K
-; byte-identical, which over-read the concatenation rule: the flat build
-; is the banked BLOCKS in the same PLACES, and their contents may differ
-; per build.  On the copro every site was 6 dead cycles (~163 stores,
-; ~980 cycles a frame measured on the copro gate).  Flat now emits
-; nothing -- so on the parasite A/X/Y and the flags SURVIVE a PAGE that
-; kills them on the host: never rely on either (compute verdicts after,
-; reload the register).
+; PAGE: page a sideways bank. It clobbers A and the flags: compute
+; verdicts after, and reload the register.
 .macro PAGE bank
    LDA #bank
    STA $FE30

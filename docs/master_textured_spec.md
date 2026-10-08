@@ -1227,6 +1227,12 @@ only where noted below.
   in VEXPL. This is one of the two disc differences; the other is the free
   HAZEL tail $D648-$D7FF, which shipped stale flat-image bytes and now
   ships zeros.
+- *No second processor.* The Tube build (the flat engine on a 6502
+  second processor, with host-side emitters) is gone with it: its sources
+  and gates went in the excision, and its remains after it -- the
+  `BANKCHOST` segment, `bakedscan`'s Tube scan, and the comments and
+  generated ABI notes that still described the flat / parasite map -- on
+  2026-10-08. The Master build is the only one.
 - *Left for later.* `clip/plot_axis.s` still assembles the Model B
   plotters' 24 bytes of edge masks (dead; kept so the binaries stayed
   identical), and many comments in the engine sources still tell Model B

@@ -2,9 +2,8 @@
 """Player-movement collision map — DOOM P_TryMove/P_UseLines replica.
 
 Pack-time generator + the canonical python movement model. The 6502
-implementation (src/bsp/pmove.s + the drivers) and every python mirror
-(tube walk convergence, tests) consume THIS module, so there is exactly
-one statement of the rules:
+implementation (src/bsp/pmove.s + the driver) and every python mirror
+consume THIS module, so there is exactly one statement of the rules:
 
   - blocking: player is a radius-16 box; one-sided lines and
     ML_BLOCKING two-sided lines stop the box (P_BlockLinesIterator ->
@@ -560,13 +559,8 @@ def blobs():
     ub.append(len(m['walk_lines']))
     for x1, y1, dx, dy, act in m['walk_lines']:
         ub += _rec(x1, y1, dx, dy, act)
-    # COLPORT: aggregation ports at $0200 BOTH builds (the shared page
-    # freed by the records-to-bank-C move; main = no paging in the scan).
-    # SHIPPING: $0200 is the OS vector page until the takeover, so no
-    # COLPORT ships at $1A00 (2026-08-18, the sqr swap): inside LOW and
-    # the tube CODE file, loaded directly — no staging, no copy-down.
-    # (It lived at $0200 with a boot dance until the sqr quad, which is
-    # boot-GENERATED and needs no shipping, took the OS pages instead.)
+    # COLPORT: the aggregation ports (bank B since 2026-09-01, abi
+    # COLPORT_BASE), shipped in place -- no staging, no copy-down.
     pb = bytearray()
     for p_ in m['ports']:
         # port y-cell nibbles for the scan prescreen (2026-08-29):
@@ -644,9 +638,7 @@ def blobs():
             f'COL_N_SOLID {_abi.COL_N_SOLID} != {len(m["colsegs"])} — update gen_abi'
     # home-range asserts (free-space windows audited 2026-08-14)
     assert len(cymin) <= 256 and len(cymax) <= 256, 'cy tables must stay one page (abs,Y prescreen)'
-    # ONE geometry since the parasite re-cut (2026-09-02): the flat homes
-    # are the banked homes laid flat, so the range asserts are org-relative
-    # and shared.  (The old per-build pocket asserts died with the maps.)
+    # range asserts, relative to the bank origins
     _borg = _abi.BANKB_ORG
     _aorg = _abi.BANKA_ORG
     assert A['idx'] + len(idx_blob) <= A['colseg'], 'COLIDX reaches COLSEG'

@@ -110,8 +110,6 @@ obj_gtab:                                  ; projected-height growth in
                                            ; main RAM like obj_ktab (read
                                            ; under any bank)
 .popseg
-; (un-gated for the parasite re-cut 2026-09-02: flat draws the full
-;  object set — bank C code links into the CBITS region)
 ; TWO TIERS PER KIND (2026-08-31, "all objects appear to render at lowest
 ; LOD"): the dispatch compares H against obj_lodh and indexes the tables
 ; at kind*2 + tier.  Single-tier kinds duplicate their row and use $FF --
@@ -692,8 +690,6 @@ obj_ycp:
 ; $A600 (the $B700 run was 256 B, the planes are 459) and it draws every
 ; object -- pickups included -- as the hex barrel; all paths below are
 ; ::BANKED.
-; (un-gated for the parasite re-cut 2026-09-02: flat draws the full
-;  object set — bank C code links into the CBITS region)
    LDX obj_asp
    LDA #0
    STA obj_lod
@@ -762,7 +758,6 @@ obj_sel_hex:
    LDA obj_cx_h
    ADC #0
    STA obj_Y+15
-; (flat all-HEX fallback DELETED 2026-09-02: the parasite re-cut)
 obj_art_go:
    JSR obj_probe                           ; can this billboard skip the
                                            ; clipper entirely?
@@ -1016,8 +1011,6 @@ SEG_CODE                                   ; RESTORE the segment: the next
 ; into these blocks; the dispatch JSRs.
 ; ===========================================================================
 SEG_BANKC
-; (un-gated for the parasite re-cut 2026-09-02: flat draws the full
-;  object set — bank C code links into the CBITS region)
 ; THE FLOOR LAMP'S LADDERS -- doc/billboard's lamp L1, VERBATIM (three
 ; bands r 11.5 z 0-5 / r 7.5 z 5-14 / r 5.5 z 14-48, design D = 256,
 ; eye = 41).  x is 5 magnitudes; y is 13 values, expressed as 256ths of
@@ -1042,19 +1035,11 @@ SEG_CODE
 ; under the prologue's PAGE BANK_C, and umul8 lives at $14B9 in the
 ; always-mapped bottom.  Being out of the object builder's fall-through
 ; path comes free.
-; BANKED ONLY (Eben, 2026-08-31: "ignore flat").  Flat has no room for it
-; anywhere: CODE is 107 B over with it there, and flat's SEG_BANKC is
-; CLIPF, whose true wall is ROM_DBOUND_C at $7000 -- 153 B free, and this
-; is ~160.  So flat draws EVERY object as the hex barrel until the
-; tube-parasite re-cut (task #20) frees space.
-;
 ; Unlike the barrel and the pillar, the lamp shows all three of its bands'
 ; rims, and its radii are off the dodecagon vertex ladder, so its occlusion
 ; cuts land on values the {a, a2, a3} triple cannot express: 5 x magnitudes
 ; where they need 3, and the whole x table is rebuilt here.  Everything is
 ; linear in a / H -- the shape is RIGID, per the pillar's lesson above.
-; (un-gated for the parasite re-cut 2026-09-02: flat draws the full
-;  object set — bank C code links into the CBITS region)
 SEG_BANKC
 ; ---- obj_ends: syt -> obj_Y+0/1, syb -> obj_Y+Y (2026-08-31 de-lard:
 ; every builder ended with these copies inline) -------------------------
@@ -1156,8 +1141,6 @@ SEG_CODE
 ; All run under the prologue's PAGE BANK_C; tables live HERE in CODE
 ; because bank C is nearly full and these are banked-only anyway.
 ; ============================================================================
-; (un-gated for the parasite re-cut 2026-09-02: flat draws the full
-;  object set — bank C code links into the CBITS region)
 ; ---- obj_mirror: mag = round(a * A / 256); store cx - mag at obj_X+Y,
 ; cx + mag at obj_X + obj_px.  zp_mul_b holds a; the spill slots are just
 ; obj_X offsets 38..44, so ONE helper serves every builder's pairs. ------
@@ -1583,10 +1566,10 @@ ok_dn:
    LDA #1
    STA ok_prev
 .global ok_flip
-ok_flip:                                   ; EDGE-FREE flip entry (tube O
-   LDA ok_state                            ; button, 2026-09-02): the copro
-   EOR #1                                  ; edge-detects host-side levels
-   STA ok_state                            ; itself, then JSRs here
+ok_flip:                                   ; EDGE-FREE flip entry (the
+   LDA ok_state                            ; caller has edge-detected the
+   EOR #1                                  ; key itself)
+   STA ok_state
    BNE ok_off
    JMP obj_anyb_fill                       ; ON: refill the bitmap (tail-call)
 ok_off:

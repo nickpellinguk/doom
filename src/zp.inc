@@ -505,9 +505,7 @@ zp_vf_vec0:                 .res 2 ; [bsp]; VRCACHE fetch vector, junior side �
                                   ; (Briefly deleted for TRUE16 always-on
                                   ; 2026-08-10, restored same day: the off
                                   ; arm is compute-only per the canonical
-                                  ; cache contract.) $7B-$7E were the
-                                  ; boot-time tube-detect scratch — phase-
-                                  ; disjoint.
+                                  ; cache contract.)
 zp_vf_vec1:                 .res 2 ; [bsp]; senior-side twin ($7D/$7E)
 obj_ctr_l:                 .res 1 ; ROTATED IN (zprotate): 17.9 vs zp_br_py2_l's 14.6
 RASTER_ZP_DX:               .res 2 ; [raster] dx + dy (see RASTER_ZP_CNT)
@@ -621,9 +619,7 @@ zp_bca_p1_h:                .res 1 ; [ang] [MASTER: zw_np; sf_nb]
 obj_yb_l:                   .res 1 ; ROTATED IN 2026-09-04 (zprotate): 29.1
                                   ; accesses/frame.  These two bytes were
 obj_yb_h:                   .res 1 ; zp_tail_vec, the corner arms' tail
-                                  ; vector, freed with the extent cache;
-                                  ; the copro's boot page-copy borrowed the
-                                  ; pair and now borrows zp_ox0 instead.
+                                  ; vector, freed with the extent cache.
                                   ; RENAMED IN PLACE -- $C8/$CC/$CD are
                                   ; hand-baked equates that a shift would
                                   ; collide.
@@ -1121,12 +1117,11 @@ POOL_BDEN   = POOL + $1C0
 .segment "CODE"
 .endmacro
 .macro SEG_PMOVE
-.segment "PMOVE"                  ; player movement (pmove.s): banked =
-.endmacro                         ;  the driver-zone slice $2600, flat =
-                                  ;  the tube-map pocket $7E40
-; pm_frame (35Hz momentum) lives in BANK B free windows banked (Eben
-; blessed movement code into bank WALK 2026-08-15 — it already runs
-; entirely under that bank's paging); flat = one $2300-$28FF region.
+.segment "PMOVE"                  ; player movement (pmove.s): the
+.endmacro                         ;  driver-zone slice
+; pm_frame (35Hz momentum) lives in BANK B free windows (Eben blessed
+; movement code into bank WALK 2026-08-15 — it already runs entirely
+; under that bank's paging).
 ; Fragmented by necessity: the windows are what the bank B census left.
 .macro SEG_PMB1
 .segment "CODE"                   ; (was "PMB1" -- a separate NAME for the
@@ -1179,19 +1174,8 @@ POOL_BDEN   = POOL + $1C0
 .segment "CODE"                   ; collapsed 2026-08-30
 .endmacro                         ;  (PMOVE slack went to pm_walkover)
 .macro SEG_BANKC
-.segment "BANKC"                  ; banked: the $8000 bank C window; flat:
-                                  ; the CBITS region $D600+ (parasite map —
-                                  ; one segment name, the cfg re-homes it)
-.endmacro
-.macro SEG_BANKCHOST
-.segment "BANKCHOST"              ; HOST-ONLY bank-C machinery (banked
-.endmacro                         ; rasteriser bodies + framebuffer clears):
-                                  ; packs AFTER segment BANKC in the same
-                                  ; region, so the parasite's shipped
-                                  ; clipper is a pure PREFIX of banked's
-                                  ; (single +$5600 relocation -- the
-                                  ; 2026-09-02 flat-first-class purge).
-                                  ; The flat build emits ZERO bytes here.
+.segment "BANKC"                  ; bank-C content: laid linear in main
+.endmacro                         ;  RAM at CBITS_M (engine_master.cfg)
 
 
 ; --- TRIPWIRE call macro (see layout.inc / tw_check in bsp/header.s) ---
