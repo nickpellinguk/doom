@@ -4000,6 +4000,9 @@ mul8x32:
    CLC
    ADC #>(SQR_HI - SQR_LO)
    STA m8_m2+2
+; m8_run: pl_q = pl_e * the multiplier already patched (step 7q: pl_row's
+; second product reuses its first's D)
+m8_run:
    STZ pl_q
    STZ pl_q+1
    STZ pl_q+2
@@ -4500,8 +4503,7 @@ pl_row:
    STA pl_e+2
    LDA zs3,X
    STA pl_e+3
-   LDA pl_d
-   JSR mul8x32
+   JSR m8_run                           ; (D still patched: step 7q)
    JSR pl_hq                            ; hU = Ps >> 14 (Bs = Ps >> 8: pl_q+1)
    LDX pl_p
    LDA pl_sn

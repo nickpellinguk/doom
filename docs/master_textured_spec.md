@@ -1191,6 +1191,11 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7q. `pl_row`: D patched once. — DONE.** Its two products share D:
+`mul8x32` now falls into `m8_run` (pl_q = pl_e * the patched multiplier)
+after patching, and the sin product calls `m8_run` directly, reusing the
+cos product's patch. Exact; 24,131,421 -> 24,073,671 (-0.24%).
+
 **7p. `uvat`: one multiplier, two products. — DONE.** A span's first
 U, V are Uc + a * dU and Vc + a * dV (mod 256) with the same a = kb - 32,
 and only the low bytes count. `uvat` now patches a into the quarter-
@@ -1198,8 +1203,8 @@ square reads once (as `mul8x32`: f(e + a) at SQR_LO + a, f(|e - a|) at
 SQR_LO - a via the mirror page) and takes each product's low byte with
 one LDA / SBC pair -- no `mf_mul8` calls (removed: no other caller).
 ~200 -> ~75 cycles a call. Exact; 24,347,419 -> 24,131,421 (-0.9%).
-Other shared operands checked: `pl_row`'s D * ZC and D * ZS (one patch
-saved, ~0.25%), `mul16`'s own pairs (two products per patch: no gain),
+Other shared operands checked: `pl_row`'s D * ZC and D * ZS (step 7q,
+below), `mul16`'s own pairs (two products per patch: no gain),
 `tx_seg`'s dL * den0 and dL * A (per seg: small).
 
 **7o. Row maths: skip far rows, fold the signs. — DONE.** The plane
