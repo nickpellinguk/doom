@@ -1507,6 +1507,22 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
 
 ## 8. Open items
 
+- **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
+  segs shorter than 48 lines at both ends: T and B linear in 8.8 from a
+  1/width table, u linear across the seg (one exact midpoint d when the
+  ends' depths differ by more than 1.1x), the strips always sharing v.
+  Pictures: 94% of byte columns keep their exact edge lines (the rest
+  one line off); u within one texel on 87%, two on 98%; 0-360 view
+  bytes change per pose, mostly one-texel shifts on distant walls.
+  Measured (per-seg inclusive profile, 16 on-map poses): a distant seg
+  costs ~34.7K, of which the fast path removes `at` (~3.3K), `tx_getd`
+  (~2.9K), `sh_lim` (~0.4K) and the T / B `st_init` (~1.4K), less ~1K of
+  its own: ~4.7% of the fill over the poses, 5-9% in the large rooms.
+  The rest of a distant seg's cost is its runs (`wall_run` ~10K) and
+  bands, and its floor and ceiling cells are 79% textured (not far
+  tone), so the plane machinery stays. Not yet worth the 6502 work on
+  its own.
+
 - **Stacked-texture safety under movers**: checked by the converter at full
   door and lift travel. NUKE24 shows at most 24 units at full lift travel
   (exactly its height), so stacking is safe; the build fails if that changes.
