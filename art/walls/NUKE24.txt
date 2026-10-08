@@ -1,17 +1,17 @@
-# NUKE24 43x16: .rgybmcw = K R G Y B M C W, nopqhtzx = cycling 8-15 (drawn: nukage edge: red dirt, black, the cycling wave)
-rrrrrr.rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-rrrrrrrrr.rrrrrrrrrrrrrrrrrrrrrrrrrrrr..rrr
-rrrrrrr..rrrrrrrrrrrrrrrr.r.rrrr.rrrrrrrrrr
-rrrrrrrrrrrrrrrrrrrr.rrrrrrrrrrrr.rrrr.rrrr
-rrrrrrrrrrrrrrrrrrrrrrrrrrrrrr.rrrrrr.rrrrr
-rrrrrrrrr.rrr.rrrrrrrrr..rrrrrrrrrrrr..rrrr
-rrrrrrrr.o.r.n.rrrrrrr.on.....rrrrrrrnn.rr.
-.rrrrrr.npo.nonrrr.rrropon.oorrrr.rr.ooo..n
-nrr...rnoqpoopo.r.n...pqponpp.rr.o..npppooo
-o..ooo.opnqppqpo.oonnoqnqpoqqo..npoooqqqppp
-pnnpppnpqonqqnqpoppoopnonqpnnpnnoqpppnnnqqq
-qooqqqoqnponnonqpqqppqoponqooqoopnqqqooonnn
-nppnnnpnoqpooponqnnqqnpqponppnppqonnnpppooo
-oqqoooqopnqppqponoonnoqnqpoqqoqqnpoooqqqppp
-pnnpppnpqonqqnqpoppoopnonqpnnpnnoqpppnnnqqq
-qooqqqoqnponnonqpqqppqoponqooqoopnqqqooonnn
+# NUKE24 43x16: .rgybmcw = K R G Y B M C W, nopqhtzx = cycling 8-15 (drawn, left-right mirrored: nukage edge: red dirt, black, the cycling wave)
+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+rrrrrrrrr.rrrrrrrrrrrrrrrrrrrrrrr.rrrrrrrrr
+rrrrrrrr.rrrrrrrrrrrrrrrrrrrrrrrrr.rrrrrrrr
+rrrrrrrrrrrrrrrrrrrr.r.rrrrrrrrrrrrrrrrrrrr
+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+rrrrrrrrr.rrr.rrrrrrrrrrrrrrr.rrr.rrrrrrrrr
+rrrrrrrr.o.r.n.rrrrrrrrrrrrr.n.r.o.rrrrrrrr
+.rrrrrr.npo.nonrrr.rrrrr.rrrnon.opn.rrrrrr.
+nrr...rnoqpoopo.r.n.....n.r.opoopqonr...rrn
+o..ooo.opnqppqpo.oonnonnoo.opqppqnpo.ooo..o
+pnnpppnpqonqqnqpoppoopooppopqnqqnoqpnpppnnp
+qooqqqoqnponnonqpqqppqppqqpqnonnopnqoqqqooq
+nppnnnpnoqpooponqnnqqnqqnnqnopoopqonpnnnppn
+oqqoooqopnqppqponoonnonnoonopqppqnpoqoooqqo
+pnnpppnpqonqqnqpoppoopooppopqnqqnoqpnpppnnp
+qooqqqoqnponnonqpqqppqppqqpqnonnopnqoqqqooq
