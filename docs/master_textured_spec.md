@@ -124,7 +124,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C69F (with `pc_lv`, step 7n; free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8FFF: free (step 7m; textures and flats to $82FF before); bank 6 $9000–$B753 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free to $B8FF (428 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8FFF: free (step 7m; textures and flats to $82FF before); bank 6 $9000–$B89F (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free to $B8FF (96 B, step 7u); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7F57 | The fill's multiply and divide routines (step 5c; `pl_hq` / `pl_dh` / `pl_dhn`, step 7o; `mf_mul8` removed, 7p) |
@@ -1190,6 +1190,22 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7u. The run's step: the byte steps direct. — DONE.** Profiling the
+slowest view found so far (just inside the four red pillars by the start,
+looking out of the window to the slime-pool courtyard; (1000,-3350,16),
+1,946,554 cycles, 53 fields) put `tv_divm` (the run's step K // (B - T))
+at 104K over 224 calls, about 430 cycles each when B - T <= 128. Only
+~265 of those are the 16 quotient bits (`d8_fast`, twice); the rest was
+`div32`'s dispatch and `dv8f`'s shortcut tests. A reciprocal table does
+not pay here: an exact K (20 bits) * 1/h needs 4-6 quarter-square 8x8s
+plus a q * h correction (K // h exactly; `tv_fine` relies on the
+remainder), ~220-300 cycles, no better than the shift-subtract. Instead,
+when 0 < B - T <= 128 and K's top byte is below it (quotient < 2^16),
+`tv_divm` calls `d8_fast` itself on K's bytes (the low byte parked in
+`t_step`); anything else falls back to `div32` as before. Exact, no model
+change. The window view 1,946,554 -> 1,933,865 (-0.65%); 23 poses
+26,274,999 -> 26,170,363 (-0.40%). Bank 6 code $9000-$B89F (96 B free).
 
 **7t. The right strip's delta: 8 fraction bits. — DONE.** Step 7d keeps a
 non-shared run's right strip as a 5.3 delta from the left v, exact at the

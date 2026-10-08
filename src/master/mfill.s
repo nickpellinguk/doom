@@ -3231,6 +3231,31 @@ tr_ddh:                                 ; (step 7t: 16 bits, 4 pair steps'
 ; B <= T), t_v = Vtop + ((ys & ~1) - T) * step (mod 2^16) ----------------
 tv_divm:                                ; (m_b = B - T, set by the caller)
    LDX t_part                           ; K: the part's (step 7i)
+   LDA m_b+1                            ; step 7u: 0 < B - T <= 128 and K's top
+   BNE @w                               ;  byte below it (a 16-bit quotient):
+   LDA m_b                              ;  the two unrolled byte steps direct,
+   BEQ @z                               ;  no div32 dispatch (exact, as div32)
+   CMP #129
+   BCS @w
+   STA dq_b0
+   LDA mb6_pt_k2,X
+   CMP dq_b0
+   BCS @w
+   LDA mb6_pt_k0,X                      ; (the lo byte parked in t_step)
+   STA t_step
+   LDA mb6_pt_k1,X
+   STA dq_d0
+   LDA mb6_pt_k2,X                      ; (the remainder seed)
+   JSR d8_fast
+   LDX dq_d0
+   STX t_step+1
+   LDX t_step
+   STX dq_d0
+   JSR d8_fast
+   LDX dq_d0
+   STX t_step
+   RTS
+@w:
    LDA mb6_pt_k0,X
    STA m_p
    LDA mb6_pt_k1,X
