@@ -247,13 +247,12 @@ class TexRef(Fm.FillRef):
                 share = False                   # one v for both strips
                 if part != MW.NONE and max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_):
                     ys = max(y0, Bz, T)             # the run's first line
-                    K = W.parts[part]['K']
-                    sl = (K // (B_ - T)) & 0xFFFF if B_ > T else 0
+                    sl = self._step(part, B_ - T)
                     # the right strip's own step, exact (step 7g: the 5g
                     # extrapolation from the previous byte's left step was
                     # off enough, times the distance from T, to comb the
                     # lower parts of close angled walls)
-                    sr = (K // (Br - Tr)) & 0xFFFF if Br > Tr else 0
+                    sr = self._step(part, Br - Tr)
                     share = sl <= s_lim
                     if not share:
                         # step 7d: the right strip's row is the left v's
@@ -292,6 +291,11 @@ class TexRef(Fm.FillRef):
         ('c') or floor ('f') run: step 4 draws the solid shade."""
         return ('b', shade)
 
+    def _step(self, pi, h):
+        """The run's line step (5.11) for part pi over h = B - T lines:
+        K // h, 0 when h <= 0."""
+        return (self.W.parts[pi]['K'] // h) & 0xFFFF if h > 0 else 0
+
     def _v(self, pi, yb, T, B, step=None, ys=None):
         """v (5.11) of line yb's pair, from lines T, B (or the given step).
         Step 7s: a run (first line ys) starting 512 or more lines below T
@@ -303,7 +307,7 @@ class TexRef(Fm.FillRef):
         p = self.W.parts[pi]
         h = B - T
         if step is None:
-            step = (p['K'] // h) & 0xFFFF if h > 0 else 0
+            step = self._step(pi, h)
         if ys is not None and h > 0 and (ys & ~1) - T >= 512:
             ma = (ys & ~1) - T
             q, r = divmod(p['K'], h)

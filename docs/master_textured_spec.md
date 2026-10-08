@@ -1610,6 +1610,22 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
 
 ## 8. Open items
 
+- **Reciprocal-table step (prototype, `recip_ref.py`, not gated).** The
+  run's step K // (B - T) for h = B - T <= 255 (87% of `tv_divm` calls) as
+  one 8 x 16 multiply: K rounded to 8 significant bits (m << z, 128 <= m
+  <= 255; 38 of the 40 E1M1 K already are, COMPUTE2's 4/7 and NUKE24's
+  2/3 scales move -0.2%), RECIP[h] = (2^(16 + L) - 1) // h with L =
+  bitlen(h) - 1 (512 B; bank 6 $8000-$8FFF is free and paged in the wall
+  runs), step = (m * RECIP[h] + 2^(s-1)) >> s, s = 16 + L - z (4..16).
+  h > 255 stays exact (near walls; 7s's fine first v only fires there).
+  Findings: the step is within +-1 of K // h apart from the two rounded
+  parts; 1.32% of the model's wall cells change, none by more than a texel
+  row; float-reference agreement unchanged at 94.76% within one texel
+  (exact 80.22% -> 80.09%; truncating instead of rounding: 94.72%).
+  Estimated 6502 cost ~150 cycles against ~340 (h <= 128, 7u) and ~530
+  (129-255): ~2.8% at the window view, ~1.8% over the regression set.
+  `tex_ref` now takes its step from `_step` (no change) so the prototype
+  overrides only that.
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a
   1/width table, u linear across the seg (one exact midpoint d when the
