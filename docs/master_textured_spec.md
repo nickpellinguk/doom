@@ -1518,10 +1518,18 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   costs ~34.7K, of which the fast path removes `at` (~3.3K), `tx_getd`
   (~2.9K), `sh_lim` (~0.4K) and the T / B `st_init` (~1.4K), less ~1K of
   its own: ~4.7% of the fill over the poses, 5-9% in the large rooms.
-  The rest of a distant seg's cost is its runs (`wall_run` ~10K) and
-  bands, and its floor and ceiling cells are 79% textured (not far
-  tone), so the plane machinery stays. Not yet worth the 6502 work on
-  its own.
+  Why so little (call-path profile, 143 distant segs, mean 34.7K): ~11K
+  of a distant seg's time is FLOORS -- the pending plane spans of earlier
+  segs flushed when this seg's plane differs (`tx_seg` > `pe_kind` /
+  `pd_flush` > `mk_spans`, ~9.6K, plus `ceil_run` / `prun`); large rooms
+  alternate planes (steps, light strips), so they flush often. The
+  per-seg "fixed cost" fit (16.6K) had counted that as wall overhead.
+  Of the ~23.7K of wall work the fast path removes a third; the rest is
+  the per-run set-up (`tcol`, `trun`, `tv_divm`, `tv_v0`, `tr_screen`,
+  ~4.5K over ~4.4 runs), the span-edge steppers of the clip state
+  (`st_init8`, `adv`, `next_col`, ~3.9K), `tx_seg` itself (~2K) and the
+  texel writes (~1.5K). Its floor and ceiling cells are 79% textured
+  (not far tone). Not yet worth the 6502 work on its own.
 
 - **Stacked-texture safety under movers**: checked by the converter at full
   door and lift travel. NUKE24 shows at most 24 units at full lift travel
