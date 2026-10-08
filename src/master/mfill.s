@@ -164,6 +164,8 @@ pc_lv:        .res VIEW_PAIRS                   ;  and its level (1: the far ton
 sqr_quad_m: .res $600                   ; SQR_MIR_LO on the Master (abi.inc)
 
 .segment "MFILLBSS"
+zw_dl:   .res 1                         ; step 7t: zw_dh's fraction byte
+zw_ddl:  .res 1                         ;  and zw_ddh's
 mf_lo:   .res 1                         ; clamped [lo, hi) of the seg
 mf_hi:   .res 1
 mf_x:    .res 1                         ; current byte column's first pixel
@@ -2167,6 +2169,7 @@ trun:
    ; t_step are still the left strip's): none of the right v is made
    STZ tw_sh
    STZ zw_ddh                           ; (shared: no delta step)
+   STZ zw_ddl
    LDA tw_slim
    CMP t_sl
    LDA tw_slim+1
@@ -2253,6 +2256,8 @@ tr_screen:
    LDA t_v+1                            ;  from the left's v (t_v = l_v
    SBC l_v+1                            ;  when the run shares: 0)
    STA zw_dh
+   LDA #$80                             ; (its fraction: rounds once, 7t)
+   STA zw_dl
    LDA mb6_tp_bank,X                    ; (X = t_tid still)
    STA $FE30                            ; the texture's bank
    LDA #ACC_DXY
@@ -2272,7 +2277,10 @@ tr_screen:
    LDY #0
    INC PTR+1
    INC PTR+1
-   CLC                                  ; a new character row: the delta
+   LDA zw_dl
+   CLC
+   ADC zw_ddl
+   STA zw_dl
    LDA zw_dh                            ;  steps
    ADC zw_ddh
    STA zw_dh
@@ -2337,7 +2345,10 @@ tb_end:
    CPY #8
    BNE :+
    LDY #0
-   CLC                                  ; (PTR moved in the body): the
+   LDA zw_dl
+   CLC
+   ADC zw_ddl
+   STA zw_dl
    LDA zw_dh                            ;  delta steps
    ADC zw_ddh
    STA zw_dh
@@ -2493,8 +2504,11 @@ tv_0:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_dl
+   CLC
+   ADC zw_ddl
+   STA zw_dl
    LDA zw_dh                            ; a new character row: the delta
-   CLC                                  ;  steps
    ADC zw_ddh
    STA zw_dh
    CLC
@@ -2659,8 +2673,11 @@ te_12:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_dl
+   CLC
+   ADC zw_ddl
+   STA zw_dl
    LDA zw_dh                            ; a new character row: the delta
-   CLC                                  ;  steps
    ADC zw_ddh
    STA zw_dh
    CLC
@@ -2735,8 +2752,11 @@ te_21:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_dl
+   CLC
+   ADC zw_ddl
+   STA zw_dl
    LDA zw_dh                            ; a new character row: the delta
-   CLC                                  ;  steps
    ADC zw_ddh
    STA zw_dh
    CLC
@@ -2811,8 +2831,11 @@ te_30:
    STA zw_lvh
    RM_AND
    PHA                                  ; the left row, for the fetch
+   LDA zw_dl
+   CLC
+   ADC zw_ddl
+   STA zw_dl
    LDA zw_dh                            ; a new character row: the delta
-   CLC                                  ;  steps
    ADC zw_ddh
    STA zw_dh
    CLC
@@ -3189,22 +3212,17 @@ ts_end:
 
 ; tr_ddh: step 7d, the right strip's delta step per character row (8
 ; lines, 5.3): zw_ddh = (t_step - l_step + 32) >> 6 of the PAIR steps
-tr_ddh:
-   SEC
-   LDA t_step
-   SBC l_step
-   TAX
+tr_ddh:                                 ; (step 7t: 16 bits, 4 pair steps'
+   SEC                                  ;  difference -- 8 lines' worth --
+   LDA t_step                           ;  5.3 plus 8 fraction bits; 7d
+   SBC l_step                           ;  rounded it to 5.3, drifting up to
+   STA zw_ddl                           ;  a texel over a full-height run)
    LDA t_step+1
    SBC l_step+1
    STA zw_ddh
-   TXA
-   CLC
-   ADC #32
-   BCC :+
-   INC zw_ddh
-:  ASL A
+   ASL zw_ddl
    ROL zw_ddh
-   ASL A
+   ASL zw_ddl
    ROL zw_ddh
    RTS
 

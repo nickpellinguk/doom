@@ -66,9 +66,13 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             only as a 5.3 delta from the left's, exact at the run's first
             line ys and stepped once per character row (4 wall pixels):
                 dh0 = (vR(ys) >> 8) - (vL(ys) >> 8)           (mod 256)
-                ddh = (stepR - stepL + 16) >> 5   (8 lines' worth, 5.3)
-                dh(y) = dh0 + ddh * (y // 8 - ys // 8)         (mod 256)
-            and the right row is ((vL >> 8) + dh(y)) mod 256 >> 3.
+                ddh = 8 * (stepR - stepL)     (8 lines' worth, 5.3 + 8 bits)
+                dh(y) = hi((dh0 << 8) + $80 + ddh * (y // 8 - ys // 8))
+                                                       (mod 2^16)
+            and the right row is ((vL >> 8) + dh(y)) mod 256 >> 3. (Step
+            7t: ddh keeps its 8 fraction bits; 7d rounded it to 5.3 each
+            character row, which on a run clipped at the top of the view
+            -- 17 rows -- drifted the right strip by up to a texel.)
   v         5.11 fixed point, 5 integer bits = the texel row (wraps at 32
             for free), stepped per LINE PAIR (a texel is 2 lines of the same
             byte; a pair moves 2 * step):
@@ -255,13 +259,11 @@ class TexRef(Fm.FillRef):
                         # step 7d: the right strip's row is the left v's
                         # high byte plus a 5.3 delta, exact at the run's
                         # first line and stepped by ddh (the steps'
-                        # difference over 8 lines, 5.3 rounded) at each
-                        # character row the run crosses
+                        # difference over 8 lines, 5.3 with 8 fraction
+                        # bits: step 7t) at each character row it crosses
                         dh = ((self._v(part, ys, Tr, Br, sr, ys=ys) >> 8)
                               - (self._v(part, ys, T, B_, ys=ys) >> 8)) & 0xFF
-                        df = (sr - sl) & 0xFFFF
-                        df -= 0x10000 if df & 0x8000 else 0
-                        ddh = ((df + 16) >> 5) & 0xFF
+                        ddh = (8 * (sr - sl)) & 0xFFFF
                         cr0 = (ys - Bz) >> 3
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
                     self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
@@ -280,7 +282,8 @@ class TexRef(Fm.FillRef):
                         self.grid[yb - Bz][c + 1] = ('t',) + (
                             self._texel(part, ur, yb, T, B_, ys=ys) if share
                             else self._texel(part, ur, yb, T, B_, ys=ys,
-                                             dh=dh + ddh * (((yb - Bz) >> 3) - cr0)))
+                                             dh=((((dh << 8) + 0x80 + ddh * (((yb - Bz) >> 3) - cr0))
+                                                 & 0xFFFF) >> 8)))
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
 

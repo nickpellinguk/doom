@@ -1191,6 +1191,20 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7t. The right strip's delta: 8 fraction bits. — DONE.** Step 7d keeps a
+non-shared run's right strip as a 5.3 delta from the left v, exact at the
+run's first line and stepped by ddh once per character row; ddh was the
+steps' 8-line difference rounded to 5.3, up to half a unit (1/16 texel)
+off at every character row. A run clipped at the top of the view crosses
+up to 17 rows, so at an angle the right strip drifted up to a texel by the
+bottom: the same STARTAN3 wall's slanted row edges broke into teeth that
+grew down the wall (registration good at the top). ddh now keeps its 8
+fraction bits (`tr_ddh`: 4 * (pair stepR - stepL), 16 bits) and the delta a
+fraction byte (`zw_dl`, starting at $80 so it rounds once); every
+character-row step is a 16-bit add (six sites in the wall loop; `zw_dl`,
+`zw_ddl` in HAZEL BSS). Model: dh(y) = hi((dh0 << 8) + $80 + ddh * rows).
+Byte-exact; +0.25% cycles. (1337.5,-3193,229) joined the regression set.
+
 **7s. Near walls: the first v with 8 more bits of step. — DONE.** Right
 beside a wall (the thin STARTAN3 wall before the slime pool, seen at any
 angle) B - T runs to thousands of lines and the step K // (B - T) to a few
