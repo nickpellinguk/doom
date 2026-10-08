@@ -39,6 +39,9 @@ the pair.
             run -y down), from the engine's 8.8 prescaled position.
   texel     flat[(v >> 4) * 16 + (u >> 4)] (NUKAGE1 is static: its
             animation frames were dropped for memory).
+  level     (step 7n) a line pair with D >= MID_DM[k >> 1] reads the
+            flat's 4x4 middle level instead: mid[(v >> 6) * 4 + (u >> 6)]
+            (master_assets: MID_T, the pages' layout).
   shade     sky ceilings stay solid cyan; a plane the eye is not on the
             right side of (D <= 0) keeps its step-4 shade.
 
@@ -63,6 +66,8 @@ class PlaneRef(X.TexRef):
         super().__init__()
         self.flat = self.T.flat                     # name -> 16x16 bytes
         self.fid = {f['name']: f['id'] for f in self.T.A.man['flats']}
+        self.mid = {f['name']: self.T.A.mid_bytes(f['id']) for f in self.T.A.man['flats']}
+        self.dm = self.T.A.man['mid']['dm']         # step 7n: MID_DM
 
     def render(self, px, py, ab):
         self.rows = {}                              # (p, kind, D) -> row maths
@@ -118,7 +123,14 @@ class PlaneRef(X.TexRef):
         v = (v0 + (kb - 32) * dv) & 0xFF
         sec = info['front']
         pic = _name(sec[2] if kind == 'f' else sec[3])
+        if self.level(y >> 1, kind, D):             # step 7n: the 4x4 middle level
+            return ('F', int(self.mid[pic][v >> 6, u >> 6]), kind, u >> 4, v >> 4, pic)
         return ('F', int(self.flat[pic][v >> 4, u >> 4]), kind, u >> 4, v >> 4, pic)
+
+    def level(self, p, kind, D):
+        """Step 7n: 1 (the middle level) iff D >= MID_DM[k >> 1]."""
+        k = 2 * p + 1 - HORIZON if kind == 'f' else HORIZON - (2 * p + 1)
+        return int(D >= self.dm[k >> 1])
 
 
 if __name__ == '__main__':

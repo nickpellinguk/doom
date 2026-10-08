@@ -238,6 +238,13 @@ def build_banked(flatr):
     assert not any(b6[_c6 - 0x8000:_c6 - 0x8000 + len(_code6)]), \
         'bank 6 code overlays seeded data'
     b6[_c6 - 0x8000:_c6 - 0x8000 + len(_code6)] = _code6
+    # step 7n: the flats' middle level, below the code (cfg B6MID)
+    (_m6,) = [a for a, fn in _rg6() if fn == 'engine_b6mid_m.bin']
+    _mid6 = open('engine_b6mid_m.bin', 'rb').read()
+    assert _ti['b6_tex_end'] <= _m6, 'bank 6 texels reach the middle level'
+    assert not any(b6[_m6 - 0x8000:_m6 - 0x8000 + len(_mid6)]), \
+        'the middle level overlays seeded data'
+    b6[_m6 - 0x8000:_m6 - 0x8000 + len(_mid6)] = _mid6
     bm.define_bank(BANK_C, bytes(b6))
     bm.define_bank(5, _ti['b5'])
     bm.define_andy(_ti['andy'])
@@ -354,7 +361,7 @@ def build_banked(flatr):
     _ab.build('engine')
     for addr, fn in _regions():
         if fn.startswith('span_clip') or fn == 'bsp_render_hud_bk.bin' \
-                or fn in ('engine_cbits_m.bin', 'engine_b6c_m.bin'):
+                or fn in ('engine_cbits_m.bin', 'engine_b6c_m.bin', 'engine_b6mid_m.bin'):
             continue    # clipper + HUD -> BANK_C (rc/anim/vrcache/sel are main now)
                         # MASTER: CBITS was placed with the C data above
         if os.path.exists(fn):

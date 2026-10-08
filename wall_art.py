@@ -219,6 +219,59 @@ def load_flat(name):
     return np.array([[TCH.index(ch) for ch in r] for r in rows])
 
 
+# ── the flats' middle level (step 7n): 4x4 tone grids, art/flats/mid/NAME.txt
+# Drawn by hand; a missing grid is seeded from the flat (each 4x4 block's
+# mean colour, matched to the nearest static tone; the nukage flat takes
+# each block's commonest tone, keeping its cycling).
+MID_DIR = __import__('os').path.join(FLAT_DIR, 'mid')
+MID_N = 4
+
+
+def load_mid(name):
+    import os
+    p = os.path.join(MID_DIR, name + '.txt')
+    if not os.path.exists(p):
+        return None
+    rows = [l.rstrip('\n') for l in open(p) if l.strip() and not l.startswith('#')]
+    g = np.array([[TCH.index(ch) for ch in r] for r in rows])
+    assert g.shape == (MID_N, MID_N), f'{name}: mid grid {g.shape}'
+    return g
+
+
+def seed_mid(tones):
+    """A 4x4 middle level from a flat's 16x16 tones (the seed, for redrawing)."""
+    b = 16 // MID_N
+    static = range(8 + 12)                        # solids, black / white pairs
+    trgb = np.array([M.tone_rgb(t) for t in static])
+    out = np.zeros((MID_N, MID_N), int)
+    for y in range(MID_N):
+        for x in range(MID_N):
+            blk = tones[y * b:(y + 1) * b, x * b:(x + 1) * b].ravel()
+            if any(t >= 20 for t in blk):         # cycling: the commonest tone
+                out[y, x] = np.bincount(blk).argmax()
+            else:
+                c = np.mean([M.tone_rgb(t) for t in blk], 0)
+                out[y, x] = int(np.argmin(((trgb - c) ** 2).sum(1)))
+    return out
+
+
+def mid_tones(name, tones):
+    """A flat's middle level: its hand-drawn grid, else the seed."""
+    g = load_mid(name)
+    return g if g is not None else seed_mid(tones)
+
+
+def save_mid(name, q, note=''):
+    import os
+    os.makedirs(MID_DIR, exist_ok=True)
+    with open(os.path.join(MID_DIR, name + '.txt'), 'w') as f:
+        f.write(f'# {name} middle level 4x4 tones (one per 16x16 world units): '
+                f'.rgybmcw solid, RGYBMC black+colour, 123456 white+colour, '
+                f'nopqhtzx cycling 8-15, NOPQ nukage wave pairs{note}\n')
+        for r in q:
+            f.write(''.join(TCH[t] for t in r) + '\n')
+
+
 def save_flat(name, q, note=''):
     import os
     os.makedirs(FLAT_DIR, exist_ok=True)

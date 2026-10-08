@@ -1,0 +1,5 @@
+# FLOOR1_1 middle level 4x4 tones (one per 16x16 world units): .rgybmcw solid, RGYBMC black+colour, 123456 white+colour, nopqhtzx cycling 8-15, NOPQ nukage wave pairs (seeded from the flat: redraw)
+BBBB
+BbcB
+BBBB
+BBBB
