@@ -1572,7 +1572,11 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   a column swept), partial lines 5%. All-in 170 cycles per drawn byte.
   Flushes drawing over 64 bytes are 88% of the time; the 83 that draw no
   span bytes are pure sweep (1.7K each, 3%). Large rooms: flushes are
-  27-33% of the frame, 12% drawing, 15-21% set-up.
+  27-33% of the frame, 12% drawing, 15-21% set-up. After 7o-7q: 24.2K a
+  flush, 20.6% of the frame; drawing 42%, row maths 25% (`pl_row` code
+  7%, the multiplies ~12%), the sweep 15% (`mk_spans`, still 128 a
+  column), per-span set-up 12% (`sp_setup` 8%, `uvat` 2%, 248 a span),
+  partial lines 6% (`pp_slot` 5%).
 
 - **Stacked-texture safety under movers**: checked by the converter at full
   door and lift travel. NUKE24 shows at most 24 units at full lift travel
