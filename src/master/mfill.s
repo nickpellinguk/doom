@@ -356,6 +356,7 @@ mk_b1:   .res 1                         ;  pair interval, the column
 mk_t2:   .res 1
 mk_b2:   .res 1
 mk_k:    .res 1
+mk_ke:   .res 1                         ; step 7r: the sentinel column
 sp_n:    .res 1                         ; the span loops' byte count
 sf_q:    .res 1                         ; sp_go2: the entry position * 8
 mq_b:    .res 1                         ; QMUL / uvat: multiplier, product lo,
@@ -4605,39 +4606,68 @@ mk_spans:
    LDA #$FF
    STA mk_t1
    STZ mk_b1
-   LDA pl_k0
-   STA mk_k
-@col:
-   LDX mk_k
-   CPX pl_k1
-   BEQ :+
-   BCS @sent                            ; past the last: the empty sentinel
-:  LDA pl_kind
-   BEQ :+
-   LDA pe_ft,X
-   STA mk_t2
-   LDA pe_fb,X
-   BRA @same
-:  LDA pe_ct,X
-   STA mk_t2
-   LDA pe_cb,X
-@same:                                  ; step 7k: the last column's interval
-   STA mk_b2                            ;  again: nothing closes or opens
+   LDX pl_k1                            ; the sentinel column k1 + 1
+   INX
+   STX mk_ke
+   LDA pl_kind                          ; step 7r: the kind's interval reads
+   BEQ mks_c                               ;  patched once, not tested per column
+   LDA #<pe_ft
+   LDX #>pe_ft
+   LDY #<pe_fb
+   BRA mks_pt
+mks_c:
+   LDA #<pe_ct
+   LDX #>pe_ct
+   LDY #<pe_cb
+mks_pt:
+   STA mk_rt+1
+   STA mk_rt2+1
+   STX mk_rt+2
+   STX mk_rt2+2
+   STY mk_rb+1
+   STY mk_rb2+1
+   STX mk_rb+2                          ; (the four arrays share a page:
+   STX mk_rb2+2                         ;  asserted below)
+   LDX pl_k0
+   CPX mk_ke
+   BCS mks_sent                            ; (an empty range: just the sentinel)
+   BRA mks_rd
+mks_scan:                                  ; the same interval as the last column:
+   INX                                  ;  nothing closes or opens
+   CPX mk_ke
+   BEQ mks_sent
+mks_rd:
+mk_rb:
+   LDA pe_fb,X                          ; (patched: the kind's bottoms)
    CMP mk_b1
-   BNE @go
-   LDA mk_t2
+   BNE mks_chg
+mk_rt:
+   LDA pe_ft,X                          ; (patched: the kind's tops)
    CMP mk_t1
-   BNE @go
-   JMP @adv
-@sent:
+   BEQ mks_scan
+mks_chg:
+   STX mk_k
+mk_rt2:
+   LDA pe_ft,X                          ; (patched: tops) this column's
+   STA mk_t2                            ;  interval
+mk_rb2:
+   LDA pe_fb,X                          ; (patched: bottoms)
+   STA mk_b2
+   JSR mk_step
+   LDX mk_k
+   BRA mks_scan
+mks_sent:                                  ; past the last: the empty sentinel
+   STX mk_k                             ;  closes everything
    LDA #$FF
    STA mk_t2
    STZ mk_b2
-@go:
-   LDA mk_t2                            ; keep this column's interval for
-   PHA                                  ;  the next step
-   LDA mk_b2
-   PHA
+   ; fall into mk_step
+
+.assert >pe_fb = >pe_ft && >pe_cb = >pe_ct, error, "pe_*t, pe_*b must share a page"
+
+; mk_step: column mk_k's interval (t2, b2) after (t1, b1): close the pairs
+; leaving, open the pairs arriving; then (t1, b1) = (t2, b2)
+mk_step:
 @l1:                                    ; while t1 < t2 and t1 <= b1: close t1
    LDA mk_t1
    CMP mk_t2
@@ -4661,6 +4691,9 @@ mk_spans:
    BRA @l2
 @l3:                                    ; while t2 < t1 and t2 <= b2: open t2
    LDA mk_t2
+   PHA
+@l3l:
+   LDA mk_t2
    CMP mk_t1
    BCS @l4
    LDA mk_b2
@@ -4670,8 +4703,11 @@ mk_spans:
    LDA mk_k
    STA sp_start,X
    INC mk_t2
-   BRA @l3
+   BRA @l3l
 @l4:                                    ; while b2 > b1 and b2 >= t2: open b2
+   LDA mk_b2
+   PHA
+@l4l:
    LDA mk_b1
    CMP mk_b2
    BCS @nx
@@ -4682,20 +4718,12 @@ mk_spans:
    LDA mk_k
    STA sp_start,X
    DEC mk_b2
-   BRA @l4
+   BRA @l4l
 @nx:
    PLA
    STA mk_b1
    PLA
    STA mk_t1
-@adv:
-   LDA mk_k
-   INC mk_k
-   CMP pl_k1
-   BEQ :+                               ; k <= k1: the next column (k1 + 1
-   BCS @rts                             ;  is the sentinel: all closed)
-:  JMP @col
-@rts:
    RTS
 
 ; mk_close: A = pair: draw its span sp_start[A] .. mk_k - 1
@@ -4736,8 +4764,19 @@ sp_setup:
    LDA pc_dv,X
    STA sdv
 @scr:
-   ; screen: PTR lo 0, Y = (kb * 8 + line & 7) & $FF, PTR hi = the page
-   LDA pl_kb
+   ; screen: PTR lo 0, Y = (kb * 8 + line & 7) & $FF, PTR hi = the page:
+   ; (line >> 3) * 2 + (kb >> 5) + the back buffer's (step 7r: kb >> 5 is
+   ; the carry of kb >= 32)
+   LDA pl_y
+   LSR A
+   LSR A
+   AND #$FE                             ; (line >> 3) * 2
+   LDX pl_kb
+   CPX #32                              ; C = the row's second page
+   ADC DV_BACKHI
+   STA PTR+1
+   STZ PTR
+   TXA
    ASL A
    ASL A
    ASL A
@@ -4746,23 +4785,6 @@ sp_setup:
    AND #7
    ORA pl_a
    TAY
-   STZ PTR
-   LDA pl_kb
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   LSR A
-   STA PTR+1
-   LDA pl_y
-   LSR A
-   LSR A
-   LSR A                                ; (line >> 3) * 2
-   ASL A
-   CLC
-   ADC PTR+1
-   ADC DV_BACKHI
-   STA PTR+1
    LDA sm_lv                            ; step 7n: the far tone
    BNE sm_setup
    LDX pl_fl
@@ -4999,45 +5021,50 @@ pp_slot:
    ASL A
    ASL A
    STA pp_base
-   LDX fl_kind
-   LDA pd_k0,X
-   STA pp_k
-   LDA pd_k1,X
+   LDX fl_kind                          ; step 7r: X = base | k, the scan's
+   LDA pd_k1,X                          ;  last column pp_k1 = base | k1
+   ORA pp_base
    STA pp_k1
-@lp:
-   LDA pp_k
-   CMP pp_k1
-   BEQ :+
-   BCS @rts
-:  ORA pp_base
+   LDA pd_k0,X
+   ORA pp_base
    TAX
+@lp:
    LDA pp_all,X
    CMP #$FF
    BNE @run
-   INC pp_k
+   CPX pp_k1
+   BEQ @rts
+   INX
    BRA @lp
 @run:
    STA pl_y                             ; a run of line pl_y from column k
-   LDA pp_k
+   TXA
+   AND #63
    STA pl_kb
 @ext:
-   INC pp_k
-   LDA pp_k
-   CMP pp_k1
-   BEQ :+
-   BCS @end
-:  ORA pp_base
-   TAX
+   CPX pp_k1
+   BEQ @last                            ; it reaches the last column
+   INX
    LDA pp_all,X
    CMP pl_y
    BEQ @ext
-@end:
+   STX pp_k                             ; X: the first column past it
+   TXA
+   AND #63
    SEC
-   LDA pp_k
    SBC pl_kb
    STA sp_n
    JSR sl_draw
+   LDX pp_k
    BRA @lp
+@last:
+   TXA
+   AND #63
+   SEC
+   SBC pl_kb
+   INC A                                ; (through the last column)
+   STA sp_n
+   JMP sl_draw
 @rts:
    RTS
 

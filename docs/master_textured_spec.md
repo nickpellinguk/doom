@@ -1191,6 +1191,24 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7r. The flush's set-up: sweep, screen pointer, partial lines. — DONE.**
+Three exact changes from the flush profile (open items):
+- *Sweep* (`mk_spans`): the kind's interval arrays are patched into the
+  reads once (floor `pe_ft` / `pe_fb` or ceiling `pe_ct` / `pe_cb`; the
+  four share a page, asserted) instead of testing the kind per column; the
+  column lives in X and an unchanged interval costs one INX / CPX / two
+  reads and compares; a change runs `mk_step` (the old close / open
+  loops as a subroutine). 128 -> 90 cycles a column swept: the close /
+  open work (`mk_step`, ~12.7K a frame) is now most of it.
+- *Screen pointer* (`sp_setup`): PTR hi = (line >> 3) * 2 + back buffer,
+  with kb >> 5 as the carry of kb >= 32; no shift chain. 248 -> 227 a
+  span with `uvat`.
+- *Partial lines* (`pp_slot`): the scan keeps base | k in X against the
+  last column base | k1 (no per-column reload, no wrap at slot 3's end).
+  14.4K -> 8.9K a frame.
+- *Result*: flushes 20.6% -> 19.3% of the frame (24.2K -> 22.3K each);
+  24,073,671 -> 23,712,325 over the 20 poses (-1.5%).
+
 **7q. `pl_row`: D patched once. — DONE.** Its two products share D:
 `mul8x32` now falls into `m8_run` (pl_q = pl_e * the patched multiplier)
 after patching, and the sin product calls `m8_run` directly, reusing the
