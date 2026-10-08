@@ -127,7 +127,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (9.1K, step 7m), flats (5.25K), all in bank 5 to $B9FF; bank 6 $8000–$8FFF: free (step 7m; textures and flats to $82FF before); bank 6 $9000–$B753 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free to $B8FF (428 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
-| Main $7E20–$7F90 | The fill's multiply and divide routines (step 5c; `pl_hq` / `pl_dh` / `pl_dhn`, step 7o) |
+| Main $7E20–$7F57 | The fill's multiply and divide routines (step 5c; `pl_hq` / `pl_dh` / `pl_dhn`, step 7o; `mf_mul8` removed, 7p) |
 | Main $6D38–$6FFF | Free (step 7i: the cold per-seg set-up `tx_seg` moved to bank 6) |
 | Main $4FB8–$55B5 | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
 
@@ -1190,6 +1190,17 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7p. `uvat`: one multiplier, two products. — DONE.** A span's first
+U, V are Uc + a * dU and Vc + a * dV (mod 256) with the same a = kb - 32,
+and only the low bytes count. `uvat` now patches a into the quarter-
+square reads once (as `mul8x32`: f(e + a) at SQR_LO + a, f(|e - a|) at
+SQR_LO - a via the mirror page) and takes each product's low byte with
+one LDA / SBC pair -- no `mf_mul8` calls (removed: no other caller).
+~200 -> ~75 cycles a call. Exact; 24,347,419 -> 24,131,421 (-0.9%).
+Other shared operands checked: `pl_row`'s D * ZC and D * ZS (one patch
+saved, ~0.25%), `mul16`'s own pairs (two products per patch: no gain),
+`tx_seg`'s dL * den0 and dL * A (per seg: small).
 
 **7o. Row maths: skip far rows, fold the signs. — DONE.** The plane
 flush measurement (open items) put `pl_row` at ~1.3K per row and height,

@@ -358,7 +358,7 @@ mk_b2:   .res 1
 mk_k:    .res 1
 sp_n:    .res 1                         ; the span loops' byte count
 sf_q:    .res 1                         ; sp_go2: the entry position * 8
-mq_b:    .res 1                         ; mf_mul8: multiplier, product lo,
+mq_b:    .res 1                         ; QMUL / uvat: multiplier, product lo,
 mq_l:    .res 1                         ;  scratch; mul8x32's byte index
 mq_t:    .res 1
 mq_i:    .res 1
@@ -3935,24 +3935,39 @@ sl_wr:
 .segment "MB6C"
 ; uvat: pl_u, pl_v = U, V (4.4) at byte column pl_kb of pair pl_p's row:
 ; Uc + (kb - 32) * dU (mod 2^8), one 8 x 8 multiply each
-uvat:
-   LDA pl_kb
-   SEC
-   SBC #32
+uvat:                                   ; (step 7p: the two products share
+   LDA pl_kb                            ;  their multiplier a = kb - 32: its
+   SEC                                  ;  quarter-square offsets patched once,
+   SBC #32                              ;  as mul8x32; only the low bytes)
    STA mq_b
+   STA uv_p1+1                          ; f(e + a) at SQR_LO + a (SQR2_LO
+   STA uv_p2+1                          ;  above it for e + a >= 256)
+   SEC
+   LDA #0
+   SBC mq_b
+   STA uv_m1+1                          ; f(|e - a|) at SQR_LO - a (the mirror
+   STA uv_m2+1                          ;  page below for e < a)
+   LDA #>SQR_LO
+   SBC #0
+   STA uv_m1+2
+   STA uv_m2+2
    LDX pl_p
-   LDA pc_du,X
-   JSR mf_mul8
-   LDX pl_p
+   LDY pc_du,X                          ; u = Uc + a * dU (mod 256)
+   SEC
+uv_p1:
+   LDA SQR_LO,Y                         ; (patched lo: a)
+uv_m1:
+   SBC SQR_LO,Y                         ; (patched: SQR_LO - a)
    CLC
-   LDA mq_l
    ADC pc_uc,X
    STA pl_u
-   LDA pc_dv,X
-   JSR mf_mul8
-   LDX pl_p
+   LDY pc_dv,X                          ; v = Vc + a * dV (mod 256)
+   SEC
+uv_p2:
+   LDA SQR_LO,Y                         ; (patched lo: a)
+uv_m2:
+   SBC SQR_LO,Y                         ; (patched: SQR_LO - a)
    CLC
-   LDA mq_l
    ADC pc_vc,X
    STA pl_v
    RTS
@@ -5096,36 +5111,6 @@ pl_zrow:
 
 .segment "MARITH"                       ; main $7E20: the arithmetic (only ever
                                         ;  called with ACCCON X clear)
-; ---- mf_mul8: A * mq_b -> A (hi), mq_l (lo). Quarter squares:
-; a*b = f(a+b) - f(|a-b|), f(n) = n*n >> 2, from the boot-built SQR_*
-; tables (main RAM $0200-$07FF: readable whatever ACCCON X). X, Y used.
-mf_mul8:
-   STA mq_t
-   SEC
-   SBC mq_b
-   BCS :+
-   EOR #$FF
-   ADC #1                               ; (C = 0 from the SBC)
-:  TAY                                  ; Y = |a - b|
-   LDA mq_t
-   CLC
-   ADC mq_b
-   TAX                                  ; X = (a + b) & $FF
-   BCS @big
-   SEC
-   LDA SQR_LO,X
-   SBC SQR_LO,Y
-   STA mq_l
-   LDA SQR_HI,X
-   SBC SQR_HI,Y
-   RTS
-@big:                                   ; a + b >= 256 (C = 1)
-   LDA SQR2_LO,X
-   SBC SQR_LO,Y
-   STA mq_l
-   LDA SQR2_HI,X
-   SBC SQR_HI,Y
-   RTS
 
 ; ---- dq_core: the 16-step divide (step 7f: unrolled, in bank 6 -- every
 ; caller has it paged: div32 already reaches d8_byte there). In: remainder
