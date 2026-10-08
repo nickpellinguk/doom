@@ -4018,26 +4018,6 @@ m8_nx:
    BNE m8_lp
    RTS
 
-; neg_ah: A non-zero -> pl_a, pl_h negated (mod 2^16)
-neg_ah:
-   CMP #0
-   BEQ @rts
-   SEC
-   LDA #0
-   SBC pl_a
-   STA pl_a
-   LDA #0
-   SBC pl_a+1
-   STA pl_a+1
-   SEC
-   LDA #0
-   SBC pl_h
-   STA pl_h
-   LDA #0
-   SBC pl_h+1
-   STA pl_h+1
-@rts:
-   RTS
 
 ; ============================================================================
 ; Cold set-up code in MAIN RAM (the HAZEL code area is full): routines that
@@ -4365,24 +4345,6 @@ tx_seg:
 
 
 .segment "MFILLV"
-; q_a_h: pl_a = (pl_q >> 8) mod 2^16, pl_h = (pl_q >> 14) mod 2^16
-q_a_h:
-   LDA pl_q+1
-   STA pl_a
-   LDA pl_q+2
-   STA pl_a+1
-   LDA pl_q+2                           ; (q >> 16) << 2 | q bits 14-15
-   STA pl_h
-   LDA pl_q+3
-   STA pl_h+1
-   LDA pl_q+1
-   ASL A
-   ROL pl_h
-   ROL pl_h+1
-   ASL A
-   ROL pl_h
-   ROL pl_h+1
-   RTS
 
 ; 2^20 // k for k = 2j + 1, j = 0..HZ_PAIR - 1 (the depth of a pair k lines off the
 ; horizon, 1024 * depth / D), three byte planes
@@ -4447,14 +4409,25 @@ pl_row:
    SBC #HZ_PAIR
    BCS :+                               ; floor: j = p - HZ_PAIR
    EOR #$FF                             ; ceiling: j = HZ_PAIR - 1 - p
-:  TAX
-   STX pl_j
+:  TAX                                  ; X = j
+   LDY pl_p
+   LDA mf_ep                            ; this frame's row for D
+   STA pc_ep,Y
+   LDA pl_d
+   STA pc_d,Y
+   CMP far_dm,X                         ; step 7n: far iff D >= FAR_DM[j]
+   LDA #0
+   ROL A
+   STA pc_lv,Y
+   BEQ :+
+   RTS                                  ; a far row: its U, V are never read
+:  STX pl_j
    LDA zr_ep,X
    CMP mf_ep
    BEQ :+
    JSR pl_zrow                          ; this frame's ZC[j], ZS[j]
    LDX pl_j
-:  LDA zc0,X                            ; cos: Pc = D * ZC[j] -> A, hV
+:  LDA zc0,X                            ; cos: Pc = D * ZC[j]
    STA pl_e
    LDA zc1,X
    STA pl_e+1
@@ -4464,35 +4437,45 @@ pl_row:
    STA pl_e+3
    LDA pl_d
    JSR mul8x32
-   JSR q_a_h                            ; pl_a = Pc >> 8, pl_h = Pc >> 14
-   LDA pl_cn
-   JSR neg_ah
+   JSR pl_hq                            ; hV = Pc >> 14 (A = Pc >> 8: pl_q+1)
    LDX pl_p
-   ; at column 32 (U0 + 32 dU): Uc = Up + A + hU, Vc = Vp - Bs + hV;
-   ; dU = 2 hU, dV = 2 hV; each rounded to 4.4 (its high byte)
-   LDA pl_h                             ; dV
-   ASL A
-   TAY
-   LDA pl_h+1
-   ROL A
-   CPY #$80
-   ADC #0
+   LDA pl_cn                            ; the cos sign folded into the sums
+   BNE @cn
+   JSR pl_dh                            ; dV = round(2 hV)
    STA pc_dv,X
-   CLC                                  ; Uc starts as Up + A
+   CLC                                  ; Uc = Up + A, Vc = Vp + hV
    LDA pl_up
-   ADC pl_a
+   ADC pl_q+1
    STA pl_uc
    LDA pl_up+1
-   ADC pl_a+1
+   ADC pl_q+2
    STA pl_uc+1
-   CLC                                  ; Vc starts as Vp + hV
+   CLC
    LDA pl_vp
    ADC pl_h
    STA pl_vc
    LDA pl_vp+1
    ADC pl_h+1
    STA pl_vc+1
-   ; sin: Ps = D * ZS[j] -> Bs, hU
+   BRA @sin
+@cn:
+   JSR pl_dhn                           ; dV = round(-2 hV)
+   STA pc_dv,X
+   SEC                                  ; Uc = Up - A, Vc = Vp - hV
+   LDA pl_up
+   SBC pl_q+1
+   STA pl_uc
+   LDA pl_up+1
+   SBC pl_q+2
+   STA pl_uc+1
+   SEC
+   LDA pl_vp
+   SBC pl_h
+   STA pl_vc
+   LDA pl_vp+1
+   SBC pl_h+1
+   STA pl_vc+1
+@sin:                                   ; sin: Ps = D * ZS[j]
    LDX pl_j
    LDA zs0,X
    STA pl_e
@@ -4504,52 +4487,97 @@ pl_row:
    STA pl_e+3
    LDA pl_d
    JSR mul8x32
-   JSR q_a_h                            ; pl_a = Ps >> 8, pl_h = Ps >> 14
-   LDA pl_sn
-   JSR neg_ah
+   JSR pl_hq                            ; hU = Ps >> 14 (Bs = Ps >> 8: pl_q+1)
    LDX pl_p
-   LDA pl_h                             ; dU
-   ASL A
-   TAY
-   LDA pl_h+1
-   ROL A
-   CPY #$80
-   ADC #0
+   LDA pl_sn
+   BNE @sn
+   JSR pl_dh                            ; dU = round(2 hU)
    STA pc_du,X
-   CLC                                  ; Uc += hU
+   CLC                                  ; Uc += hU, Vc -= Bs
    LDA pl_uc
    ADC pl_h
    STA pl_uc
    LDA pl_uc+1
    ADC pl_h+1
    STA pl_uc+1
-   LDA pl_uc                            ; rounded: + (low byte >= $80)
+   SEC
+   LDA pl_vc
+   SBC pl_q+1
+   STA pl_vc
+   LDA pl_vc+1
+   SBC pl_q+2
+   BRA @rnd
+@sn:
+   JSR pl_dhn                           ; dU = round(-2 hU)
+   STA pc_du,X
+   SEC                                  ; Uc -= hU, Vc += Bs
+   LDA pl_uc
+   SBC pl_h
+   STA pl_uc
+   LDA pl_uc+1
+   SBC pl_h+1
+   STA pl_uc+1
+   CLC
+   LDA pl_vc
+   ADC pl_q+1
+   STA pl_vc
+   LDA pl_vc+1
+   ADC pl_q+2
+@rnd:                                   ; A = Vc hi: both rounded to 4.4
+   LDY pl_vc                            ;  (the high byte, + low >= $80)
+   CPY #$80
+   ADC #0
+   STA pc_vc,X
+   LDA pl_uc
    CMP #$80
    LDA pl_uc+1
    ADC #0
    STA pc_uc,X
-   SEC                                  ; Vc -= Bs
-   LDA pl_vc
-   SBC pl_a
-   STA pl_vc
-   LDA pl_vc+1
-   SBC pl_a+1
-   STA pl_vc+1
-   LDA pl_vc
-   CMP #$80
-   LDA pl_vc+1
-   ADC #0
-   STA pc_vc,X
-   LDA mf_ep
-   STA pc_ep,X
-   LDA pl_d
-   STA pc_d,X
-   LDY pl_j                             ; step 7n: far iff D >= FAR_DM[j]
-   CMP far_dm,Y
-   LDA #0
-   ROL A
-   STA pc_lv,X
    RTS
+
+.segment "MARITH"                       ; (main RAM: room; ACCCON X clear)
+; pl_hq: pl_h = (pl_q >> 14) mod 2^16 (the product's bits 14-29)
+pl_hq:
+   LDA pl_q+2
+   STA pl_h
+   LDA pl_q+3
+   STA pl_h+1
+   LDA pl_q+1
+   ASL A
+   ROL pl_h
+   ROL pl_h+1
+   ASL A
+   ROL pl_h
+   ROL pl_h+1
+   RTS
+
+; pl_dh: A = 2 pl_h (mod 2^16) rounded to 4.4; pl_dhn: the same of -2 pl_h
+pl_dh:
+   LDA pl_h
+   ASL A
+   TAY
+   LDA pl_h+1
+   ROL A
+   CPY #$80
+   ADC #0
+   RTS
+pl_dhn:
+   LDA pl_h
+   ASL A
+   STA pl_a                             ; (scratch: 2 h)
+   LDA pl_h+1
+   ROL A
+   STA pl_a+1
+   SEC
+   LDA #0
+   SBC pl_a
+   TAY
+   LDA #0
+   SBC pl_a+1
+   CPY #$80
+   ADC #0
+   RTS
+.segment "MFILLC"
 
 .segment "MB6C"                         ; (bank 6: the sweep and set-up)
 ; mk_spans: R_MakeSpans over columns pl_k0 .. pl_k1 (+ an empty sentinel):

@@ -37,7 +37,7 @@ os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 OFFMAP = {(192, -2368, 99), (3648, -2368, 35), (1500, -3700, 0), (3648, -4800, 131)}
 BANK6_CODE = ('MB6C', 'MFILLV')
 ARITH = {'mf_mul8', 'mul16', 'div32', 'divq16', 'dq_set', 'dq_core', 'd8_byte',
-         'mul8x32', 'pl_prod', 'q_a_h', 'neg_ah', 'tx_dat'}
+         'mul8x32', 'pl_prod', 'pl_hq', 'pl_dh', 'pl_dhn', 'tx_dat'}
 JOBS = [
     ('wall texel loop', ['tr_screen', 'tr_fetch', 'tr_vstep', 'tr_ent', 'tb_end']
                         + [f'tv_{v}' for v in range(4)]

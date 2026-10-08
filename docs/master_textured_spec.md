@@ -127,9 +127,9 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (9.1K, step 7m), flats (5.25K), all in bank 5 to $B9FF; bank 6 $8000–$8FFF: free (step 7m; textures and flats to $82FF before); bank 6 $9000–$B753 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free to $B8FF (428 B); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
-| Main $7E20–$7FFC | The fill's multiply and divide routines (step 5c) |
+| Main $7E20–$7F90 | The fill's multiply and divide routines (step 5c; `pl_hq` / `pl_dh` / `pl_dhn`, step 7o) |
 | Main $6D38–$6FFF | Free (step 7i: the cold per-seg set-up `tx_seg` moved to bank 6) |
-| Main $4FB8–$5578 | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
+| Main $4FB8–$55B5 | Plane row maths, pending-plane logic and their tables (step 5e; `MFILLC`, `MFMAIN` — `rw`, not `bss`, so `SHTAB` keeps $5600) |
 
 **Budget (E1M1, measured by `master_assets.py`):**
 
@@ -1190,6 +1190,23 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7o. Row maths: skip far rows, fold the signs. — DONE.** The plane
+flush measurement (open items) put `pl_row` at ~1.3K per row and height,
+29% of the flushes: two 8x32 multiplies, then shifts, negation and
+rounding around them. Two exact changes (the gates are byte-identical):
+- *Far rows*: `pl_row` tests FAR_DM first and stamps the row (epoch, D,
+  level) before any maths; a far row returns there -- its U, V are never
+  read (`sp_setup` and `pl_cell` take the far tone) -- and skips this
+  frame's `pl_zrow` for its j too. 18% of the row computes.
+- *Signs folded into the sums*: Uc = Up +- A, Vc = Vp +- hV, Uc +- hU,
+  Vc -+ Bs by add or subtract instead of negating A and h first
+  (`neg_ah` gone); A and Bs read straight from the product (pl_q+1/+2),
+  h = Pc >> 14 by `pl_hq`, dU / dV rounded by `pl_dh` / `pl_dhn`
+  (`q_a_h` gone; the helpers in MARITH, main RAM).
+- *Result*: 24,764,497 -> 24,347,419 over the 20 poses (-1.7%); the open
+  areas most (1500,-3700,0 -4.1%, 3648,-4800,131 -5.0%), the start room
+  -1.9 to -2.5%.
 
 **7n. Floors and ceilings: a far tone. — DONE.** Past a few lines below
 the horizon a plane byte covers many flat texels (64 D / k^1.5 of them,
