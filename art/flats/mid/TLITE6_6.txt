@@ -1,5 +1,0 @@
-# TLITE6_6 middle level 4x4 tones (one per 16x16 world units): .rgybmcw solid, RGYBMC black+colour, 123456 white+colour, nopqhtzx cycling 8-15, NOPQ nukage wave pairs (seeded from the flat: redraw)
-RRRR
-RRRR
-RRRR
-RRRR

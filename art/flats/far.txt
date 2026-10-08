@@ -1,0 +1,26 @@
+# The flats' far tone (step 7n, docs/master_textured_spec.md): a line pair
+# past master_assets.FAR_T draws its flat as this ONE tone. NAME TONE, TONE
+# a letter: .rgybmcw solid, RGYBMC black+colour, 123456 white+colour
+# (r g y b m c), nopqhtzx cycling 8-15, NOPQ nukage wave pairs.
+# (seeded from each flat's mean colour: choose by eye)
+CEIL3_5   B
+CEIL5_1   .
+CEIL5_2   R
+FLAT14    B
+FLAT18    B
+FLAT20    B
+FLAT23    C
+FLAT5_5   R
+FLOOR1_1  B
+FLOOR4_8  B
+FLOOR5_1  R
+FLOOR5_2  R
+FLOOR6_2  B
+FLOOR7_1  R
+FLOOR7_2  C
+NUKAGE3   O
+STEP2     M
+TLITE6_1  R
+TLITE6_4  R
+TLITE6_5  .
+TLITE6_6  R

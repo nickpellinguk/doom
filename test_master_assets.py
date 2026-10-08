@@ -116,15 +116,17 @@ with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
             check(key not in used, f"{f['name']} overlaps {used.get(key)}")
             used[key] = f['name']
 
-    # ── the middle level (step 7n): read back, and the 6502's copy current ──
+    # ── the far tones (step 7n): as drawn (or seeded), the 6502's copy current ──
     import wall_art
+    far = wall_art.far_tones()
     for f in man['flats']:
-        g = wall_art.mid_tones(f['name'], wall_art.load_flat(f['name']))
-        want = np.array([[M.tone_byte(int(t)) for t in r] for r in g])
-        check((A.mid_bytes(f['id']) == want).all(), f"{f['name']} middle level")
-    check(open(M.MID_TAB).read() == open(os.path.join(t1, 'mmid_tab.s')).read(),
-          'src/master/mmid_tab.s is stale: run python3 master_assets.py')
-    check(len(M.mid_dm()) == 34 and all(1 <= d <= 255 for d in M.mid_dm()), 'MID_DM')
+        t = far.get(f['name'])
+        if t is None:
+            t = wall_art.seed_far(wall_art.load_flat(f['name']))
+        check(A.far_byte(f['id']) == M.tone_byte(t), f"{f['name']} far tone")
+    check(open(M.FAR_TAB).read() == open(os.path.join(t1, 'mfar_tab.s')).read(),
+          'src/master/mfar_tab.s is stale: run python3 master_assets.py')
+    check(len(M.far_dm()) == 34 and all(1 <= d <= 255 for d in M.far_dm()), 'FAR_DM')
 
 print(f"textures {len(man['textures'])}, flats {len(man['flats'])}, "
       f"HAZEL tables {len(hz)} B")
