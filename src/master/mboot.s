@@ -13,17 +13,19 @@
 ;      screen; it shows as noise during the load) one after the other,
 ;      bounced a page at a time through $0A00 because the CPU sees either
 ;      main or shadow at $3000, not both. Then MPANEL, the control panel
-;      (master_panel.py), parked where it lives in buffer 1: its character
-;      rows 17..19, shadow $7A00-$7FFF, clear of the parked blocks.
+;      (master_panel.py), parked at shadow $7A00-$7FFF, and MGUN (gun_b0)
+;      below it at $7400, clear of the parked blocks.
 ;   4. From the page-9 stub: MMAIN straight to $0F00 (on the Master DFS
 ;      keeps its workspace in HAZEL, so main RAM from $0E00 is free) --
 ;      this overwrites the loader; then MCBITS to $5800. Last disc access.
 ;   5. SEI; the parked HAZEL block goes shadow -> $0A00 -> HAZEL ($C000),
 ;      the parked ANDY block shadow -> ANDY ($8000, ROMSEL bit 7: the MOS
 ;      keeps its font and workspace there, so it waits for the last OS
-;      call too); the panel shadow $7A00 -> $5200 (buffer 0's rows
-;      17..19, which the parked ANDY block covered); JMP DRV_ORG. No OS
-;      call after this point.
+;      call too); the panel shadow $7A00 -> $5800 (MPANEL, the one panel
+;      both buffers show: buffer 0 runs into it, buffer 1 wraps onto it
+;      at the 10K screen size; the parked ANDY block covered it), gun_b0
+;      $7400 -> $3000 (MGUN0, which parked HAZEL covered); JMP DRV_ORG.
+;      No OS call after this point.
 ;
 ; (The first cut staged MHAZEL at $3000 AFTER the engine image was in
 ; place, which wrote the HAZEL block over engine code at $3000+.)
@@ -33,8 +35,12 @@
 ROMSEL_COPY = $F4
 ANDY_PAGES  = 16                        ; MANDY: 4K
 PANEL_PAGES = 6                         ; MPANEL: character rows 17..19
-PANEL0      = MSCREEN0 + 17 * 512       ; ... of buffer 0 (shadow $5200)
-PANEL1      = MSCREEN1 + 17 * 512       ; ... of buffer 1 (shadow $7A00)
+PANEL_STAGE = $7A00                     ; parked here (clear of HAZEL + ANDY),
+                                        ;  then copied to MPANEL ($5800), the one
+                                        ;  panel both buffers show
+GUN_PAGES   = 6                         ; MGUN: gun_b0, for shadow MGUN0 ($3000)
+GUN_STAGE   = PANEL_STAGE - GUN_PAGES * 256   ; parked at $7400 meanwhile
+.assert $3000 + (HAZEL_PAGES + ANDY_PAGES) * 256 <= GUN_STAGE, error, "parked HAZEL + ANDY reach the gun's stage"
 ; the bounce page is $0A00, one free OS buffer page (written inline)
 
         .segment "CODE"
@@ -80,8 +86,14 @@ ldr:
         ldx #<c_pn
         ldy #>c_pn
         jsr $FFF7                       ; *LOAD MPANEL 3000
-        lda #>PANEL1                    ; park it in buffer 1's panel rows
+        lda #>PANEL_STAGE               ; park it at the top of shadow
         ldx #PANEL_PAGES
+        jsr park
+        ldx #<c_gn
+        ldy #>c_gn
+        jsr $FFF7                       ; *LOAD MGUN 3000
+        lda #>GUN_STAGE                 ; park it below the panel
+        ldx #GUN_PAGES
         jsr park
         ldx #stub_len
 :       lda stub_image-1,x
@@ -156,6 +168,7 @@ c_b6:   .byte "LOAD MBANK6 3000", 13
 c_hz:   .byte "LOAD MHAZEL 3000", 13
 c_an:   .byte "LOAD MANDY 3000", 13
 c_pn:   .byte "LOAD MPANEL 3000", 13
+c_gn:   .byte "LOAD MGUN 3000", 13
 vdu_init:
         .byte 22, 130                   ; MODE 130: Mode 2 in shadow RAM
 vdu_end:
@@ -218,24 +231,33 @@ stub:
         inc $83
         dex
         bne @an
-        lda #>PANEL1                    ; the panel: buffer 1's rows -> buffer
-        sta $81                         ;  0's (X still on: shadow to shadow)
-        lda #>PANEL0
-        sta $83
+        lda #>PANEL_STAGE               ; the panel -> MPANEL, the gun body
+        sta $81                         ;  -> MGUN0 (X still on: shadow to
+        lda #>MPANEL                    ;  shadow; both clear of HAZEL's and
+        sta $83                         ;  ANDY's parked copies, now done)
         ldx #PANEL_PAGES
-@pn:    lda ($80),y                     ; (Y = 0 again)
-        sta ($82),y
-        iny
-        bne @pn
-        inc $81
-        inc $83
-        dex
-        bne @pn
+        jsr s_copy
+        lda #>GUN_STAGE
+        sta $81
+        lda #>MGUN0
+        sta $83
+        ldx #GUN_PAGES
+        jsr s_copy
         lda $FE34
         and #$FB
         sta $FE34
         stz $FE30                       ; ANDY out (the engine pages its own)
         jmp DRV_ORG                     ; -> driver (SEI held; no OS from here)
+s_copy:                                 ; X pages ($80) -> ($82), Y = 0
+@cp:    lda ($80),y
+        sta ($82),y
+        iny
+        bne @cp
+        inc $81
+        inc $83
+        dex
+        bne @cp
+        rts
 s_main:  .byte "LOAD MMAIN", 13
 s_cbits: .byte "LOAD MCBITS", 13
 s_end:

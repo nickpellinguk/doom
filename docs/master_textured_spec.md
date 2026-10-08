@@ -121,10 +121,10 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Area | Contents |
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
-| Shadow RAM (20K) | The two screen buffers, &3000 and &5800; each one's character rows 17–19 (&5200, &7A00) hold the control panel |
+| Shadow RAM (20K) | Step 7w: `gun_b0` (the buffer-0 gun overlay, 1,402 B, run with ACCCON X set) &3000–&3579, free to &35FF (134 B); buffer 0's view &3600–&57FF; the one control panel &5800–&5DFF (character rows 17–19 of both buffers: buffer 0 runs into it, buffer 1 wraps onto it at the 10K screen size); buffer 1's view &5E00–&7FFF |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C69F (with `pc_lv`, step 7n; free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8F3F: the wall step's reciprocal tables and per-part m / table page (step 7v; free since 7m, textures and flats to $82FF before); bank 6 $9000–$B8D9 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b0`/`gun_b1`, steps 6f, 7b), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free to $B8FF (38 B, step 7v); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8F3F: the wall step's reciprocal tables and per-part m / table page (step 7v; free since 7m, textures and flats to $82FF before); bank 6 $9000–$B8D9 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b1`, steps 6f, 7b; `gun_b0` in shadow since 7w), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free $B360–$B8FF (1,440 B, step 7w: `gun_b0` moved to shadow); bank 6 tail $B900–$BE23: wall part records + texture constants |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7F57 | The fill's multiply and divide routines (step 5c; `pl_hq` / `pl_dh` / `pl_dhn`, step 7o; `mf_mul8` removed, 7p) |
@@ -138,7 +138,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
   COMPUTE2 clipped and the BRNBIG masked middles dropped).
 - Flats: 21 × 256 B = 5,376 B (5.25K).
 - Textures and flats together: bank 5 $8000–$B7FF (14,336 B, step 7m);
-  bank 6 $8000–$8F3F holds the wall step tables (step 7v) and $9000–$B8FF the fill's cold code.
+  bank 6 $8000–$8F3F holds the wall step tables (step 7v) and $9000–$B35F the fill's cold code.
 - Level data and tables: ~24K (banks A and B of the current build: 10.3K +
   13.8K, part of which is cache workspace).
 - **Total in the banks: ~54K of 64K.** Since step 4 ANDY holds the per-seg
@@ -1190,6 +1190,28 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7w. One control panel for both buffers; `gun_b0` in shadow RAM. — DONE.**
+Each 10K buffer kept its own copy of the 1.5K panel (character rows 17-19).
+Now there is one, at shadow $5800-$5DFF: buffer 0 moved to $3600 (view
+$3600-$57FF, then straight into the panel) and buffer 1 to $5E00 (view
+$5E00-$7FFF); with the System VIA latch's screen size at 10K (B4 = B5 = 1,
+set in `cur_park`; MODE 130 leaves 20K) the CRTC wraps addresses past $7FFF
+by -$2800, so buffer 1's rows 17-19 show $5800 too. Both bases stay
+page-aligned and every row keeps its offset, so the flip (R12/R13 from the
+base) and the fill are unchanged but for `MSCREEN0`/`MSCREEN1` (new: `MPANEL`,
+`MGUN0`). That frees shadow $3000-$35FF, reachable only with ACCCON X set --
+exactly when the gun overlay runs, so `gun_b0` (1,402 B, buffer 0's
+straight-line body) now lives there (ld65 area `GUNM`, file `MGUN`; the rig
+and the loader put it in shadow, never main RAM) and `gun_draw` (bank 6)
+calls it with X set; `gun_b1` stays in bank 6. Bank 6 code ends at $B35F
+(1,440 B free, was 38). The loader parks MPANEL at $7A00 and MGUN at $7400
+(clear of the parked HAZEL and ANDY blocks) and its page-9 stub copies them
+to $5800 and $3000 last (`s_copy`). Gates: the gun byte-exact into both
+buffers (and `gun_b0` intact); jsbeeb boots the disc with the panel right
+in 50 of 50 fields across both buffers, no holes, the split on time. The
+step-1 display demo (`mdisplay.s`) keeps its own $3000 / $5800 buffers.
+Cycles: 23 poses 25,793,616 -> 25,785,136 (bank 6 code moved).
 
 **7v. The run's step from a reciprocal table. — DONE.** `tv_divm`'s
 K // (B - T) was a 16-bit-quotient shift-subtract per run (~340 cycles for

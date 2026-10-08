@@ -30,8 +30,8 @@ json.dump({'flip_sched': symmap.sym('flip_sched'),
            'render_frame': symmap.sym('render_frame'),
            'hole_marker': M.mode2_byte((13, 0)),   # (13, 0): no art makes it
            'DV_ANGIDX': abi.DV_ANGIDX,
-           'panel': [abi.MSCREEN0 + master_panel.PANEL_OFFSET,
-                     abi.MSCREEN1 + master_panel.PANEL_OFFSET],
+           'panel': [abi.MPANEL],                  # the one, shared panel
+           'bufs': [abi.MSCREEN0, abi.MSCREEN1],
            'panel_bin': os.path.join(out, 'panel.bin')}, open(addrs, 'w'))
 r = subprocess.run(['node', 'tools/master_rig.mjs', 'engine',
                     os.path.join(out, 'doom_master.ssd'), addrs,

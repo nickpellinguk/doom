@@ -354,7 +354,7 @@ def build_banked(flatr):
     _ab.build('engine')
     for addr, fn in _regions():
         if fn.startswith('span_clip') or fn == 'bsp_render_hud_bk.bin' \
-                or fn in ('engine_cbits_m.bin', 'engine_b6c_m.bin'):
+                or fn in ('engine_cbits_m.bin', 'engine_b6c_m.bin', 'engine_gun_m.bin'):
             continue    # clipper + HUD -> BANK_C (rc/anim/vrcache/sel are main now)
                         # MASTER: CBITS was placed with the C data above
         if os.path.exists(fn):
@@ -420,12 +420,12 @@ class MasterBspRender(BspRender6502):
 
     def render_frame(self, px, py, ab, floor_z=0):
         # the screens as the disc leaves them: blank, with the control panel
-        # (master_panel) in both buffers' bottom 24 lines
+        # (master_panel) at MPANEL, under both buffers' views, and gun_b0 at
+        # MGUN0
         import master_panel as MP
         self.bm.clear_shadow()
-        pb = MP.panel_bytes()
-        for base in (abi.MSCREEN0, abi.MSCREEN1):
-            self.bm.shadow_store(base + MP.PANEL_OFFSET, pb)
+        self.bm.shadow_store(abi.MPANEL, MP.panel_bytes())   # the one panel
+        self.bm.shadow_store(abi.MGUN0, open('engine_gun_m.bin', 'rb').read())
         self.bm[_rsym('bca_ab')] = ab & 0xFF
         return super().render_frame(px, py, ab, floor_z)
 

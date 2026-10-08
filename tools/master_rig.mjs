@@ -157,7 +157,7 @@ async function engineMode() {
         }
         if (addr === A.render_frame) {
             const base = s.readMemory(A.DV_ANGIDX + 1, 1)[0] << 8;     // DV_BACKHI
-            if (base === 0x3000 || base === 0x5800) {
+            if (A.bufs.includes(base)) {
                 s.writeMemory(base, new Array(8704).fill(A.hole_marker), { shadow: true });
                 holeArm = base;
             }

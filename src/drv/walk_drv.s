@@ -790,7 +790,8 @@ mv_reval:
     STA zp_br_vz
     RTS
 
-; --- cur_park: park the hardware cursor outside both framebuffers ---------
+; --- cur_park: park the hardware cursor outside both framebuffers, and
+; set the 10K screen size (the shared panel) -------------------------------
 ; R10 = $20 (cursor non-display) alone was NOT enough: the MOS leaves
 ; R14/R15 = $0D00, i.e. $5800 — the FIRST displayed character of the
 ; $5800 buffer — so a cursor block sat at the window's top-left on every
@@ -806,6 +807,14 @@ cur_park:
     STA $FE00
     LDA #$FF
     STA $FE01
+    ; screen size 10K (System VIA latch B4 = B5 = 1; the MODE set 20K): the
+    ; CRTC wraps addresses past $7FFF by -$2800, so buffer 1 ($5E00, view to
+    ; $7FFF) shows the shared panel at $5800 under its view, as buffer 0
+    ; ($3600) runs straight into it. (Here for the init block's space.)
+    LDA #$0C
+    STA $FE40
+    LDA #$0D
+    STA $FE40
     RTS
 
 ; --- mv_frame: elapsed PAL fields since last frame -> ENG_PM_FRAME -------

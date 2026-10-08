@@ -25,8 +25,9 @@ ACC_D   = $01                           ; display shadow
 ACC_X   = $04                           ; CPU accesses shadow at &3000-&7FFF
 ACC_Y   = $08                           ; HAZEL at &C000-&DFFF
 
-BUF_A   = MSCREEN0                      ; abi.inc
-BUF_B   = MSCREEN1
+BUF_A   = $3000                         ; (the step-1 demo keeps its own buffers,
+                                        ;  20K wrap: not the engine's MSCREEN0/1)
+BUF_B   = $5800
 
 ptr     = $70                           ; zp: screen pointer
 cnt     = $72

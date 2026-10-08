@@ -20,8 +20,9 @@ Files on the disc (DFS, boot option *RUN):
   MHAZEL  HAZEL: pattern, HUD, FLIP, font at $C000; the filler +
           wall texturer and its sky map at $C800          staged $3000
   MANDY   ANDY: the per-seg wall tables (master_walls)    staged $3000
-  MPANEL  the control panel (master_panel), the bottom    staged $3000
-          24 lines of both buffers
+  MPANEL  the control panel (master_panel): the bottom    staged $3000
+          24 lines under both buffers, shadow $5800
+  MGUN    gun_b0, the buffer-0 gun overlay, shadow $3000  staged $3000
 """
 import os, subprocess, sys
 
@@ -115,6 +116,8 @@ def build():
     assert len(andy) == 0x1000
     boot = asm('mboot', (f'HAZEL_PAGES={(len(hz) + 255) // 256}',))
     assert len(main) == 0x4900 and len(cbits) == 0x2800
+    gun = open(os.path.join(ROOT, 'engine_gun_m.bin'), 'rb').read()   # gun_b0
+    assert len(gun) <= 0x600, 'gun_b0 overruns shadow $3000-$35FF'
     files = [('!BOOT', HOST | 0x1900, HOST | 0x1900, boot),
              ('MBANK4', HOST | 0x3000, HOST | 0x3000, b4),
              ('MBANK7', HOST | 0x3000, HOST | 0x3000, b7),
@@ -124,7 +127,8 @@ def build():
              ('MCBITS', HOST | abi.CBITS_M, HOST | abi.CBITS_M, cbits),
              ('MHAZEL', HOST | 0x3000, HOST | 0x3000, hz),
              ('MANDY', HOST | 0x3000, HOST | 0x3000, andy),
-             ('MPANEL', HOST | 0x3000, HOST | 0x3000, master_panel.panel_bytes())]
+             ('MPANEL', HOST | 0x3000, HOST | 0x3000, master_panel.panel_bytes()),
+             ('MGUN', HOST | 0x3000, HOST | 0x3000, gun)]
     path = os.path.join(OUT, 'doom_master.ssd')
     ssd(files, path)
     for n, l, e, d in files:

@@ -28,8 +28,10 @@ ABI = [
     ('BANK_C',         6, 'sideways bank: clipper + rasteriser + HUD'),
     # --- BBC Master textured port (docs/master_textured_spec.md) ---
     ('CBITS_M',        0x5800, 'MASTER build: bank-C content (clipper code + data) laid LINEAR in main RAM from here: master = banked - $8000 + CBITS_M (main $5800-$7FFF is free: both screens are in shadow RAM)'),
-    ('MSCREEN0',       0x3000, 'MASTER build: shadow framebuffer 0 (256x160 4-colour, 10K; CPU reaches it only with ACCCON X set)'),
-    ('MSCREEN1',       0x5800, 'MASTER build: shadow framebuffer 1'),
+    ('MSCREEN0',       0x3600, 'MASTER build: shadow framebuffer 0, its 136-line view $3600-$57FF then the shared panel (256x160, 10K displayed; CPU reaches it only with ACCCON X set)'),
+    ('MSCREEN1',       0x5E00, 'MASTER build: shadow framebuffer 1, its view $5E00-$7FFF; the CRTC wraps (10K screen size) onto the shared panel'),
+    ('MPANEL',         0x5800, 'MASTER build: the control panel, shadow $5800-$5DFF, shown under BOTH buffers (buffer 0 runs into it; buffer 1 wraps onto it)'),
+    ('MGUN0',          0x3000, 'MASTER build: shadow $3000-$35FF, freed by the shared panel: gun_b0, run with ACCCON X set'),
     ('MHZ_PATTERN',    0xC000, 'MASTER build: HAZEL entry -- draw the step-1 test pattern into both buffers (caller sets ACCCON D|X|Y)'),
     ('MHZ_HUD',        0xC003, 'MASTER build: HAZEL entry -- draw the cycles HUD into the back buffer (A = buffer page hi; args at MHZ_ARGS; caller sets ACCCON D|X|Y)'),
     ('MHZ_ARGS',       0xC006, 'MASTER build: HUD argument block in HAZEL: +0/+1 frame time in 1MHz ticks (lo/hi), +2 fields. Written by the driver with HAZEL paged in, so HAZEL code never reads main RAM above $3000 (X is set while it draws)'),

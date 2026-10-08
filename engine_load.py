@@ -37,8 +37,9 @@ def load_engine(mem):
     asmbuild.build('engine')
     loaded = set()
     for start, fname in _regions():
-        if fname in loaded:
-            continue                     # later areas append to the same file
+        if fname in loaded or fname == 'engine_gun_m.bin':
+            continue                     # later areas append to the same file;
+                                         # the gun body is shadow RAM's
         loaded.add(fname)
         code = open(os.path.join(_ROOT, fname), 'rb').read()
         mem[start:start + len(code)] = code

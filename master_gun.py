@@ -14,7 +14,8 @@ bytes: a byte keeps the screen's bits of its transparent pixel(s) (mask) and
 ORs in the art (data). Most of the gun's bytes have no transparent pixel, so
 they are simply written. `python3 master_gun.py` compiles the table into
 straight-line code, one copy per screen buffer (absolute addresses), in
-src/master/mgun_tab.s: the opaque bytes sorted by value, each value loaded
+src/master/mgun_tab.s (gun_b0 in shadow $3000, gun_b1 in bank 6): the
+opaque bytes sorted by value, each value loaded
 once and then stored (LDA #d, STA abs, STA abs ...), then the edge bytes
 read-modify-written (LDA abs, AND #m, [ORA #d,] STA abs).
 """
@@ -80,6 +81,9 @@ def source():
     opaque = sorted((d, a) for a, m, d in cs if m == 0)
     edge = sorted((a, m, d) for a, m, d in cs if m != 0)
     for k, base in enumerate(('MSCREEN0', 'MSCREEN1')):
+        # gun_b0 runs from shadow MGUN0 (freed by the shared panel; X is
+        # set while it draws), gun_b1 from bank 6
+        s.append('.segment "MGUN"' if k == 0 else '.segment "MB6C"')
         s.append(f'gun_b{k}:')
         last = None
         for d, a in opaque:
