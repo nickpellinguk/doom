@@ -33,6 +33,12 @@ POSITIONS = [
     # a random start-area pose where the Master's 6502 left 20 bytes that
     # differ from tex_ref with no reference-gap seg (found 2026-10-07)
     (1144.6, -3342.5, 153),
+    # right in front of the thin STARTAN3 wall before the slime pool: B - T
+    # in the thousands, a step of a few units, so (ys - T) * step put the
+    # rows a row or more off, differently per column (step 7s: the first
+    # v of such a run is exact)
+    (1300, -3232, 0),
+    (1316, -3232, 0),
 ]
 
 # the engine line-list gate's extra poses (test_master_engine): the old

@@ -278,6 +278,9 @@ t_k:     .res 1
 t_sx:    .res 1
 t_tid:   .res 1
 t_step:  .res 2
+t_f:     .res 1                         ; step 7s: the step's next 8 bits,
+t_fp:    .res 2                         ;  (ys - T) * f >> 8, B - T
+t_h:     .res 2
 t_v:     .res 2
 t_rowm:  .res 1
 t_n:     .res 1
@@ -3256,20 +3259,32 @@ tv_v0:
    LDA mb6_pt_v1,X
    SBC t_step+1
    STA t_v+1
-   BRA @dbl
+   JMP @dbl
 @top:
    LDX t_part
    LDA mb6_pt_v0,X
    STA t_v
    LDA mb6_pt_v1,X
    STA t_v+1
-   BRA @dbl
+   JMP @dbl
 @mul:
-   LDA t_step
+   LDA m_a+1                            ; step 7s: ys - T >= 512 (and B > T):
+   CMP #2                               ;  + (ys - T) * f >> 8, f = the step's
+   BCC @plain                           ;  next 8 bits, (r << 8) / (B - T) --
+   BMI @plain
+   LDA m_b+1                            ;  (ys - T) * step alone multiplies
+   BMI @plain                           ;  the step's truncation into rows of
+   ORA m_b                              ;  error on a near wall
+   BEQ @plain
+   JSR tv_fine                          ; (ys - T) * step, 8 bits finer
+   BRA @add
+@plain:
+   LDA t_step                           ; m_a * step
    STA m_b
    LDA t_step+1
    STA m_b+1
    JSR mul16
+@add:
    LDX t_part
    CLC
    LDA m_p
@@ -3281,6 +3296,83 @@ tv_v0:
 @dbl:
    ASL t_step                           ; step is per LINE: a pair moves 2 steps
    ROL t_step+1
+   RTS
+
+; tv_fine (step 7s): m_p = (ys - T) * step + ((ys - T) * f >> 8), m_a =
+; ys - T, m_b = B - T; f = (r << 8) / (B - T), r = K mod (B - T)
+tv_fine:
+   LDA m_a                              ; r = K - step * (B - T), mod 2^16
+   STA t_fp                             ;  (the step may come from a cache:
+   LDA m_a+1                            ;  no remainder to hand); m_b = B - T
+   STA t_fp+1                           ;  (the caller's)
+   LDA m_b
+   STA t_h
+   LDA m_b+1
+   STA t_h+1
+   LDA t_step
+   STA m_a
+   LDA t_step+1
+   STA m_a+1
+   JSR mul16
+   LDX t_part
+   SEC
+   LDA mb6_pt_k0,X
+   SBC m_p
+   STA m_r
+   LDA mb6_pt_k1,X
+   SBC m_p+1
+   STA m_r+1
+   LDA t_fp                             ; ys - T back
+   STA m_a
+   LDA t_fp+1
+   STA m_a+1
+   LDA t_h
+   STA m_b
+   LDA t_h+1
+   STA m_b+1
+   LDX #8                               ; f: 8 restoring steps (r < B - T)
+tf_fl:
+   ASL m_r
+   ROL m_r+1
+   BCS tf_fs                              ; (a 17th bit: certainly >= B - T)
+   LDA m_r
+   CMP m_b
+   LDA m_r+1
+   SBC m_b+1
+   BCC tf_f0
+tf_fs:
+   LDA m_r
+   SEC
+   SBC m_b
+   STA m_r
+   LDA m_r+1
+   SBC m_b+1
+   STA m_r+1
+   SEC
+tf_f0:
+   ROL t_f
+   DEX
+   BNE tf_fl
+   LDA t_f                              ; (ys - T) * f
+   STA m_b
+   STZ m_b+1
+   JSR mul16
+   LDA m_p+1                            ; >> 8
+   STA t_fp
+   LDA m_p+2
+   STA t_fp+1
+   LDA t_step                           ; + (ys - T) * step
+   STA m_b
+   LDA t_step+1
+   STA m_b+1
+   JSR mul16
+   CLC
+   LDA m_p
+   ADC t_fp
+   STA m_p
+   LDA m_p+1
+   ADC t_fp+1
+   STA m_p+1
    RTS
 
 ; ---- tcol: q_d (d) -> t_cl / t_ch, the texel column: u = ub * 16 - start

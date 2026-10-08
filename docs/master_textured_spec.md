@@ -1191,6 +1191,25 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7s. Near walls: the first v with 8 more bits of step. — DONE.** Right
+beside a wall (the thin STARTAN3 wall before the slime pool, seen at any
+angle) B - T runs to thousands of lines and the step K // (B - T) to a few
+units of 5.11, so its truncation is up to ~25%; a run's first v, Vtop +
+(ys - T) * step with ys - T over a thousand lines, then carried that into
+a row or more of error -- different in every column, so texture rows
+broke into teeth. A run starting 512 or more lines below T now adds
+((ys - T) * f) >> 8, f = ((K mod (B - T)) << 8) // (B - T), the step's
+next 8 bits: under (ys - T) / 256 units of error (< 0.01 texel); the
+stepping from there (at most 68 pairs) adds < 0.07 texel.
+- *6502*: `tv_v0` takes the branch on ys - T >= 512 and B > T; `tv_fine`
+  recomputes r = K - step * (B - T) (mod 2^16: the step may come from the
+  band's or the left strip's cache, with no remainder to hand), runs 8
+  restoring division steps for f and adds (ys - T) * f >> 8. The model
+  (`tex_ref._v`, with the run's first line ys) is the same integers.
+- Byte-exact; ~0.1% (corridor 0.3%). At 256 lines the same fix cost the
+  corridor pose 5.6% with no visible gain. Two poses in front of the wall
+  joined the regression set ((1300,-3232,0) takes the new path in 94 runs).
+
 **7r. The flush's set-up: sweep, screen pointer, partial lines. — DONE.**
 Three exact changes from the flush profile (open items):
 - *Sweep* (`mk_spans`): the kind's interval arrays are patched into the

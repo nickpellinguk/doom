@@ -79,6 +79,9 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             pixel); ztop is the
             pegged texture top (DOOM rules, as textured_ref); y_even is the
             even line of the pair. Texel row = (v >> 11) & (th - 1).
+            Step 7s: a run whose first line ys is 512 or more lines below
+            T starts from a step with 8 more fraction bits (near walls:
+            see _v), and steps from there.
 
     python3 tex_ref.py      # render the regression poses into build/master/tex/
 """
@@ -239,6 +242,7 @@ class TexRef(Fm.FillRef):
                 sr = None                       # the right strip's step
                 share = False                   # one v for both strips
                 if part != MW.NONE and max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_):
+                    ys = max(y0, Bz, T)             # the run's first line
                     K = W.parts[part]['K']
                     sl = (K // (B_ - T)) & 0xFFFF if B_ > T else 0
                     # the right strip's own step, exact (step 7g: the 5g
@@ -253,9 +257,8 @@ class TexRef(Fm.FillRef):
                         # first line and stepped by ddh (the steps'
                         # difference over 8 lines, 5.3 rounded) at each
                         # character row the run crosses
-                        ys = max(y0, Bz, T)
-                        dh = ((self._v(part, ys, Tr, Br, sr) >> 8)
-                              - (self._v(part, ys, T, B_) >> 8)) & 0xFF
+                        dh = ((self._v(part, ys, Tr, Br, sr, ys=ys) >> 8)
+                              - (self._v(part, ys, T, B_, ys=ys) >> 8)) & 0xFF
                         df = (sr - sl) & 0xFFFF
                         df -= 0x10000 if df & 0x8000 else 0
                         ddh = ((df + 16) >> 5) & 0xFF
@@ -273,10 +276,10 @@ class TexRef(Fm.FillRef):
                     elif part == MW.NONE:
                         v = b_ceil                  # no texture (sky-to-sky upper)
                     else:
-                        self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_)
+                        self.grid[yb - Bz][c] = ('t',) + self._texel(part, u, yb, T, B_, ys=ys)
                         self.grid[yb - Bz][c + 1] = ('t',) + (
-                            self._texel(part, ur, yb, T, B_) if share
-                            else self._texel(part, ur, yb, T, B_,
+                            self._texel(part, ur, yb, T, B_, ys=ys) if share
+                            else self._texel(part, ur, yb, T, B_, ys=ys,
                                              dh=dh + ddh * (((yb - Bz) >> 3) - cr0)))
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
@@ -286,19 +289,32 @@ class TexRef(Fm.FillRef):
         ('c') or floor ('f') run: step 4 draws the solid shade."""
         return ('b', shade)
 
-    def _v(self, pi, yb, T, B, step=None):
-        """v (5.11) of line yb's pair, from lines T, B (or the given step)."""
+    def _v(self, pi, yb, T, B, step=None, ys=None):
+        """v (5.11) of line yb's pair, from lines T, B (or the given step).
+        Step 7s: a run (first line ys) starting 512 or more lines below T
+        takes its first v with 8 more bits of step, Vtop + (ys - T) * step
+        + ((ys - T) * f >> 8), f = ((K % (B - T)) << 8) // (B - T), and
+        steps from there: (ys - T) * step alone multiplies the step's
+        truncation (a near wall: B - T in the thousands, step a few units)
+        into rows of error, different in every column."""
         p = self.W.parts[pi]
         h = B - T
         if step is None:
             step = (p['K'] // h) & 0xFFFF if h > 0 else 0
+        if ys is not None and h > 0 and (ys & ~1) - T >= 512:
+            ma = (ys & ~1) - T
+            q, r = divmod(p['K'], h)
+            assert step == q & 0xFFFF
+            f = (r << 8) // h                       # the step's next 8 bits
+            v0 = p['vtop'] + ma * step + ((ma * f) >> 8)
+            return (v0 + ((yb & ~1) - (ys & ~1)) * step) & 0xFFFF
         return (p['vtop'] + ((yb & ~1) - T) * step) & 0xFFFF
 
-    def _texel(self, pi, u, yb, T, B, step=None, dh=None):
+    def _texel(self, pi, u, yb, T, B, step=None, dh=None, ys=None):
         """The texel at column u, line yb; with dh (step 7d), the row is
         the high byte of the v from T, B plus dh (5.3), mod 256."""
         tp = self.W.tparams[self.W.parts[pi]['tid']]
-        v = self._v(pi, yb, T, B, step)
+        v = self._v(pi, yb, T, B, step, ys)
         if dh is not None:
             v = (((v >> 8) + dh) & 0xFF) << 8
         row = (v >> 11) & (tp['th'] - 1)
