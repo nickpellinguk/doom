@@ -1191,6 +1191,24 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7x. The start room's window ledges raised to 13 wu. — DONE.** Close to
+the two windows by the thin STARTAN3 pillar, the 24 wu STARTAN3 sill under
+each window was missing: the ledge's floor showed down to the walkway's.
+Not the texturer (6502 = model): the engine's height quantum is 6.67 wu
+(PRESCALE 8 with the 1.2 aspect baked in, `_prescale_height`), and from the
+walkway (sector 39, floor -16) the eye, 25, is q4 = 26.7 while the ledges'
+floor, 8, is q1 = 6.7 -- 20 wu below the eye, not 17. Close up only the
+sill's top shows, as a wedge at the bottom of the view, and 3 wu there is
+10-18 lines: the wedge fell off the view and the ledge floor behind took
+its place. A `_STEP_EVEN` override (e1m1.py) puts sectors 14 and 15 at
+13 wu = q2 (13.3): within ~1.3 wu of the engine from the walkway and from
+the room (eye 41 = q6). The ledges are behind impassable window lines, so
+no step rule applies; the sill is 29 wu where DOOM's is 24. Agreement with
+the float reference: walls 94.79% within one texel (94.77%), surfaces
+95.85% (95.81%). (1300, -3240, 208) joined the regression set; the engine
+golden re-recorded (35 poses). 23 poses 25,785,136 -> 25,833,423 (+0.19%:
+more sill drawn); 24 poses 27,413,592.
+
 **7w. One control panel for both buffers; `gun_b0` in shadow RAM. — DONE.**
 Each 10K buffer kept its own copy of the 1.5K panel (character rows 17-19).
 Now there is one, at shadow $5800-$5DFF: buffer 0 moved to $3600 (view

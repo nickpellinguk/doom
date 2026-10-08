@@ -43,6 +43,7 @@ POSITIONS = [
     # view: the right strip's 5.3 delta, rounded at every character row,
     # drifted up to a texel by the bottom (step 7t: ddh keeps 8 fraction bits)
     (1337.5, -3193.0, 229),
+    (1300, -3240, 208),     # close by the pillar: the south window's sill (2026-10-08 ledge fix)
 ]
 
 # the engine line-list gate's extra poses (test_master_engine): the old

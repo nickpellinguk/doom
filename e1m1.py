@@ -436,6 +436,15 @@ _STEP_EVEN = {
      8: (    7, None),   # step 1        was   8   q1  (was q1)
     51: (   14, None),   # step 2        was  16   q2  (was q2)
     52: (   21, None),   # alcove floor  was  24   q3  (was q4)
+    # --- the start room's window ledges (2026-10-08): from the walkway
+    # in front of them (floor -16, eye 25 -> q4 = 26.7) the 8 wu ledge
+    # (q1) sat 20 wu below the eye, not 17, so close to the windows the
+    # visible top of the sill fell off the bottom of the view and the
+    # ledge floor showed instead. 13 wu is q2 (13.3): within ~1.3 wu of
+    # the engine from the walkway and from the room (eye 41 -> q6). The
+    # ledges sit behind impassable window lines: no step rule applies.
+    14: (   13, None),   # south ledge   was   8   q2  (was q1)
+    15: (   13, None),   # north ledge   was   8   q2  (was q1)
 }
 sectors = [
     (_ov[0] if (_ov := _STEP_EVEN.get(_i)) else _s[0],
