@@ -501,11 +501,10 @@ def build(out, regions=DEFAULT_REGIONS, wad_path=WAD):
     tex_ids = {t: i for i, t in enumerate(walls)}
     flat_ids = {f: i for i, f in enumerate(order)}
     banks = {}
-    for R in regs:
-        if R.top:
-            fn = f'tex_bank{R.bank}.bin'
-            open(os.path.join(out, fn), 'wb').write(bytes(R.mem[:R.top]))
-            banks[R.bank] = dict(file=fn, load=R.start, size=R.top)
+    for R in regs:                     # every region, even an empty one
+        fn = f'tex_bank{R.bank}.bin'
+        open(os.path.join(out, fn), 'wb').write(bytes(R.mem[:R.top]))
+        banks[R.bank] = dict(file=fn, load=R.start, size=R.top)
 
     def cid(s):
         return ''.join(ch if ch.isalnum() else '_' for ch in s)
