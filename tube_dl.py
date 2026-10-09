@@ -32,6 +32,8 @@ byte. Records (lines y 0..135, byte columns k 0..63):
         flat              the flat, or far: one byte (step 7n's far tone)
         u0, v0, du, dv    4.4 at k0 and per byte column (mod 2^8)
         byte              flat[(v >> 4) * 16 + (u >> 4)], FLIPped on odd y
+        pair              (step 3) y even and line y + 1 the same span: one
+                          record draws both, the odd line FLIPped
   FILL  k, y0, y1: one byte column of one byte (sky, an unseen plane's
         shade, a sky-to-sky upper), FLIPped on odd lines if flip
 
@@ -108,6 +110,22 @@ class DLRef(P.PlaneRef):
                     rec['flat'] = pic
                 dl.append(rec)
                 k = k1 + 1
+        # a line pair's matching spans are one PAIR span (step 3): its even
+        # line the texels, its odd line the same FLIPped, as the Master
+        # draws its planes
+        key = lambda r: tuple(r.get(f) for f in ('k0', 'k1', 'far', 'flat', 'u0', 'v0', 'du', 'dv'))
+        odd = {}
+        for r in dl:
+            if r['kind'] == 'SPAN' and r['y'] & 1:
+                odd[(r['y'], key(r))] = r
+        drop = set()
+        for r in dl:
+            if r['kind'] == 'SPAN' and not r['y'] & 1:
+                m = odd.get((r['y'] + 1, key(r)))
+                if m is not None:
+                    r['pair'] = True
+                    drop.add(id(m))
+        dl = [r for r in dl if id(r) not in drop]
         for k in range(64):
             y = 0
             while y < Fm.LINES:
@@ -151,16 +169,14 @@ def draw(dl, tex, tparams, flats):
                           & 0xFFFF) >> 8
                     v = (((v >> 8) + dh) & 0xFF) << 8
                 put(y, r['k'], M.wall_pair(left, int(t[(v >> 11) & m, r['cr']])))
-        elif r['kind'] == 'SPAN' and 'far' in r:
-            b = M.FLIP[r['far']] if r['y'] & 1 else r['far']
-            for k in range(r['k0'], r['k1'] + 1):
-                put(r['y'], k, b)
         elif r['kind'] == 'SPAN':
-            u, v = r['u0'], r['v0']
+            u, v = r.get('u0'), r.get('v0')
             for k in range(r['k0'], r['k1'] + 1):
-                b = int(flats[r['flat']][v >> 4, u >> 4])
-                put(r['y'], k, M.FLIP[b] if r['y'] & 1 else b)
-                u, v = (u + r['du']) & 0xFF, (v + r['dv']) & 0xFF
+                b = r['far'] if 'far' in r else int(flats[r['flat']][v >> 4, u >> 4])
+                for y in ((r['y'], r['y'] + 1) if r.get('pair') else (r['y'],)):
+                    put(y, k, M.FLIP[b] if y & 1 else b)
+                if 'far' not in r:
+                    u, v = (u + r['du']) & 0xFF, (v + r['dv']) & 0xFF
         else:
             for y in range(r['y0'], r['y1'] + 1):
                 put(y, r['k'], M.FLIP[r['byte']] if r['flip'] and y & 1 else r['byte'])
@@ -188,13 +204,17 @@ def size(dl):
 #   WALL  $80 | n-1, tid, k0, then n byte columns k0, k0+1, ...:
 #           y0, y1, cl (| $80: the right strip has its own row), cr,
 #           v0 lo, hi, step lo, hi [, dh0, ddh lo, hi]       (8 or 11 B)
-#   SPAN  $40 | n-1, y, then n spans on line y:
+#   SPAN  $40 | n-1, y (or $88 + y/2: PAIR spans, lines y and y+1),
+#         then n spans on that line:
 #           k0, k1, flat, u0, v0, du, dv                       (7 B)
 #           k0, k1, $FF, far byte                              (4 B)
 #   FILL  $01, k, y0, y1, byte  (FLIPped on odd lines iff the sky byte)
 # Groups hold at most 64 entries; a WALL group is one texture over
 # consecutive byte columns, a SPAN group one line.
 # ---------------------------------------------------------------------------
+PAIR_Y = 0x88                           # past the last line, 135
+
+
 def encode(dl, fid):
     """The display list as bytes; fid: flat name -> id."""
     out = bytearray()
@@ -213,13 +233,16 @@ def encode(dl, fid):
             if not r['share']:
                 out += bytes((r['dh0'], r['ddh'] & 0xFF, r['ddh'] >> 8))
         i = j
-    spans = [r for r in dl if r['kind'] == 'SPAN']
+    spans = sorted((r for r in dl if r['kind'] == 'SPAN'),
+                   key=lambda r: (r['y'], bool(r.get('pair'))))
     i = 0
     while i < len(spans):
         j = i + 1
-        while j < len(spans) and j - i < 64 and spans[j]['y'] == spans[i]['y']:
+        pr = bool(spans[i].get('pair'))
+        while (j < len(spans) and j - i < 64 and spans[j]['y'] == spans[i]['y']
+               and bool(spans[j].get('pair')) == pr):
             j += 1
-        out += bytes((0x40 | (j - i - 1), spans[i]['y']))
+        out += bytes((0x40 | (j - i - 1), PAIR_Y + (spans[i]['y'] >> 1) if pr else spans[i]['y']))
         for r in spans[i:j]:
             if 'far' in r:
                 out += bytes((r['k0'], r['k1'], 0xFF, r['far']))
@@ -253,9 +276,13 @@ def decode(b, flat_name):
                 k += 1
         elif op & 0x40:
             n, y = (op & 0x3F) + 1, b[p + 1]
+            pr = y >= PAIR_Y
+            y = (y - PAIR_Y) << 1 if pr else y
             p += 2
             for _ in range(n):
                 r = dict(kind='SPAN', y=y, k0=b[p], k1=b[p + 1])
+                if pr:
+                    r['pair'] = True
                 if b[p + 2] == 0xFF:
                     r['far'] = b[p + 3]
                     p += 4
