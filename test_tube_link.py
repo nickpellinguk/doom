@@ -10,6 +10,10 @@ the host will. Every list must be byte for byte tube_dl.encode of
 tube_req.FillServer's. Prints the host's cycles a frame (send + wait +
 read: with nothing drawn, the server's pace) and TUBELINK: PASS / FAIL.
 
+Then again with the server built with a 1K request ring (RING), which the
+bigger frames' requests fill: its IRQ holds the host's bytes in register 1
+until the server frees a page (H4b), and the lists must not change.
+
     python3 test_tube_link.py [mhz]     (the second processor, default 3)
 """
 import json
@@ -39,11 +43,19 @@ def pump():
 
 def main():
     mhz = float(sys.argv[1]) if len(sys.argv) > 1 else 3
+    bad = link(mhz, None)
+    print('  -- with a 1K request ring (the server holds the host back):')
+    bad += link(mhz, {'RING': 0x400}, quiet=True)
+    print('TUBELINK: FAIL' if bad else 'TUBELINK: PASS')
+    return bad
+
+
+def link(mhz, defs, quiet=False):
     H = tube_req.ReqRef()
     F = tube_req.FillServer()
-    S = tube_server.Server(H)
+    S = tube_server.Server(H, defs)
     load, img, entry = S.image()
-    pl = list(poses.POSITIONS) + list(poses.VERIFY)
+    pl = list(poses.POSITIONS) + list(poses.VERIFY) + poses.TUBE_BIG
     reqs, want = [], [b'\0']                    # frame -1's list: empty
     for p in pl:
         H.render(*p)
@@ -67,13 +79,14 @@ def main():
         tag = 'frame -1' if n == 0 else str(pl[n - 1])
         g = bytes.fromhex(got)
         k = next((i for i, (a, b) in enumerate(zip(g, w)) if a != b), None)
+        if quiet and ok:
+            continue
         print(f'  {tag:30s} list {len(w):5d} B  host {out["cycles"][n]:9,d} cycles  '
               + ('ok' if ok else f'DIFFER at #{k}: {g[k:k+12].hex() if k is not None else ""} vs '
                                  f'{w[k:k+12].hex() if k is not None else ""}'))
     c = out['cycles'][1:-1] or [0]
     print(f'  {len(pl)} frames at {mhz:g}MHz: host mean {sum(c) // len(c):,} cycles a frame '
           f'({sum(c) / len(c) / 2000:.0f} ms), max {max(c):,}')
-    print('TUBELINK: FAIL' if bad else 'TUBELINK: PASS')
     return bad
 
 

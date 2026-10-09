@@ -47,7 +47,7 @@ ZP_OWNER = 1                            ; (this link's zero page and WORK)
 .import sn_bden, sn_n, tx_slot, mf_x, r_ys, r_ye
 .importzp zw_ddh
 .export fs_mark, fs_wall, fs_planes, fs_frame, fs_poll, fs_main, fs_ring
-.export fs_lista, fs_listb, fs_ob, fs_drop
+.export fs_lista, fs_listb, fs_ob, fs_drop, fs_ringsz
 .exportzp fs_rp, fs_rw, fs_op
 
 PAIR_Y   = $88                          ; tube_dl.PAIR_Y: a pair group's y
@@ -59,8 +59,14 @@ fs_rp = zp_tmp0                         ; the request ring's read and
 fs_rw = zp_pm_p                         ;  write (fs_irq) pointers
 fs_sp = zp_anim_p                       ; the list going out: next byte, end
 fs_se = zp_anim_w
-RING = $2000                            ; fs_ring's size (page-aligned at a
-                                        ;  multiple of it)
+.ifndef RING
+RING = $1000                            ; fs_ring's size (page-aligned at a
+.endif                                  ;  multiple of it; -D for the gates)
+fs_ringsz = RING                        ; (for tube_server's py65 feed)
+LISTSZ = $1D00                          ; each list buffer's size: records
+.ifndef LISTCAP                         ;  stop past LISTCAP (fs_drop), so a
+LISTCAP = LISTSZ - $100                 ;  record, a header and the $00 fit
+.endif                                  ;  (-D for the gates)
 NPLANE = 64                             ; planes a frame (15 seen)
 PTR = RASTER_ZP_X1                      ; (scratch pointer: mfill's screen one)
 fs_cp = pa_dx                           ; a mark list: its column's block,
@@ -72,6 +78,10 @@ fs_op = zp_prod_l                       ; the list write pointer
 
 .macro GETB                             ; A = the next request byte (flags: not A's)
    JSR fs_get
+.endmacro
+
+.macro DROP                             ; one more dropped (fs_drop1)
+   JSR fs_drop1
 .endmacro
 
 .macro PUTO                             ; A -> the list
@@ -89,9 +99,9 @@ fs_ivf:  .res $1000                     ;  / solid marks (y0, y1, code, -)
 fs_rn:   .res $1100                     ; per line y: 8 runs (k0, k1, code,
                                         ;  -) at + y * 32, in k order
 .segment "FSLA"
-fs_lista: .res $1600                    ; the lists: one being built, the
-.segment "FSLB"                         ;  other going out (max ~5.4K)
-fs_listb: .res $1600
+fs_lista: .res LISTSZ                   ; the lists: one being built, the
+.segment "FSLB"                         ;  other going out (seen to ~5.7K)
+fs_listb: .res LISTSZ
 .segment "FSRING"                       ; RING-aligned
 fs_ring: .res RING                      ; the host's request bytes
 
@@ -153,7 +163,9 @@ fs_kc_dv: .res NPLANE
 fs_kc_fl: .res NPLANE
 fs_kc_fb: .res NPLANE
 fs_ob:   .res 2                         ; the list being built's buffer
-fs_drop: .res 1                         ; marks / runs / planes dropped (full)
+fs_drop: .res 1                         ; marks / runs / planes / records
+                                        ;  dropped (full)
+fs_lim:  .res 1                         ; the list being built's cap: page
 fs_ma:   .res 1                         ; mul8lo operands
 fs_mb:   .res 1
 
@@ -260,9 +272,15 @@ fs_cli:  .byte 2, "GOIO 1903", 13        ; R2: OSCLI (2), the command, CR
 
 ; fs_irq: a request byte from the host (register 1), into the ring. An
 ; IRQ, not register 3's NMI: the next byte (which the host may write the
-; moment this one is read) cannot land inside this one.
+; moment this one is read) cannot land inside this one. At a page's start
+; it takes the page only if the reader is in neither it nor the next:
+; otherwise the byte stays in register 1 (the host waits on its room) and
+; this returns with IRQs masked until fs_get frees a page.
 fs_irq:
    PHA
+   LDA fs_rw
+   BEQ @page
+@put:
    LDA $FEF9
    STA (fs_rw)
    INC fs_rw
@@ -274,8 +292,39 @@ fs_irq:
    STA fs_rw+1
 :  PLA
    RTI
+@page:
+   LDA fs_rw+1
+   CMP fs_rp+1
+   BEQ @same
+   INC A
+   AND #>(RING - 1)
+   ORA #>fs_ring
+   CMP fs_rp+1
+   BNE @put
+@hold:                                  ; the stacked P's I: masked on return
+   PHX
+   TSX
+   LDA $0103,X
+   ORA #$04
+   STA $0103,X
+   PLX
+   PLA
+   RTI
+@same:
+   LDA fs_rp                            ; the reader at this page's start is
+   BEQ @put                             ;  the ring empty; inside it, ahead
+   BRA @hold
 
-; fs_get: A = the next request byte, waiting for the host (X, Y kept)
+; fs_drop1: one more mark, run, plane or record dropped (saturating at 255,
+; so a count is never taken for none)
+fs_drop1:
+   INC fs_drop
+   BNE :+
+   DEC fs_drop
+:  RTS
+
+; fs_get: A = the next request byte, waiting for the host (X, Y kept).
+; A page read frees it for fs_irq: IRQs on (fs_irq may have held them).
 fs_get:
    LDA fs_rp
    CMP fs_rw
@@ -283,6 +332,7 @@ fs_get:
    LDA fs_rp+1
    CMP fs_rw+1
    BNE @g
+   CLI                                  ; (empty: nothing can be held)
    JSR fs_poll                          ; (nothing yet: the list goes out)
    BRA fs_get
 @g:
@@ -296,6 +346,7 @@ fs_get:
    ORA #>fs_ring
    STA fs_rp+1
    PLA
+   CLI
 :  RTS
 
 ; fs_poll: the list going out (fs_sp .. fs_se) into register 1 while its
@@ -324,6 +375,9 @@ fs_frame:
    STA fs_op
    LDA fs_ob+1
    STA fs_op+1
+   CLC
+   ADC #>LISTCAP
+   STA fs_lim
    GETB                                 ; the view: px88, py88 (24-bit)
    STA zp_br_px
    GETB
@@ -578,7 +632,7 @@ fs_pid:
    STA fs_pf,Y
    CPY #NPLANE - 1
    BCC :+
-   INC fs_drop                          ; (full: the last entry, rewritten)
+   DROP                          ; (full: the last entry, rewritten)
    BRA @got
 :  INC fs_pn
 @got:
@@ -631,7 +685,7 @@ fs_mark:
    LDA fs_cnt,X
    CMP #16
    BCC :+
-   INC fs_drop                          ; (full: the mark is dropped)
+   DROP                          ; (full: the mark is dropped)
    RTS
 :  INC fs_cnt,X
    ASL A
@@ -680,7 +734,12 @@ fs_mark:
 ; left's, ddh = zw_ddh . zw_ddl. Consecutive byte columns of one texture
 ; are one group (at most 64).
 fs_wall:
-   LDA mf_x
+   LDA fs_op+1                          ; the list full: the record dropped
+   CMP fs_lim
+   BCC :+
+   DROP
+   RTS
+:  LDA mf_x
    LSR A
    LSR A
    STA fs_k
@@ -949,7 +1008,7 @@ fs_change:
    LDA fs_rnn,X
    CMP #8
    BCC :+
-   INC fs_drop                          ; (full: the run is dropped)
+   DROP                          ; (full: the run is dropped)
    BRA @open
 :  INC fs_rnn,X
    ASL A
@@ -1348,6 +1407,12 @@ fs_singles:
 ; (k0 k1 flat u0 v0 du dv, or k0 k1 $FF tone)
 fs_span:
    STA fs_k
+   LDA fs_op+1                          ; the list full: the span dropped
+   CMP fs_lim
+   BCC :+
+   DROP
+   RTS
+:  LDA fs_k
    INC fs_gn
    PUTO
    LDA fs_t+1
@@ -1501,7 +1566,12 @@ fs_fills:
    DEY
    DEY
 @emit:                                  ; Y: the FILL's y1
-   LDA #$01
+   LDA fs_op+1                          ; the list full: the FILL dropped
+   CMP fs_lim
+   BCC :+
+   DROP
+   BRA @emitd
+:  LDA #$01
    PUTO
    LDA fs_k
    PUTO
@@ -1517,6 +1587,7 @@ fs_fills:
 :  LSR A                                ; a shade: both pixels
    ORA fs_t
 :  PUTO
+@emitd:
    INY
    INY
    INY

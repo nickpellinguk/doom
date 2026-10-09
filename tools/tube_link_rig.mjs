@@ -20,8 +20,8 @@ const cfg = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const hex = (h) => Uint8Array.from(Buffer.from(h, "hex"));
 
 const PUMP = 0x1900; //    the host pump (lpump.s's link address)
-const REQ = 0x3000; //     a frame's requests (<= 2.6K)
-const LIST = 0x4000; //    the list read back (<= 5.4K)
+const REQ = 0x2000; //     a frame's requests (<= 8K)
+const LIST = 0x4000; //    the list read back (<= 7K)
 const ZP = 0x70; //        $70 count out, $72 ptr out, $74 count in, $76 ptr in
 // the pump: src/tube/lpump.s, assembled by test_tube_link.py at PUMP
 const pump = hex(cfg.pump.hex);

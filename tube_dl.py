@@ -68,7 +68,9 @@ class DLRef(P.PlaneRef):
         col = lambda uu: ((uu & tp['mask']) >> tp['shift']) * tp['tw'] // tp['n']
         rec = dict(kind='WALL', k=x >> 2, y0=ys - Bz, y1=ye - Bz, tid=p['tid'],
                    cl=col(u), cr=col(ur), v0=self._v(part, ys, T, B, ys=ys),
-                   step=step, share=share)
+                   step=step & 0x7FFF, share=share)    # the 6502's l_step >> 1: its
+                                                        # 16-bit pair step wraps (one-
+                                                        # line runs; drawn the same)
         if not share:
             rec['dh0'], rec['ddh'] = delta
         self.walls.append(rec)

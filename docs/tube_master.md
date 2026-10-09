@@ -229,7 +229,11 @@ host engine linked with `TUBE`, and the fill server as the file `SERVER`.
 - the host sends each request byte with `PUTB` in `mfill.s` (`$FEE0`
   room, `$FEE1` data);
 - the server takes each byte by IRQ (`fs_irq` at `$FFFE`, flag I) into
-  an 8K ring at `$C000`;
+  a 4K ring at `$C000`. At each page's start the IRQ takes the page only
+  if the reader is in neither it nor the next. Otherwise it leaves the
+  byte in register 1, so the host waits on its room, and returns with
+  IRQs masked; `fs_get` turns them back on as it frees a page, or finds
+  the ring empty;
 - the server pushes the list back through register 1's 24-byte FIFO
   while there is room (`fs_poll`, called from `fs_get` and from the
   fill's column loop);
@@ -248,7 +252,9 @@ handler, so it cannot nest.
 
 The server serves frame N as its requests come in, then waits for list
 N - 1 to finish going out before it swaps its two list buffers (A at
-`$A300`, B at `$E000`). Frame -1's list is a single `$00`, so the
+`$A300`, B at `$D000`, 7.25K each). The host can be up to two frames of
+requests ahead (frame N + 2 while the server is on N + 1), and one frame's
+requests reach 6.5K, which is why the ring needs its flow control. Frame -1's list is a single `$00`, so the
 first frame shown is empty.
 
 **The boot.** `!BOOT` (`mboot.s`) first does `*LOAD SERVER`; the image
@@ -275,17 +281,33 @@ it clears flags Q, J, M and V, sets I, and jumps to the driver.
 | `$0A00`-`$0BFF` | Span pool (`SPAN_POOL`) |
 | `$0C00`-`$71FF` | The file: tables and code |
 | `$7200`-`$A2FF` | Marks and line runs |
-| `$A300`, `$E000` | List buffers A and B |
-| `$B900` | Server workspace |
-| `$C000`-`$DFFF` | Request ring |
+| `$A300`-`$BFFF` | List buffer A |
+| `$C000`-`$CFFF` | Request ring |
+| `$D000`-`$ECFF` | List buffer B |
+| `$ED00`-`$F5FF` | Server workspace |
 | `$F600`-`$F7FF` | Fill workspace |
 | `$FFFE` | IRQ vector |
 
+**The list's cap.** The first disc had 5.5K list buffers, and a list in
+the start room ran to 5.7K. It overran into the server's workspace, and
+the host drew the garbled list, writing through the panel and into the
+paged texture bank. Random poses put lists up to 5.5K in the model, and
+the engine's own a little higher. The buffers are now 7.25K, and each
+emitter (`fs_wall`, `fs_span`, the FILLs) drops its record once the list
+passes `LISTCAP` (7K). The list stays whole, with its `$00`, and
+`fs_drop` counts the records lost (saturating at 255). The server's mark,
+run and plane tables drop the same way.
+
 **Gates** (all in `run_regression.py`):
 - `test_tube_link.py`: the server on jsbeeb's second processor with a
-  host pump (`src/tube/lpump.s`). At 35 poses each list is byte for byte
-  the model's. Host mean 745K cycles a frame at 3MHz (372 ms), which is
-  the server's pace.
+  host pump (`src/tube/lpump.s`). At 37 poses (`poses.TUBE_BIG` adds
+  the largest requests and list found) each list is byte for byte the
+  model's. Host mean 796K cycles a frame at 3MHz (398 ms), which is the
+  server's pace. Then again with a 1K ring, which most frames fill: the
+  same lists.
+- `test_tube_server.py`: also the two big poses, a request longer than
+  the ring fed a page at a time, and a build capped at 2K, whose list must
+  stop short and whole.
 - `test_tube_hreq.py`: the TUBE engine's register 1 bytes decode to the
   Python host's requests, and `hd_frame` draws the encoded lists to the
   Master's frames.
