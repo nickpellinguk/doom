@@ -121,7 +121,7 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 | Area | Contents |
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
-| Shadow RAM (20K) | Step 7w: `gun_b0` (the buffer-0 gun overlay, 1,402 B, run with ACCCON X set) &3000–&3579, free to &35FF (134 B); buffer 0's view &3600–&57FF; the one control panel &5800–&5DFF (character rows 17–19 of both buffers: buffer 0 runs into it, buffer 1 wraps onto it at the 10K screen size); buffer 1's view &5E00–&7FFF |
+| Shadow RAM (20K) | Step 7w: `gun_b0` (the buffer-0 gun overlay, 1,195 B since 7ab, run with ACCCON X set) &3000–&34AA, free to &35FF (341 B); buffer 0's view &3600–&57FF; the one control panel &5800–&5DFF (character rows 17–19 of both buffers: buffer 0 runs into it, buffer 1 wraps onto it at the 10K screen size); buffer 1's view &5E00–&7FFF |
 | Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
 | HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C69F (with `pc_lv`, step 7n; free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
 | Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8F3F: the wall step's reciprocal tables and per-part m / table page (step 7v; free since 7m, textures and flats to $82FF before); bank 6 $9000–$B8D9 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b1`, steps 6f, 7b; `gun_b0` in shadow since 7w), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free $B360–$B8FF (1,440 B, step 7w: `gun_b0` moved to shadow); bank 6 tail $B900–$BE23: wall part records + texture constants |
@@ -1190,6 +1190,19 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7ab. The gun overlay: TRB / TSB and one-byte value steps. — DONE.** The
+compiled overlay (`master_gun.source`) loaded each opaque value with LDA #
+(23 loads, ascending) and read-modify-wrote every edge byte (LDA abs, AND,
+ORA, STA: 10 B, 12 cycles). Now the 65C02 does the edge bytes in place:
+TRB abs with A = ~mask clears the gun's pixel (two masks, $55 then ASL A to
+$AA), and after every TRB, TSB abs ORs the art in, grouped with the opaque
+STAs of the same value (no TSB for black data); opaque black is STZ. The
+value groups are ordered (`_order`) so that each load is a one-byte INC /
+DEC / ASL / LSR A from the last where one exists: 9 LDA # per routine
+(was 23 + 44 edge loads). Each routine 1,402 -> 1,195 B (-207); the overlay
+1,846 -> 1,776 cycles. gun_b0 leaves 341 B of shadow $3000-$35FF free (134
+before); bank 6 code ends at $B2BA. Byte-exact (test_master_gun).
 
 **7aa. The panel split: black before Mode 1. — DONE.** A red sliver
 flickered at the left of line 136, the panel's all-black top line, in every
