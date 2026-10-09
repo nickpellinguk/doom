@@ -443,6 +443,23 @@ span byte-lines and 173 fill byte-lines on average.
   status polls, per-column addressing) and unrolling its loops as the
   Master's are; the writes themselves are no slower than the Master's.
 
+**Two per-column trims, measured** (`test_tube_hreq.py`'s 35 poses, 70
+of a frame's ~110 wall entries following one in their group):
+- *The screen address stepped, not recomputed:* a WALL group keeps
+  scr's low byte ((kk & 31) * 8) and its page of the screen's half
+  (`wch`), stepped a byte column on in `wend`; a column works out only
+  its character row's page. 385.6K to 384.1K a frame (0.4%). Kept.
+- *Patches skipped where the column repeats:* the left or right texture
+  column the same as the last entry's (12% each), the left the last
+  right (19%), the step the same (37%). The compares run on every
+  column, the skips save on few: 388.6K with them. Not kept. Flags the
+  server set would make the test cheaper, but at these rates they would
+  save about 1K a frame.
+
+The per-column costs are the smaller part (about 75K together); the write
+loops' own overheads (the rolled loops' counts, the span loop's U and V
+reloads) and the status poll on every list byte are the larger levers.
+
 `test_tube_hreq.py` reported the drawer at 221K until this: it timed
 `hd_frame` from the engine's cycle count, which `_run` had reset. It now
 reads 386K over its 35 poses, the host's frame 550K with the engine.

@@ -132,6 +132,27 @@ wall:   and #$3F
         sta wo6+1
         GETB                            ; k0
         sta kk
+        asl a                           ; the group's screen columns: scr lo
+        asl a                           ;  = (kk & 31) * 8 and wch = the
+        asl a                           ;  page of kk's half (wend steps
+        sta scr                         ;  both a column on)
+        lda kk
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        clc
+.ifdef MASTER
+        adc SCRHI
+.else
+        adc #>SCREEN
+.endif
+        sta wch
+        lda #$FF                        ; nothing to keep yet: the columns
+        sta lcl                         ;  and step (never $FF: columns and
+        sta lcr                         ;  the step's high byte are < $80)
+        sta lsth
 wcol:   GETB                            ; y0
         sta ln
         GETB                            ; y1
@@ -185,7 +206,16 @@ wcol:   GETB                            ; y0
         sta ddh
         GETB
         sta ddh+1
-:       jsr cellptr                     ; scr, Y for (ln, kk)
+:       lda ln                          ; scr, Y for (ln, kk): scr lo and
+        lsr a                           ;  wch kept by the group, so only
+        lsr a                           ;  the character row's page
+        and #$FE
+        clc
+        adc wch
+        sta scr+1
+        lda ln
+        and #7
+        tay
         lda ln
         lsr a
         bcc wl_even
@@ -273,7 +303,13 @@ wl_last:
         jsr wbyte
         sta (scr),y
 wend:   inc kk
-        dec cnt
+        lda scr                         ; the next byte column: + 8, and past
+        clc                             ;  column 31 the next page
+        adc #8
+        sta scr
+        bcc :+
+        inc wch
+:       dec cnt
         bmi :+
         jmp wcol
 :       jmp next
@@ -689,3 +725,10 @@ tx_ix:   .res 896                       ; the column indexes, every texture
 .else
         TABLES
 .endif
+; a WALL group's state: its columns' page (SCREEN + kk >> 5), and the last
+; entry's columns and step, as patched into the loops
+wch:     .res 1
+lcl:     .res 1
+lcr:     .res 1
+lstl:    .res 1
+lsth:    .res 1
