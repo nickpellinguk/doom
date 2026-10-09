@@ -149,10 +149,6 @@ wall:   and #$3F
         adc #>SCREEN
 .endif
         sta wch
-        lda #$FF                        ; nothing to keep yet: the columns
-        sta lcl                         ;  and step (never $FF: columns and
-        sta lcr                         ;  the step's high byte are < $80)
-        sta lsth
 wcol:   GETB                            ; y0
         sta ln
         GETB                            ; y1
@@ -725,10 +721,5 @@ tx_ix:   .res 896                       ; the column indexes, every texture
 .else
         TABLES
 .endif
-; a WALL group's state: its columns' page (SCREEN + kk >> 5), and the last
-; entry's columns and step, as patched into the loops
+; a WALL group's columns' page (SCREEN + kk >> 5)
 wch:     .res 1
-lcl:     .res 1
-lcr:     .res 1
-lstl:    .res 1
-lsth:    .res 1
