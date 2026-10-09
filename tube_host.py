@@ -124,5 +124,7 @@ class Host:
         c0 = mpu.processorCycles
         while mpu.pc != TRAMP + 3:
             mpu.step()
+            if mpu.processorCycles - c0 > 5_000_000:
+                raise RuntimeError(f'runaway at ${mpu.pc:04X} after {m.fp} of {len(enc)} list bytes')
         assert m.fp == len(enc), f'read {m.fp} of {len(enc)} list bytes'
         return bytes(list.__getitem__(m, slice(SCREEN, SCREEN + VIEW_BYTES))), mpu.processorCycles - c0

@@ -32,8 +32,11 @@ byte. Records (lines y 0..135, byte columns k 0..63):
         flat              the flat, or far: one byte (step 7n's far tone)
         u0, v0, du, dv    4.4 at k0 and per byte column (mod 2^8)
         byte              flat[(v >> 4) * 16 + (u >> 4)], FLIPped on odd y
-        pair              (step 3) y even and line y + 1 the same span: one
-                          record draws both, the odd line FLIPped
+        pair              (step 3) y even: lines y and y + 1 (the same
+                          texels: a line pair shares its row maths), the
+                          odd line FLIPped. Where a pair's two lines'
+                          spans of one plane overlap, the overlap is a
+                          pair span and the rest of each line its own
   FILL  k, y0, y1: one byte column of one byte (sky, an unseen plane's
         shade, a sky-to-sky upper), FLIPped on odd lines if flip
 
@@ -82,6 +85,21 @@ class DLRef(P.PlaneRef):
             self.pcells[(y, x >> 2)] = (self.row(y >> 1, kind, D), pic, far, cell[1])
         return cell
 
+    @staticmethod
+    def _pair_spans(dl):
+        lines = {}
+        for r in dl:
+            if r['kind'] == 'SPAN':
+                lines.setdefault(r['y'], []).append(r)
+        out = [r for r in dl if r['kind'] != 'SPAN']
+        for y in sorted(lines):
+            if y & 1:
+                if y - 1 not in lines:
+                    out += lines[y]
+                continue
+            out += _pair_lines(lines[y], lines.get(y + 1, []))
+        return out
+
     def _display_list(self):
         """WALL records as recorded; SPANs from the plane cells, a line's
         neighbouring byte columns with the same row maths, flat and tone
@@ -110,22 +128,12 @@ class DLRef(P.PlaneRef):
                     rec['flat'] = pic
                 dl.append(rec)
                 k = k1 + 1
-        # a line pair's matching spans are one PAIR span (step 3): its even
-        # line the texels, its odd line the same FLIPped, as the Master
-        # draws its planes
-        key = lambda r: tuple(r.get(f) for f in ('k0', 'k1', 'far', 'flat', 'u0', 'v0', 'du', 'dv'))
-        odd = {}
-        for r in dl:
-            if r['kind'] == 'SPAN' and r['y'] & 1:
-                odd[(r['y'], key(r))] = r
-        drop = set()
-        for r in dl:
-            if r['kind'] == 'SPAN' and not r['y'] & 1:
-                m = odd.get((r['y'] + 1, key(r)))
-                if m is not None:
-                    r['pair'] = True
-                    drop.add(id(m))
-        dl = [r for r in dl if id(r) not in drop]
+        # a line pair's two lines share their row maths (plane_ref: one
+        # texel per line PAIR), so where the two lines' spans of the same
+        # plane overlap they are one PAIR span -- the even line the texels,
+        # the odd the same FLIPped, as the Master draws its planes -- and
+        # only what is left of either line is drawn alone (step 3)
+        dl = self._pair_spans(dl)
         for k in range(64):
             y = 0
             while y < Fm.LINES:
@@ -144,6 +152,49 @@ class DLRef(P.PlaneRef):
                 dl.append(dict(kind='FILL', k=k, y0=y, y1=y1, byte=byte, flip=flip))
                 y = y1 + 1
         return dl
+
+
+def _key(r):
+    """A span's plane: its flat (or far tone) and steps."""
+    return (r.get('far'), r.get('flat'), r.get('du'), r.get('dv'))
+
+
+def _piece(r, a, b, **kw):
+    """Span r cut to byte columns a..b (u, v carried to a)."""
+    n = dict(r, k0=a, k1=b, **kw)
+    if 'far' not in r:
+        n['u0'] = (r['u0'] + (a - r['k0']) * r['du']) & 0xFF
+        n['v0'] = (r['v0'] + (a - r['k0']) * r['dv']) & 0xFF
+    return n
+
+
+def _uv_at(r, k):
+    return None if 'far' in r else ((r['u0'] + (k - r['k0']) * r['du']) & 0xFF,
+                                    (r['v0'] + (k - r['k0']) * r['dv']) & 0xFF)
+
+
+def _pair_lines(even, odd):
+    """Spans of lines y (even) and y + 1: the overlaps of matching planes as
+    PAIR spans, the rest of each line as itself."""
+    out, cut_e, cut_o = [], {id(r): [] for r in even}, {id(r): [] for r in odd}
+    for e in even:
+        for o in odd:
+            a, b = max(e['k0'], o['k0']), min(e['k1'], o['k1'])
+            if a > b or _key(e) != _key(o) or _uv_at(e, a) != _uv_at(o, a):
+                continue
+            out.append(_piece(e, a, b, pair=True))
+            cut_e[id(e)].append((a, b))
+            cut_o[id(o)].append((a, b))
+    for line, cuts in ((even, cut_e), (odd, cut_o)):
+        for r in line:
+            k = r['k0']
+            for a, b in sorted(cuts[id(r)]):
+                if a > k:
+                    out.append(_piece(r, k, a - 1))
+                k = b + 1
+            if k <= r['k1']:
+                out.append(_piece(r, k, r['k1']))
+    return out
 
 
 def draw(dl, tex, tparams, flats):

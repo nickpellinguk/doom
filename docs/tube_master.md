@@ -34,10 +34,59 @@ the host only draws it, one frame behind, while the next is computed.
    a compact encoding; the Tube's transfer cost on jsbeeb (65C102 second
    processor); the host's drawing cycles from the list.
 3. **The host drawer** in 6502: the existing inner loops fed from the
-   list, gated against `tube_dl.draw`.
+   list, gated against `tube_dl.draw`. — **First version done:
+   byte-exact; 377K cycles a frame (188 ms).** Tuning to come.
 4. **The second processor**: the engine and the fill's set-up relinked
    flat for the 64K map, emitting the list; the two halves joined over
    the Tube.
+
+## 3. The host drawer. — first version done
+
+`src/tube/hdraw.s` draws a frame's encoded display list, read off the
+Tube's register 1 (polled: BIT / BPL / LDA), into the screen buffer, with
+the Master build's own texture and flat images (bank 5) and tables made
+from its asset manifest (`tube_host.py`: per texture its bank, page, row
+offset and mask, and a logical-to-stored column index; per flat its bank
+and page; `lsr4`, `flip`). `tube_host.py` also runs it in py65 with the
+Tube's register 1 and ROMSEL modelled. *Gate* `test_tube_host.py` (in
+`run_regression.py`): byte-exact at all 35 poses.
+
+- *WALL*: per group the bank, the texture's row mask and offset are
+  patched into the loops; per column the two stored columns into the
+  self-modified texel reads (`LDA col,X`, X = (hi(v) AND mask) OR offset)
+  and the doubled step into the v add (carry is clear after the right
+  texel's `LSR`: texels are left pixels). A line pair's byte is made once
+  and written to both lines; a lone first or last line on its own. The
+  right strip's own row adds dh, which steps by ddh a character row.
+- *SPAN*: separate loops for an even line, an odd line (FLIPped) and a
+  line pair, du, dv, the flat's page and the end patched in; a span is
+  split at byte column 32 so Y never carries.
+- *FILL*: a column of one byte (the sky FLIPped on odd lines).
+
+*List change (step 3).* Both lines of a line pair share their plane row
+maths (`plane_ref`: one texel per line pair), so where the two lines'
+spans of one plane overlap the overlap is now one PAIR span and only
+what is left of either line is drawn alone, as the Master draws its
+planes. Pair bytes went from 548 to 1,841 a frame (single-line bytes
+2,694 to 107) and the host from 400K to 377K cycles. Mean list 2,002 B,
+worst 5,350 B.
+
+*Measured* (py65, the 24 baseline poses): **376,822 cycles a frame (188
+ms)**, worst 625,897 (313 ms at (1046.7, -3090.4, 157)); step 2 assumed
+262,591. Per unit, at four poses: a wall line pair about 68 cycles (the
+Master: 52 shared, 69 own), a pair-span byte about 71 (58); per record
+about 300 cycles for a wall column (its 8-11 list bytes, two column
+look-ups, the screen address) and 150 for a span, where step 2 assumed
+60 and 50. So the loops are within about a fifth of the Master's and the
+set-up is what step 2 under-counted. The second processor still sets the
+frame (319 ms at 3MHz, 239 ms at 4MHz, step 2), leaving the host 130 ms
+(3MHz) or 50 ms (4MHz) a frame for billboards, monsters and the panel.
+
+*Next (tuning):* the Master's unrolled loop forms (a cell's pair bodies
+entered by line and left through a patched RTS, `LDY #n` in place of
+stepping Y) for walls and pair spans; cheaper column set-up (the list
+could send stored columns rather than logical ones, and the screen
+address of consecutive columns is +8).
 
 ## 2. Measure. — DONE: go
 

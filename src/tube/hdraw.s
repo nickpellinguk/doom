@@ -10,33 +10,37 @@
 ; Textures and flats are the Master's own images (master_assets): a
 ; stored wall column at ptr + (i >> 3) * 256 + (i & 7) in its bank, its
 ; texel rows 8 bytes apart from rowoff; a flat one page, byte (v & $F0) |
-; (u >> 4). Texels are read with self-modified LDA abs,X (X the row), the
-; screen written STA (scr),Y. hdraw_tab.inc (tube_host.py) supplies
-; SCREEN, the texture and flat tables, lsr4 and flip.
+; (u >> 4). Texel reads are self-modified LDA abs,X (X the row); the
+; screen is written STA (scr),Y. What is constant for a group, a column
+; or a span (row mask and offset, columns, steps, flat page, the span's
+; end) is patched into the loops' operands. hdraw_tab.inc (tube_host.py)
+; supplies SCREEN, the texture and flat tables, lsr4 and flip.
 
         .include "hdraw_tab.inc"
 
-scr     = $70                           ; screen pointer (a cell, or a line)
-v       = $72                           ; v (5.11), a span's v (4.4)
-vst     = $74                           ; v's step a line pair (2 x the list's)
+scr     = $70                           ; screen pointer (page-aligned row)
+v       = $72                           ; a wall's v (5.11); a span's v (4.4)
+vst     = $74                           ; a wall's step a line pair (2 x the
+                                        ;  list's: (y & ~1) moves by 2)
 dha     = $76                           ; right row delta: hi = dh (5.3)
 ddh     = $78                           ;  and its step a character row
-nl      = $7A                           ; lines left in the run
-ln      = $7B                           ; the line being drawn
+nl      = $7A                           ; lines in the run
+ln      = $7B                           ; first line (wall, fill), line (span)
 cnt     = $7C                           ; entries left in the group
 kk      = $7D                           ; byte column
-rowm    = $7E                           ; texture row mask ((th - 1) * 8)
-rowo    = $7F                           ;  and row offset (0 / 128)
+np      = $7E                           ; line pairs left
+tail    = $7F                           ; a last line alone
 tph     = $80                           ; texture ptr hi
 ixp     = $81                           ; 2: the texture's column index
 own     = $83                           ; bit 7: the right strip's own row
-cur     = $84                           ; the pair's byte
+cur     = $84                           ; a fill's byte
 tmp     = $85
-su      = $86                           ; span u, du, dv
-du      = $87
-dv      = $88
-k1      = $89                           ; a span's last byte column
-pair    = $8A                           ; bit 7: a pair span; bit 0: line odd
+su      = $86                           ; a span's u
+k1      = $87                           ; a span's last byte column
+pair    = $88                           ; b7 pair span, b6 odd line
+slo     = $89                           ; a span line's place in its cell
+spg     = $8A                           ; its screen row's page
+odb     = $8B                           ; a fill's odd-line byte
 
 ; one byte off the Tube (register 1, polled)
 .macro GETB
@@ -62,20 +66,30 @@ done:   rts
 ; ---------------------------------------------------------------------------
 wall:   and #$3F
         sta cnt
-        GETB                            ; tid
-        tax
-        lda tx_bank,x
+        GETB                            ; tid: bank, page, column index,
+        tax                             ;  row mask and offset into the
+        lda tx_bank,x                   ;  loops for the whole group
         sta $FE30
         lda tx_ph,x
         sta tph
-        lda tx_ro,x
-        sta rowo
-        lda tx_rm,x
-        sta rowm
         lda tx_ixl,x
         sta ixp
         lda tx_ixh,x
         sta ixp+1
+        lda tx_rm,x
+        sta wa1+1
+        sta wa2+1
+        sta wa3+1
+        sta wa4+1
+        sta wa5+1
+        sta wa6+1
+        lda tx_ro,x
+        sta wo1+1
+        sta wo2+1
+        sta wo3+1
+        sta wo4+1
+        sta wo5+1
+        sta wo6+1
         GETB                            ; k0
         sta kk
 wcol:   GETB                            ; y0
@@ -88,45 +102,39 @@ wcol:   GETB                            ; y0
         GETB                            ; cl | own
         sta own
         and #$7F
-        tay
-        lda (ixp),y                     ; the stored column
-        pha
-        and #7
-        sta wl_l0+1
-        sta wl_l1+1
-        pla
-        lsr a
-        lsr a
-        lsr a
-        clc
-        adc tph
-        sta wl_l0+2
-        sta wl_l1+2
+        jsr colad
+        sta wl1+1
+        sta wl2+1
+        sta wl3+1
+        sta wl4+1
+        stx wl1+2
+        stx wl2+2
+        stx wl3+2
+        stx wl4+2
         GETB                            ; cr
-        tay
-        lda (ixp),y
-        pha
-        and #7
-        sta wl_r0+1
-        sta wl_r1+1
-        pla
-        lsr a
-        lsr a
-        lsr a
-        clc
-        adc tph
-        sta wl_r0+2
-        sta wl_r1+2
+        jsr colad
+        sta wr1+1
+        sta wr2+1
+        sta wr3+1
+        sta wr4+1
+        stx wr1+2
+        stx wr2+2
+        stx wr3+2
+        stx wr4+2
         GETB
         sta v
         GETB
         sta v+1
         GETB
-        sta vst
+        asl a                           ; the step, doubled, into the pair
+        sta vst                         ;  loops
+        sta ws1l+1
+        sta wo1l+1
         GETB
+        rol a
         sta vst+1
-        asl vst                         ; a line pair moves v two steps
-        rol vst+1                       ;  ((y & ~1) moves by 2)
+        sta ws1h+1
+        sta wo1h+1
         bit own
         bpl :+
         GETB                            ; dh0
@@ -138,74 +146,172 @@ wcol:   GETB                            ; y0
         GETB
         sta ddh+1
 :       jsr cellptr                     ; scr, Y for (ln, kk)
-; the run, line by line: a line pair's byte is made on its first line
-wl_calc:
-        bit own
-        bmi wl_own
-        lda v+1
-        and rowm
-        ora rowo
-        tax
-wl_r0:  lda $FFFF,x                     ; right texel (patched)
+        lda ln
         lsr a
-wl_l0:  ora $FFFF,x                     ; left texel (patched)
-        bra wl_put
-wl_own: lda v+1                         ; the right row: hi(v) + dh
+        bcc wl_even
+        jsr wbyte                       ; an odd first line: alone
+        sta (scr),y
+        jsr vstep
+        jsr wnext
+        dec nl
+        bne wl_even
+        jmp wend
+wl_even:
+        lda nl
+        and #1
+        sta tail
+        lda nl
+        lsr a
+        sta np
+        beq wl_last
+        bit own
+        bmi wo_pair
+; shared: the right strip reads the left's row
+ws_pair:
+        lda v+1
+wa1:    and #$FF                        ; (patched: row mask)
+wo1:    ora #$FF                        ; (patched: row offset)
+        tax
+wr1:    lda $FFFF,x                     ; (patched: the right column)
+        lsr a                           ; (texels are left pixels: C = 0)
+wl1:    ora $FFFF,x                     ; (patched: the left column)
+        sta (scr),y
+        iny
+        sta (scr),y
+        iny
+        lda v
+ws1l:   adc #$FF                        ; (patched: 2 x step; C clear)
+        sta v
+        lda v+1
+ws1h:   adc #$FF
+        sta v+1
+        cpy #8
+        beq ws_row
+ws_nx:  dec np
+        bne ws_pair
+        bra wl_last
+ws_row: jsr nextrow
+        bra ws_nx
+; own: the right strip's row is hi(v) + dh
+wo_pair:
+        lda v+1
         clc
         adc dha+1
-        and rowm
-        ora rowo
+wa2:    and #$FF
+wo2:    ora #$FF
         tax
-wl_r1:  lda $FFFF,x
+wr2:    lda $FFFF,x
+        lsr a                           ; (C = 0)
+        sta tmp
+        lda v+1
+wa3:    and #$FF
+wo3:    ora #$FF
+        tax
+wl2:    lda $FFFF,x
+        ora tmp
+        sta (scr),y
+        iny
+        sta (scr),y
+        iny
+        lda v
+wo1l:   adc #$FF
+        sta v
+        lda v+1
+wo1h:   adc #$FF
+        sta v+1
+        cpy #8
+        beq wo_row
+wo_nx:  dec np
+        bne wo_pair
+        bra wl_last
+wo_row: jsr nextrow
+        jsr dhstep
+        bra wo_nx
+wl_last:
+        lda tail                        ; a last line alone
+        beq wend
+        jsr wbyte
+        sta (scr),y
+wend:   inc kk
+        dec cnt
+        bmi :+
+        jmp wcol
+:       jmp next
+
+; wbyte: the line's byte from v (and dh), in A
+wbyte:  bit own
+        bmi :+
+        lda v+1
+wa4:    and #$FF
+wo4:    ora #$FF
+        tax
+wr3:    lda $FFFF,x
+        lsr a
+wl3:    ora $FFFF,x
+        rts
+:       lda v+1
+        clc
+        adc dha+1
+wa5:    and #$FF
+wo5:    ora #$FF
+        tax
+wr4:    lda $FFFF,x
         lsr a
         sta tmp
         lda v+1
-        and rowm
-        ora rowo
+wa6:    and #$FF
+wo6:    ora #$FF
         tax
-wl_l1:  lda $FFFF,x
+wl4:    lda $FFFF,x
         ora tmp
-wl_put: sta (scr),y
-        sta cur
-        dec nl
-        beq wl_end
-        lda ln                          ; a pair done: v on a step
-        inc ln
-        lsr a
-        bcc wl_line
-        clc
+        rts
+
+; vstep: v += vst
+vstep:  clc
         lda v
         adc vst
         sta v
         lda v+1
         adc vst+1
         sta v+1
-wl_line:
-        iny
+        rts
+
+; wnext: on a line (the next character row: dh too)
+wnext:  iny
         cpy #8
-        bne wl_go
-        jsr nextrow                     ; the next character row
+        bne :+
+        jsr nextrow
         bit own
-        bpl wl_go
-        clc                             ; dh: ddh more a character row
+        bpl :+
+        jsr dhstep
+:       rts
+
+; dhstep: dh += ddh (a character row on)
+dhstep: clc
         lda dha
         adc ddh
         sta dha
         lda dha+1
         adc ddh+1
         sta dha+1
-wl_go:  lda ln
-        lsr a
-        bcc wl_calc                     ; an even line: a new pair
-        lda cur
-        bra wl_put
-wl_end: inc kk
-        dec cnt
-        bmi :+
-        jmp wcol
-:       jmp next
+        rts
 
-; cellptr: scr = SCREEN + (ln >> 3) * 512 + kk * 8, Y = ln & 7
+; colad: the stored column for logical column A: A lo, X hi
+colad:  tay
+        lda (ixp),y
+        pha
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc tph
+        tax
+        pla
+        and #7
+        rts
+
+; cellptr: scr = SCREEN + (ln >> 3) * 512 + (kk >> 5) * 256, Y = (kk & 31)
+; * 8 + (ln & 7)
 cellptr:
         lda kk
         asl a
@@ -255,25 +361,27 @@ fill:   GETB
         inc nl
         GETB
         sta cur
-        tax
-        lda #0
-        sta dha                         ; odd-line byte (cellptr uses tmp)
-        cpx #SKY_BYTE
+        sta odb
+        cmp #SKY_BYTE
         bne :+
+        tax
         lda flip,x
-        sta dha
+        sta odb
 :       jsr cellptr
-fl_lp:  lda ln
+        lda ln
         lsr a
-        lda cur
-        bcc :+
-        ldx dha                         ; odd line: the sky's FLIP
-        beq :+
-        txa
-:       sta (scr),y
+        bcc fl_lp
+        lda odb                         ; an odd first line
+        bra fl_put
+fl_lp:  lda cur
+        sta (scr),y
         dec nl
         beq fl_end
-        inc ln
+        iny
+        lda odb
+fl_put: sta (scr),y
+        dec nl
+        beq fl_end
         iny
         cpy #8
         bne fl_lp
@@ -287,157 +395,236 @@ fl_end: jmp next
 span:   and #$3F
         sta cnt
         GETB                            ; y, or PAIR_Y + y/2
+        ldx #0
         cmp #PAIR_Y
         bcc :+
         sbc #PAIR_Y
         asl a
         ldx #$80
-        bra :++
-:       ldx #0
-:       stx pair
-        sta ln
+:       sta ln
         lsr a                           ; C = an odd line
-        lda pair
+        txa
         bcc :+
         ora #$40
 :       sta pair                        ; b7 pair, b6 odd line
-        lda ln                          ; scr = the line's start
+        lda ln
+        and #7
+        sta slo
+        lda ln
         lsr a
         lsr a
         and #$FE
         clc
         adc #>SCREEN
-        sta scr+1
-        lda ln
-        and #7
-        sta sp_lo                       ; (scr stays page-aligned)
+        sta spg
         stz scr
 sp_each:
         GETB                            ; k0
         sta kk
         GETB
         sta k1
-        GETB                            ; flat, or $FF
+        GETB                            ; flat, or $FF: far
         cmp #$FF
-        bne sp_flat
-        GETB                            ; far: one byte
-        sta cur
-        tax
-        lda flip,x
-        sta tmp
-        jsr sp_ptr
-sf_lp:  lda cur
-        bit pair
-        bmi sf_pr
-        bvc :+                          ; an odd line: FLIPped
-        lda tmp
-:       sta (scr),y
-        bra sf_nx
-sf_pr:  sta (scr),y
-        iny
-        lda tmp
-        sta (scr),y
-        dey
-sf_nx:  jsr sp_step
-        bcc sf_lp
-        jmp sp_done
-sp_flat:
+        beq sp_far
         tax
         lda fl_bank,x
         sta $FE30
         lda fl_page,x
-        sta sp_tx+2
+        sta fe_tx+2
+        sta fo_tx+2
+        sta fp_tx+2
         GETB
         sta su
         GETB
         sta v
         GETB
-        sta du
+        sta fe_du+1
+        sta fo_du+1
+        sta fp_du+1
         GETB
-        sta dv
-        jsr sp_ptr
-sp_lp:  lda v                           ; the texel: (v & $F0) | (u >> 4)
-        and #$F0
-        ldx su
-        ora lsr4,x
-        tax
-sp_tx:  lda $FF00,x                     ; (patched: the flat's page)
-        bit pair
-        bmi sp_pr
-        bvc :+                          ; an odd line: FLIPped
+        sta fe_dv+1
+        sta fo_dv+1
+        sta fp_dv+1
+        lda #<flat_run
+        ldx #>flat_run
+        bra sp_go
+sp_far: GETB                            ; the far tone: even, odd bytes
+        sta cur
         tax
         lda flip,x
-:       sta (scr),y
-        bra sp_nx
-sp_pr:  sta (scr),y
-        tax
-        lda flip,x
-        iny
-        sta (scr),y
-        dey
-sp_nx:  clc
-        lda su
-        adc du
-        sta su
-        clc
-        lda v
-        adc dv
-        sta v
-        jsr sp_step
-        bcc sp_lp
+        sta odb
+        lda #<far_run
+        ldx #>far_run
+sp_go:  sta sp_jmp+1
+        stx sp_jmp+2
+        lda kk                          ; byte columns 0-31, then 32-63:
+        cmp #32                         ;  one screen page each
+        bcs sp_hi
+        lda k1
+        cmp #32
+        bcc :+
+        lda #31
+:       jsr sp_run
+        lda k1
+        cmp #32
+        bcc sp_done
+        lda #32
+        sta kk
+sp_hi:  lda k1
+        jsr sp_run
 sp_done:
         dec cnt
         bmi :+
         jmp sp_each
 :       jmp next
 
-; sp_ptr: the span's first byte: page scr+1 + kk >> 5 (the line's page
-; kept in sp_sv), Y = kk * 8 + the line in its cell
-sp_ptr: lda kk
-        lsr a
-        lsr a
-        lsr a
-        lsr a
-        lsr a
+; sp_run: byte columns kk..A within one page: scr, Y, the end, then the
+; flat or far loop
+sp_run: and #31
+        asl a
+        asl a
+        asl a
         clc
-        adc scr+1
-        sta sp_pg
+        adc slo
+        adc #8                          ; Y past the last byte (mod 256)
+        sta fe_end+1
+        sta fo_end+1
+        sta fp_end+1
+        sta re_end+1
+        sta ro_end+1
+        sta rp_end+1
         lda kk
-        asl a
-        asl a
-        asl a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
         clc
-        adc sp_lo                       ; (+ the line in its cell, < 8)
-        tay
-        lda scr+1
-        pha
-        lda sp_pg
+        adc spg
         sta scr+1
-        pla
-        sta sp_sv
-        rts
-; sp_step: on a byte column; C set past k1 (scr+1 restored)
-sp_step:
         lda kk
-        cmp k1
-        bcs sp_last
-        inc kk
+        and #31
+        asl a
+        asl a
+        asl a
+        adc slo                         ; (C clear)
+        tay
+sp_jmp: jmp $FFFF                       ; (patched: flat_run / far_run)
+
+flat_run:
+        bit pair
+        bmi fp_lp
+        bvs fo_lp
+fe_lp:  lda v                           ; an even line
+        and #$F0
+        ldx su
+        ora lsr4,x
+        tax
+fe_tx:  lda $FF00,x                     ; (patched: the flat's page)
+        sta (scr),y
+        lda su
+        clc
+fe_du:  adc #$FF                        ; (patched: du)
+        sta su
+        lda v
+        clc
+fe_dv:  adc #$FF                        ; (patched: dv)
+        sta v
         tya
         clc
         adc #8
         tay
-        bcc :+
-        inc scr+1
-:       clc
+fe_end: cpy #$FF                        ; (patched: the end)
+        bne fe_lp
         rts
-sp_last:
-        lda sp_sv
-        sta scr+1
-        sec
+fo_lp:  lda v                           ; an odd line: FLIPped
+        and #$F0
+        ldx su
+        ora lsr4,x
+        tax
+fo_tx:  lda $FF00,x
+        tax
+        lda flip,x
+        sta (scr),y
+        lda su
+        clc
+fo_du:  adc #$FF
+        sta su
+        lda v
+        clc
+fo_dv:  adc #$FF
+        sta v
+        tya
+        clc
+        adc #8
+        tay
+fo_end: cpy #$FF
+        bne fo_lp
+        rts
+fp_lp:  lda v                           ; a line pair
+        and #$F0
+        ldx su
+        ora lsr4,x
+        tax
+fp_tx:  lda $FF00,x
+        sta (scr),y
+        tax
+        lda flip,x
+        iny
+        sta (scr),y
+        lda su
+        clc
+fp_du:  adc #$FF
+        sta su
+        lda v
+        clc
+fp_dv:  adc #$FF
+        sta v
+        tya
+        clc
+        adc #7
+        tay
+fp_end: cpy #$FF
+        bne fp_lp
         rts
 
-sp_pg:  .res 1
-sp_lo:  .res 1
-sp_sv:  .res 1
+far_run:
+        bit pair
+        bmi rp_lp
+        bvs ro_go
+        lda cur
+re_lp:  sta (scr),y                     ; even line
+        tax
+        tya
+        clc
+        adc #8
+        tay
+        txa
+re_end: cpy #$FF
+        bne re_lp
+        rts
+ro_go:  lda odb
+ro_lp:  sta (scr),y                     ; odd line
+        tax
+        tya
+        clc
+        adc #8
+        tay
+        txa
+ro_end: cpy #$FF
+        bne ro_lp
+        rts
+rp_lp:  lda cur                         ; line pair
+        sta (scr),y
+        iny
+        lda odb
+        sta (scr),y
+        tya
+        clc
+        adc #7
+        tay
+rp_end: cpy #$FF
+        bne rp_lp
+        rts
 
         TABLES
