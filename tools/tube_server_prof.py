@@ -37,9 +37,13 @@ def main():
     for p in (list(poses.POSITIONS) + list(poses.VERIFY))[:n]:
         H.render(*p)
         req = tube_req.encode(H.frame())
-        q = S.L['fs_req']
+        q = S.L['fs_ring']
         m[q:q + len(req)] = req
         m[S.L['fs_rp']], m[S.L['fs_rp'] + 1] = q & 0xFF, q >> 8
+        w = q + len(req)
+        m[S.L['fs_rw']], m[S.L['fs_rw'] + 1] = w & 0xFF, w >> 8
+        ob = S.L['fs_lista']
+        m[S.L['fs_ob']], m[S.L['fs_ob'] + 1] = ob & 0xFF, ob >> 8
         mpu.pc, mpu.sp = tube_server.TRAMP, 0xFF
         while mpu.pc != tube_server.TRAMP + 3:
             pc = mpu.pc

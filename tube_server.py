@@ -21,7 +21,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, 'build', 'tube', 'srv')
 DEFS = ['-D', 'ENGINE=1', '-D', 'C02=1', '-D', 'BANKED=1', '-D', 'MASTER=1', '-D', 'SERVER=1']
 UNITS = ('src/master/mfill.s', 'src/tube/fserve.s')
-LOADS = ((0x0F00, 0x0900), (0x4000, 0x4000))     # fserve.cfg's MID, CODE (the file)
+LOADS = ((0x0C00, 0x1400), (0x2000, 0x1000), (0x3000, 0x1000),
+         (0x4000, 0x3200))                      # fserve.cfg's file areas
+IMAGE = (0x0C00, 0x7200)                        # the second processor's file
 TRAMP = 0xFF00                                  # JSR fs_frame; (stop): above the link
 
 
@@ -55,7 +57,7 @@ class Server:
         for a, n in LOADS:
             mem[a:a + n] = code[p:p + n]
             p += n
-        assert p == len(code), 'fserve.bin is not MID + CODE'
+        assert p == len(code), 'fserve.bin is not the file areas'
         im = R.W.images(R.T.A.man, L=L.__getitem__, server=True)
         a = L['man_slot_d']
         mem[a:a + len(im['andy'])] = im['andy']
@@ -80,13 +82,23 @@ class Server:
         self.mem = mem
         self.mpu = MPU(memory=mem)
 
+    def image(self):
+        """The second processor's file: (load address, bytes), and fs_main."""
+        a, b = IMAGE
+        return a, bytes(self.mem[a:b]), self.L['fs_main']
+
     def serve(self, req, limit=20_000_000):
-        """Run fs_frame over a frame's request bytes: (the list, cycles)."""
+        """Run fs_frame over a frame's request bytes, put in its ring as
+        fs_nmi would: (the list, cycles)."""
         L, m, mpu = self.L, self.mem, self.mpu
-        q = L['fs_req']
-        assert len(req) <= L['fs_req'] + 0xC00 - q
+        q = L['fs_ring']
+        assert len(req) < 0x2000
         m[q:q + len(req)] = req
+        w = q + len(req)
         m[L['fs_rp']], m[L['fs_rp'] + 1] = q & 0xFF, q >> 8
+        m[L['fs_rw']], m[L['fs_rw'] + 1] = w & 0xFF, w >> 8
+        ob = L['fs_lista']
+        m[L['fs_ob']], m[L['fs_ob'] + 1] = ob & 0xFF, ob >> 8
         mpu.pc, mpu.sp = TRAMP, 0xFF
         c0 = mpu.processorCycles
         while mpu.pc != TRAMP + 3:
@@ -96,4 +108,5 @@ class Server:
         rp = m[L['fs_rp']] | m[L['fs_rp'] + 1] << 8
         assert rp - q == len(req), f'read {rp - q} of {len(req)} request bytes'
         op = m[L['fs_op']] | m[L['fs_op'] + 1] << 8
-        return bytes(m[L['fs_dl']:op]), mpu.processorCycles - c0
+        assert m[L['fs_drop']] == 0, 'the server dropped marks, runs or planes'
+        return bytes(m[ob:op]), mpu.processorCycles - c0

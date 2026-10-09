@@ -97,7 +97,7 @@ HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 ; the gun, every write loop, the plane spans' sweep and flush); what
 ; drew now records -- hz_run and the planes mark fserve's cell grid,
 ; tr_screen emits the run's WALL record.
-.import fs_mark, fs_wall, fs_planes
+.import fs_mark, fs_wall, fs_planes, fs_poll
 .export pl_rowc, uvat, hz_run, tr_screen, mf_ep, pl_p, pl_d, pl_kb, pl_u, pl_v
 .export pc_uc, pc_du, pc_vc, pc_dv, pc_lv, far_tone, pl_kind, pl_df, pl_dc
 .export pl_ff, pl_fc, tw_ll, tw_rl, tw_sh, l_v, l_step, t_v, t_tid, t_step
@@ -690,6 +690,9 @@ mf_fill:
 :  JSR tx_seg                           ; the seg's wall texture set-up
 
 col:
+.ifdef SERVER
+   JSR fs_poll                          ; (the last list, out to the host)
+.endif
    STZ c_dok                            ; d not yet computed for this byte
    STZ c_trok                           ; nor the right strip's lines
    LDA mf_x

@@ -27,8 +27,13 @@
 ; lines' runs then make the SPANs (fs_spans), the solid lists the FILLs
 ; (fs_fills). A frame has ~140 marks, at most ~10 in a column.
 ;
-; The request bytes are read through fs_rp (H3: from memory, fs_req; H4:
-; register 3), the list written through fs_op (from fs_dl).
+; On the second processor (H4, fs_main) the host's register 3 bytes come
+; in by NMI (fs_nmi) into a ring the frame reads (fs_get); the list is
+; written to one of two buffers while the other's goes out through
+; register 1, topped up (fs_poll) from the frame's own loops -- so the
+; host draws frame N while this builds N + 1. Register 1's FIFO never
+; interrupts either side. The py65 rig (tube_server.py) fills the ring
+; itself and reads the list back from its buffer.
 ; ============================================================================
 .setcpu "65C02"
 
@@ -41,15 +46,22 @@ ZP_OWNER = 1                            ; (this link's zero page and WORK)
 .import sn_xs, sn_xe, sn_xlo, sn_den, sn_tl, sn_tr, sn_bl, sn_br, sn_bxlo
 .import sn_bden, sn_n, tx_slot, mf_x, r_ys, r_ye
 .importzp zw_ddh
-.export fs_mark, fs_wall, fs_planes, fs_frame, fs_dl, fs_req
-.exportzp fs_rp, fs_op
+.export fs_mark, fs_wall, fs_planes, fs_frame, fs_poll, fs_main, fs_ring
+.export fs_lista, fs_listb, fs_ob, fs_drop
+.exportzp fs_rp, fs_rw, fs_op
 
 PAIR_Y   = $88                          ; tube_dl.PAIR_Y: a pair group's y
 WB_SKY   = $28                          ; (master/mfill.s) the solid shades
 SKY_EV   = $3D                          ; the sky's FILL byte (SKY_BYTE)
 VIEW_PAIRS = VIEW_LINES / 2
 
-fs_rp = zp_tmp0                         ; the request read pointer
+fs_rp = zp_tmp0                         ; the request ring's read and
+fs_rw = zp_pm_p                         ;  write (fs_nmi) pointers
+fs_sp = zp_anim_p                       ; the list going out: next byte, end
+fs_se = zp_anim_w
+RING = $2000                            ; fs_ring's size (page-aligned at a
+                                        ;  multiple of it)
+NPLANE = 64                             ; planes a frame (15 seen)
 PTR = RASTER_ZP_X1                      ; (scratch pointer: mfill's screen one)
 fs_cp = pa_dx                           ; a mark list: its column's block,
 fs_cq = pa_dy                           ;  and + 4 (the angle module's zero
@@ -59,11 +71,7 @@ fs_op = zp_prod_l                       ; the list write pointer
 .assert zp_prod_h = zp_prod_l + 1, error, "fs_op is two bytes"
 
 .macro GETB                             ; A = the next request byte (flags: not A's)
-   LDA (fs_rp)
-   INC fs_rp
-   BNE :+
-   INC fs_rp+1
-:
+   JSR fs_get
 .endmacro
 
 .macro PUTO                             ; A -> the list
@@ -78,17 +86,19 @@ fs_op = zp_prod_l                       ; the list write pointer
 fs_ivp:  .res $1000                     ; per byte column k: 16 plane marks
 fs_ivf:  .res $1000                     ;  / solid marks (y0, y1, code, -)
                                         ;  at + k * 64, sorted by y0
-fs_rn:   .res $2200                     ; per line y: 16 runs (k0, k1, code,
-                                        ;  -) at + y * 64, in k order
-.segment "FSDL"
-fs_dl:   .res $1C00                     ; the frame's display list (max ~5.4K)
-.segment "FSREQ"
-fs_req:  .res $C00                      ; the frame's requests (max ~2.6K)
+fs_rn:   .res $1100                     ; per line y: 8 runs (k0, k1, code,
+                                        ;  -) at + y * 32, in k order
+.segment "FSLA"
+fs_lista: .res $1600                    ; the lists: one being built, the
+.segment "FSLB"                         ;  other going out (max ~5.4K)
+fs_listb: .res $1600
+.segment "FSRING"                       ; RING-aligned
+fs_ring: .res RING                      ; the host's request bytes
 
 .segment "FSBSS"
 fs_pn:   .res 1                         ; planes in the table
-fs_pd:   .res 128                       ; plane i: D
-fs_pf:   .res 128                       ;  and flat
+fs_pd:   .res NPLANE                    ; plane i: D
+fs_pf:   .res NPLANE                    ;  and flat
 fs_idf:  .res 1                         ; this seg's floor / ceiling plane
 fs_idc:  .res 1                         ;  codes ($80 | i; 0 none)
 fs_wn:   .res 1                         ; WALL group: entries so far (0 none),
@@ -101,26 +111,26 @@ fs_y:    .res 1
 fs_n:    .res 1
 fs_gh:   .res 2                         ; a SPAN group's header
 fs_gn:   .res 1                         ;  and its count
-; a line's plane runs, even line at re_* + 0..63, odd at re_* + RO..: k0,
+; a line's plane runs, even line at re_* + 0.., odd at re_* + RO..: k0,
 ; k1, the row's U V at column 32 and steps (4.4), flat (| $80: far), far
 ; tone
-RO = 64
-re_k0:   .res 128
-re_k1:   .res 128
-re_uc:   .res 128
-re_du:   .res 128
-re_vc:   .res 128
-re_dv:   .res 128
-re_fl:   .res 128
-re_fb:   .res 128
+RO = 16                                 ; (a line's runs: at most 8)
+re_k0:   .res 2 * RO
+re_k1:   .res 2 * RO
+re_uc:   .res 2 * RO
+re_du:   .res 2 * RO
+re_vc:   .res 2 * RO
+re_dv:   .res 2 * RO
+re_fl:   .res 2 * RO
+re_fb:   .res 2 * RO
 fs_ne:   .res 1                         ; runs on the even / odd line
 fs_no:   .res 1
 fs_sel:  .res 1                         ; fs_singles: even ($00) / odd ($80)
 fs_np:   .res 1                         ; pairs: the even and odd runs,
-fs_pi:   .res 64                        ;  columns
-fs_po:   .res 64
-fs_pa:   .res 64
-fs_pb:   .res 64
+fs_pi:   .res RO                        ;  columns
+fs_po:   .res RO
+fs_pa:   .res RO
+fs_pb:   .res RO
 fs_cnt:  .res 128                       ; marks per column: plane 0..63, solid
                                         ;  64..127
 fs_rnn:  .res VIEW_LINES                ; runs per line
@@ -134,24 +144,166 @@ fs_j:    .res 1
 fs_e:    .res 1                         ;  the segment's end, codes
 fs_ca:   .res 1
 fs_cb:   .res 1
-fs_kc_ep: .res 128                      ; fs_key's cache per plane: the epoch
-fs_kc_p: .res 128                       ;  and pair it holds, and the key
-fs_kc_uc: .res 128
-fs_kc_du: .res 128
-fs_kc_vc: .res 128
-fs_kc_dv: .res 128
-fs_kc_fl: .res 128
-fs_kc_fb: .res 128
+fs_kc_ep: .res NPLANE                      ; fs_key's cache per plane: the epoch
+fs_kc_p: .res NPLANE                       ;  and pair it holds, and the key
+fs_kc_uc: .res NPLANE
+fs_kc_du: .res NPLANE
+fs_kc_vc: .res NPLANE
+fs_kc_dv: .res NPLANE
+fs_kc_fl: .res NPLANE
+fs_kc_fb: .res NPLANE
+fs_ob:   .res 2                         ; the list being built's buffer
+fs_drop: .res 1                         ; marks / runs / planes dropped (full)
 fs_ma:   .res 1                         ; mul8lo operands
 fs_mb:   .res 1
 
 .segment "FSCODE"
 
-; ---- fs_frame: one frame's requests (fs_rp) -> its list (fs_dl .. fs_op) --
+; ---- fs_main: the second processor's program (H4). Entered once, by
+; the host (a Tube execute); never returns. Its own NMI takes the
+; host's register 3 bytes; then frame after frame: build the list, wait
+; for the last one to be out, send this one (fs_poll does, in the next
+; frame's loops).
+fs_main:
+   SEI
+   CLD
+   LDX #$FF
+   TXS
+   LDX #6                               ; the workspace clear: $0200-$07FF
+   LDA #2                               ;  and the high BSS, fs_ivp .. $F7FF
+   STA PTR+1
+   STZ PTR
+   LDY #0
+   JSR @clr
+   LDA #>fs_ivp
+   STA PTR+1
+   LDX #>$F800 - >fs_ivp
+   JSR @clr
+   LDA #<fs_ring
+   STA fs_rp
+   STA fs_rw
+   LDA #>fs_ring
+   STA fs_rp+1
+   STA fs_rw+1
+   STA $FEFD                            ; (register 3 keeps a byte back to
+                                        ;  the host: no NMI from its side)
+   LDA #<fs_nmi                         ; the host's bytes, from here on (it
+   STA $FFFA                            ;  sends none before frame -1's list
+   LDA #>fs_nmi                         ;  reaches it)
+   STA $FFFB
+   LDA #<fs_listb                       ; frame -1's list: empty ($00)
+   STA fs_sp
+   STA fs_se
+   LDA #>fs_listb
+   STA fs_sp+1
+   STA fs_se+1
+   INC fs_se
+   LDA #<fs_lista
+   STA fs_ob
+   LDA #>fs_lista
+   STA fs_ob+1
+@frame:
+   JSR fs_frame
+@wait:                                  ; the last list out first
+   JSR fs_poll
+   LDA fs_sp
+   CMP fs_se
+   BNE @wait
+   LDA fs_sp+1
+   CMP fs_se+1
+   BNE @wait
+   LDA fs_ob                            ; this one goes out
+   STA fs_sp
+   LDA fs_ob+1
+   STA fs_sp+1
+   LDA fs_op
+   STA fs_se
+   LDA fs_op+1
+   STA fs_se+1
+   LDA fs_ob+1                          ; and the next is built in the other
+   CMP #>fs_lista
+   BEQ :+
+   LDA #>fs_lista
+   BRA :++
+:  LDA #>fs_listb
+:  STA fs_ob+1
+   LDA #<fs_lista
+   STA fs_ob
+   .assert <fs_lista = 0 .and <fs_listb = 0 .and <fs_ivp = 0, error, "buffers page-aligned"
+   BRA @frame
+@clr:                                   ; X pages from (PTR), (BSS: Y = 0)
+   LDA #0
+:  STA (PTR),Y
+   INY
+   BNE :-
+   INC PTR+1
+   DEX
+   BNE :-
+   RTS
+
+; fs_nmi: a request byte from the host (register 3), into the ring
+fs_nmi:
+   PHA
+   LDA $FEFD
+   STA (fs_rw)
+   INC fs_rw
+   BNE :+
+   LDA fs_rw+1
+   INC A
+   AND #>(RING - 1)
+   ORA #>fs_ring
+   STA fs_rw+1
+:  PLA
+   RTI
+
+; fs_get: A = the next request byte, waiting for the host (X, Y kept)
+fs_get:
+   LDA fs_rp
+   CMP fs_rw
+   BNE @g
+   LDA fs_rp+1
+   CMP fs_rw+1
+   BNE @g
+   JSR fs_poll                          ; (nothing yet: the list goes out)
+   BRA fs_get
+@g:
+   LDA (fs_rp)
+   INC fs_rp
+   BNE :+
+   PHA
+   LDA fs_rp+1
+   INC A
+   AND #>(RING - 1)
+   ORA #>fs_ring
+   STA fs_rp+1
+   PLA
+:  RTS
+
+; fs_poll: the list going out (fs_sp .. fs_se) into register 1 while its
+; FIFO has room (X, Y kept)
+fs_poll:
+   LDA fs_sp
+   CMP fs_se
+   BNE :+
+   LDA fs_sp+1
+   CMP fs_se+1
+   BEQ @rts
+:  BIT $FEF8                            ; (status bit 6: room)
+   BVC @rts
+   LDA (fs_sp)
+   STA $FEF9
+   INC fs_sp
+   BNE fs_poll
+   INC fs_sp+1
+   BRA fs_poll
+@rts:
+   RTS
+
+; ---- fs_frame: one frame's requests (fs_get) -> its list (fs_ob .. fs_op) -
 fs_frame:
-   LDA #<fs_dl
+   LDA fs_ob
    STA fs_op
-   LDA #>fs_dl
+   LDA fs_ob+1
    STA fs_op+1
    GETB                                 ; the view: px88, py88 (24-bit)
    STA zp_br_px
@@ -232,21 +384,21 @@ fs_frame:
    GETB
    LDX #0                               ; sx1 sx2 ft1 ft2 fb1 fb2 (s16); the
 @ln:                                    ;  y ends take the engine's Y_BIAS
-   LDY fs_lof,X
+   LDY fs_lof,X                         ;  (fs_get keeps no flags)
    GETB
+   STA VX1,Y
+   GETB
+   STA VX1+1,Y
    CPX #2
    BCC @raw
    CLC
+   LDA VX1,Y
    ADC #Y_BIAS
    STA VX1,Y
-   GETB
+   LDA VX1+1,Y
    ADC #0
-   BRA @put
-@raw:
-   STA VX1,Y
-   GETB
-@put:
    STA VX1+1,Y
+@raw:
    INX
    CPX #6
    BNE @ln
@@ -405,9 +557,11 @@ fs_pid:
    STA fs_pd,Y
    LDA fs_t+1
    STA fs_pf,Y
-   INC fs_pn
-   BPL @got
-   BRK                                  ; (more than 128 planes in a frame)
+   CPY #NPLANE - 1
+   BCC :+
+   INC fs_drop                          ; (full: the last entry, rewritten)
+   BRA @got
+:  INC fs_pn
 @got:
    TYA
    ORA #$80
@@ -458,7 +612,8 @@ fs_mark:
    LDA fs_cnt,X
    CMP #16
    BCC :+
-   BRK                                  ; (more than 16 marks in a column)
+   INC fs_drop                          ; (full: the mark is dropped)
+   RTS
 :  INC fs_cnt,X
    ASL A
    ASL A
@@ -603,6 +758,7 @@ fs_sweep:
    STZ fs_k
    STZ fs_pn2                           ; (column -1: no marks)
 @col:
+   JSR fs_poll
    LDX fs_k                             ; this column's list (64: none)
    STZ fs_cn
    CPX #64
@@ -757,8 +913,7 @@ fs_change:
    LDA fs_opc,X
    BEQ @open
    STA fs_c
-   TXA                                  ; the line's runs: + y * 64
-   ASL A
+   TXA                                  ; the line's runs: + y * 32
    ASL A
    ASL A
    ASL A
@@ -768,13 +923,15 @@ fs_change:
    TXA
    LSR A
    LSR A
+   LSR A
    CLC
    ADC #>fs_rn
    STA fs_lp+1
    LDA fs_rnn,X
-   CMP #16
+   CMP #8
    BCC :+
-   BRK                                  ; (more than 16 runs on a line)
+   INC fs_drop                          ; (full: the run is dropped)
+   BRA @open
 :  INC fs_rnn,X
    ASL A
    ASL A
@@ -804,6 +961,7 @@ fs_change:
 fs_spans:
    STZ pl_p
 @pair:
+   JSR fs_poll
    LDA pl_p
    ASL A
    STA fs_y
@@ -881,9 +1039,9 @@ fs_runs:
    ASL A
    ASL A
    ASL A
-   ASL A
    STA fs_lp
    TYA
+   LSR A
    LSR A
    LSR A
    CLC
@@ -1273,6 +1431,7 @@ fs_gclose:
 fs_fills:
    STZ fs_k
 @col:
+   JSR fs_poll
    LDX fs_k
    LDA fs_cnt+64,X
    BNE :+

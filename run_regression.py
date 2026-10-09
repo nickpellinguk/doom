@@ -87,6 +87,8 @@ run('tube_req', ['test_tube_req.py'], lambda o: 'TUBEREQ: PASS' in o)
 run('tube_hreq', ['test_tube_hreq.py'], lambda o: 'TUBEHREQ: PASS' in o)
 # host-led H3: the 6502 fill server's display list (src/tube/fserve.s + mfill.s SERVER)
 run('tube_server', ['test_tube_server.py'], lambda o: 'TUBESERVER: PASS' in o)
+# host-led H4a: the server on jsbeeb's second processor, over the Tube (NMI in, register 1 out)
+run('tube_link', ['test_tube_link.py'], lambda o: 'TUBELINK: PASS' in o)
 # the music player (master_music.py the spec, src/master/mmusic.s)
 run('master_music', ['test_master_music.py'], lambda o: 'MASTERMUSIC: PASS' in o)
 # BAKED ADDRESSES: a literal address is a copy of a fact. This ratchets: the
