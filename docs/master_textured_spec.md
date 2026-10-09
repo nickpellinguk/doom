@@ -1191,6 +1191,22 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7aa. The panel split: black before Mode 1. — DONE.** A red sliver
+flickered at the left of line 136, the panel's all-black top line, in every
+field (4-20 emulated pixels as the IRQ jitters 2-4 characters). The handler
+switched the video ULA to Mode 1 at the end of line 135 and only then
+blacked palette entries 1, 4 and 5; in Mode 1 zero bytes show through
+entries 0 1 4 5, and entry 1 still held the view's red until its write
+landed at line 136, characters 1-5. Now the three black writes come first,
+in line 135's blank (its visible part ends at character 64; they land at
+123-127 on), then Mode 1 (136:13-17): line 136 opens in Mode 2, where zero
+bytes are entry 0, black, and stays black through the switch. The write
+count is unchanged, so the panel's last entry still lands by 136:83, long
+before line 137. jsbeeb, 1,500 fields turning and walking: boundary lines
+136-140 wrong in 0 fields (1,500 before). The disc gate now fails on any
+colour on line 136 (its Mode 2 check ignored red) and on a black write
+before line 135's visible part ends.
+
 **7z. Movement: the eye height from four half-box probes. — DONE.** Walking
 into room 24's narrow stair flight (west of the start: a 64-unit strip of
 16-unit steps with room floor either side) off its centre line, the player

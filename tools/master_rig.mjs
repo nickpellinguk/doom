@@ -237,7 +237,7 @@ async function engineMode() {
         // four colours, red and cyan included: the IRQ rewrote entries 8..15,
         // which the view cycles (step 6e), in time
         const PANEL_OK = ["0,0,0", "255,255,255", "255,0,0", "0,255,255"];
-        let ref = null, early = 0, late = 0, panelOdd = 0, panelRC = 0;
+        let ref = null, early = 0, late = 0, panelOdd = 0, panelRC = 0, line136 = 0;
         const cyc = new Set();
         // and the handler's timing, read off the CRTC as it writes: the Mode 1
         // switch ($D8 to the ULA) after line 135's visible part (character
@@ -245,11 +245,12 @@ async function engineMode() {
         // 137 starts -- line 136 is all zero bytes, black in either mode
         const v = s._machine.processor.video;
         const at = () => (v.vertCounter * 8 + v.scanlineCounter) * 128 + v.horizCounter;
-        const ULA_FROM = 135 * 128 + 66, PAL_BY = 137 * 128;
-        let ulaT = [], palT = [];
+        const ULA_FROM = 135 * 128 + 66, PAL_BY = 137 * 128;   // (black 1 4 5 precede the switch)
+        let ulaT = [], palT = [], blkT = [];
         const hook = s._machine.processor.debugWrite.add((addr, val) => {
             if (addr === 0xFE20 && val === 0xD8) ulaT.push(at());
             if (addr === 0xFE21 && val === 0xF1) palT.push(at());
+            if (addr === 0xFE21 && val === 0x17) blkT.push(at());   // entry 1 black: the first
             return false;
         });
         for (let f = 0; f < 50; f++) {
@@ -268,6 +269,13 @@ async function engineMode() {
                 seen.add(`${fb[o]},${fb[o + 1]},${fb[o + 2]}`);
             }
             if ([...seen].some((c) => !PANEL_OK.includes(c))) panelOdd++;
+            // line 136, the panel's top line, is all zero bytes: black in
+            // either mode once entries 1 4 5 are -- any colour there is the
+            // view's palette showing through (the red sliver, 2026-10-09)
+            for (let x = 0; x < W; x++) {
+                const o = (y136 * W + x) * 4;
+                if (fb[o] || fb[o + 1] || fb[o + 2]) { line136++; break; }
+            }
             if (seen.has("255,0,0") && seen.has("0,255,255")) panelRC++;
             await s.runFor(10000);              // 5 ms into the field: the view's palette
             cyc.add(Array.from(s._machine.processor.video.actualPal.slice(8, 16)).join(","));
@@ -276,8 +284,9 @@ async function engineMode() {
         const fmt = (t) => `${t >> 7}:${t & 127}`;
         const span = (a) => a.length ? [fmt(Math.min(...a)), fmt(Math.max(...a))] : null;
         out.split = { line135_right: ref, early, late, panel_odd: panelOdd, panel_rc: panelRC,
-                      cycle_states: cyc.size, ula_write: span(ulaT), last_palette_write: span(palT) };
+                      cycle_states: cyc.size, first_black_write: span(blkT), ula_write: span(ulaT), last_palette_write: span(palT) };
         if (ulaT.length < 40) fails.push(`split: only ${ulaT.length} Mode 1 switches in 50 fields`);
+        if (blkT.some((t) => t < ULA_FROM)) fails.push(`split: entry 1 blacked before line 135 ends (${fmt(Math.min(...blkT))})`);
         if (ulaT.some((t) => t < ULA_FROM)) fails.push(`split: Mode 1 switch before line 135 ends (${fmt(Math.min(...ulaT))})`);
         if (palT.some((t) => t >= PAL_BY)) fails.push(`split: panel palette not done by line 137 (${fmt(Math.max(...palT))})`);
         if (panelOdd || panelRC < 50) fails.push(`panel colours wrong: ${panelOdd} fields odd, ${panelRC}/50 with red + cyan`);
@@ -286,6 +295,8 @@ async function engineMode() {
         // (early is information only: line 135's right end moves with the
         // view and the colour cycle; the CRTC timing above is the test)
         if (late) fails.push(`raster split late: Mode 2 colours in the panel in ${late} of 50 fields`);
+        out.split.line136_not_black = line136;
+        if (line136) fails.push(`line 136 not black in ${line136} of 50 fields (the view's palette showing through)`);
     }
     // screen content: palette only, and the HUD row lit
     const fb = new Uint8Array(s._completeFb8);

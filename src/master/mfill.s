@@ -1435,14 +1435,19 @@ split_irq:
    BMI @panel
    JMP @top
 @panel:
-   LDA #ULA_MODE1                       ; the panel's first line: Mode 1,
-   STA $FE20                            ;  then black (1, 4, 5): line 136
-   LDA #(1 << 4) | 7                    ;  is all black (entries 0 1 4 5),
-   STA $FE21                            ;  so the rest can land during it:
-   LDA #(4 << 4) | 7                    ;  white (2, 3, 6), red (8 9 12 13)
-   STA $FE21                            ;  and cyan (10 11 14 15), which
-   LDA #(5 << 4) | 7                    ;  the view cycles (step 6e)
-   STA $FE21
+   LDA #(1 << 4) | 7                    ; the panel's first line: black (1,
+   STA $FE21                            ;  4, 5) FIRST, in line 135's blank,
+   LDA #(4 << 4) | 7                    ;  THEN Mode 1 (2026-10-09: Mode 1
+   STA $FE21                            ;  first showed line 136's zero
+   LDA #(5 << 4) | 7                    ;  bytes through the view's red in
+   STA $FE21                            ;  entry 1 until its write landed,
+   LDA #ULA_MODE1                       ;  a flickering red sliver; in Mode
+   STA $FE20                            ;  2 they are entry 0, black). Line
+                                        ;  136 is all black (entries 0 1 4
+                                        ;  5) either way, so the rest can
+                                        ;  land during it: white (2, 3, 6),
+                                        ;  red (8 9 12 13) and cyan (10 11
+                                        ;  14 15), which the view cycles
    LDA #(2 << 4) | 0
    STA $FE21
    LDA #(3 << 4) | 0
