@@ -66,20 +66,30 @@ def main():
     import build_master_ssd as B
     b4, b7, b5, b6, andy, main_, cbits, hz = B.engine_images()
 
+    def used(img, lo, hi):
+        """Bytes of [lo, hi) less its runs of 48+ free bytes."""
+        return (hi - lo) - sum(n for _, n in zero_runs(img, 0x8000, lo, hi))
+
     # ---- bank 4 (SEG): map data + three per-frame caches -------------
     caches4 = [('VXCACHE (vertex recip + screen x, 4 planes)', 0x9800, 0x800),
                ('VRCACHE (rotated vertices, 4 planes)', 0xA000, 0x800),
                ('VYCACHE (y projection memo, 4 pages)', 0xB300, 0x400)]
-    free4 = [(0xB8F8, 0xB9FF - 0xB8F8 + 1), (0xBDDA, 0xBFFF - 0xBDDA + 1)]
+    free4 = [(0xBE00, 0x200)]               # the bank's free top (BPAL ends $BDFF)
     cache_bytes = sum(n for _, _, n in caches4)
+    move4 = 0x9800 - 0x96FC + used(b4, 0xB280, 0xB300)   # USEVEC, USETAB/WALKTAB
     b4_static = 0x4000 - cache_bytes - sum(n for _, n in free4)
     # ---- bank 7 (WALK): nodes, bbox, collision, anim ------------------
     runs7 = zero_runs(b7, 0x8000, 0x8000, 0xC000)
     freed7 = [(a, n) for a, n in runs7 if a == 0xA5C2 or a == 0xAF21]
     tails7 = [(a, n) for a, n in runs7 if n < 100 and (a & 0xFF) >= 0xB0]
     other7 = [(a, n) for a, n in runs7 if (a, n) not in freed7 + tails7]
-    b7_static = 0x4000 - sum(n for _, n in runs7)
-
+    # as laid out now: page-aligned planes (their tails included), the
+    # freed planes and the other empty runs left out
+    b7_laid = 0x4000 - sum(n for _, n in freed7 + other7)
+    # movement's own: SS_VZ (eye z by subsector), collision index, silent
+    # lines, y cells, ports, collision segs (renderer tables ANIM_CFG,
+    # ANIM_SSMASK, SS_CNT sit between, $B300-$B5FF)
+    move7 = 0x100 + used(b7, 0xAF8A, 0xB300) + used(b7, 0xB600, 0xC000)
     # The second processor's half. (name, kind, bytes, note)
     P = [
         # code
@@ -97,8 +107,10 @@ def main():
         ('driver logic (frame loop, field clock, glue) of DRV', 'code', 400, 'estimate'),
         ('list emitter + Tube send + protocol + start-up', 'code', 1500, 'estimate'),
         # static data
-        ('bank 4 map data (seg headers + DIRs, vertices, recips, TABL0, BPAL)', 'data', b4_static, 'measured'),
-        ('bank 7 map data (nodes, bbox, collision, anim cfg, use / walk lines)', 'data', b7_static, 'measured'),
+        ('bank 4 map data (seg headers + DIRs, vertices, recips, TABL0, LV1, BPAL, use lines)', 'data',
+         b4_static, 'measured'),
+        ('bank 7 map data as laid out (nodes + bbox planes page-aligned, SS heights, anim cfg,'
+         ' collision)', 'data', b7_laid, 'measured'),
         ('clipper data and workspace (CBITS $7000-$78FF: VDESC, VEXPL,'
          ' sincos, FW_TOUCH...; VPTAB)', 'data', 0x900 + S['VPTAB'], 'region'),
         ('ANDY wall tables MANDY', 'data', S['MANDY'], 'map'),
@@ -126,33 +138,17 @@ def main():
     print(f'  usable: {have_safe:,} B keeping the Tube client ($0000-$F7FF), '
           f'{have_max:,} B taking all but its registers')
     print(f'  margin: {have_safe - need:,} B / {have_max - need:,} B')
-    print('\nRECOVERABLE (not counted as free above)')
-    print(f'  bank 7 node-plane page tails: {sum(n for _, n in tails7):,} B in {len(tails7)} runs')
-    print(f'  bank 7 other empty runs (unverified): ' +
-          ', '.join(f'${a:04X}+{n}' for a, n in other7))
-    print(f'  bank 7 freed planes (the Master\'s music stream): ' +
-          ', '.join(f'${a:04X}+{n}' for a, n in freed7))
-    print(f'  bank 4 free: ' + ', '.join(f'${a:04X}+{n}' for a, n in free4))
-    print('\nWAYS TO CLOSE THE GAP (bytes off the second processor)')
-    opts = [
-        ('A', 'movement + collision + use / walk lines run on the host (it keeps'
-         ' the banks): PMOVE/PMH/PMCOR code and bank 7 $AF8A-$BFFF', S['PMOVE'] + S['PMH'] + S['PMCOR'] + 0xC000 - 0xAF8A),
-        ('B', 'billboard objects off the second processor (off on the Master;'
-         ' sprites come back as a host + emitter design): objects.s code, ROM_OBJ, art', 1529 + 604 + 366 + 768),
-        ('C', 'small tables packed into bank 7\'s node-plane page tails and empty'
-         ' runs, and bank 4\'s free top', sum(n for _, n in tails7) + sum(n for _, n in other7)
-         + sum(n for _, n in free4)),
-        ('D', 'the Model B low-RAM legacy ($0800 plot queue page; to verify)', 0x100),
-        ('E', 'the Tube client $F800-$FEF7, overwritten once loaded', have_max - have_safe),
-        ('F', 'fallback: the wall step from a division, not MB6R\'s tables', S['MB6R']),
-        ('G', 'fallback: the plane set-up (sweep, row maths, span set-up) on the'
-         ' host -- it also balances the load', 5000),
-    ]
-    for k, what, n in opts:
-        print(f'  {k} {n:6,d}  {what}')
-    abcde = sum(n for k, _, n in opts if k in 'ABCDE')
-    print(f'  A-E together: {abcde:,} B against a gap of {need - have_safe:,} B: '
-          f'margin {abcde - (need - have_safe):,} B')
+    print('\nA AND C')
+    A = S['PMOVE'] + S['PMH'] + S['PMCOR'] + move7 + move4
+    C = sum(n for _, n in tails7)
+    print(f'  A {A:6,d}  movement, collision, use / walk lines on the host: code '
+          f'{S["PMOVE"] + S["PMH"] + S["PMCOR"]:,}, bank 7 {move7:,}, bank 4 {move4:,}')
+    print(f'  C {C:6,d}  bank 7\'s node and bbox planes packed at their length (194 / 195),'
+          f' not a page each: {len(tails7)} tails')
+    after = need - A - C
+    for nm, have in (('keeping the Tube client', have_safe), ('overwriting it', have_max)):
+        print(f'  after A + C: {after:,} B; {nm}: margin {have - after:,} B')
+    self = dict(need=need, A=A, C=C, after=after, have_safe=have_safe, have_max=have_max)
     print('\nTHE HOST KEEPS: textures + flats (bank 5, 14K), the step 3 drawer and its tables,'
           ' music, gun, panel, HUD, raster split, keyboard')
 

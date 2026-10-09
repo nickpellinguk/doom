@@ -50,30 +50,25 @@ caches, which ship as zeros, from the layout):
 | | bytes |
 |---|---|
 | Code: engine CODE 13,552, clipper 5,432, fill set-up (bank 6 7,255, main 1,635, HAZEL 1,159), movement 1,921, arithmetic 387, driver logic ~400, list emitter + protocol ~1,500 (estimates) | 33,241 |
-| Static data: bank 4 map data 10,450, bank 7 11,150, ANDY wall tables 3,977, wall step tables + part records 5,220, clipper data 2,339, quarter squares 1,536, view tables 755 | 35,427 |
+| Static data: bank 4 map data 10,752, bank 7 13,028 (as laid out: its node and bbox planes a page each), ANDY wall tables 3,977, wall step tables + part records 5,220, clipper data 2,339, quarter squares 1,536, view tables 755 | 37,607 |
 | Workspace: vertex / rotation / projection caches 5,120, plane spans 1,120, fill BSS 405, low RAM 1,792, zero page + stack + WORK 714 | 9,151 |
-| **Total** | **77,819 (76.0K)** |
+| **Total** | **79,999 (78.1K)** |
 
 Usable: 63,488 B keeping the Tube client's RAM ($0000-$F7FF), 65,278 B
-overwriting it once loaded (all but its registers at $FEF8-$FEFF). **Over
-by 14.3K / 12.5K.** The host, by contrast, keeps all four sideways banks
-once the geometry has gone.
+overwriting it once loaded (all but its registers at $FEF8-$FEFF).
 
-Ways to close it (bytes off the second processor):
+**A** (movement, collision and the use / walk lines on the host, which
+keeps the banks; it sends position, angle and the movers with each
+frame): 6,011 B -- the movement code 1,921, bank 7's SS_VZ page,
+collision index, silent lines, y cells, ports and collision segs 3,702,
+bank 4's use vectors and use / walk tables 388. **C** (bank 7's node and
+bbox planes packed at their length, 194 / 195 bytes, rather than a page
+each; they are read with assembled addresses, so a plane that crosses a
+page costs a cycle on some reads): 1,878 B.
 
-| | | bytes |
-|---|---|---|
-| A | movement, collision and the use / walk lines run on the host, which keeps the banks; it sends the position, angle and mover states with each frame | 6,135 |
-| B | billboard objects off the second processor (off on the Master; sprites will need a host + emitter design anyway) | 3,267 |
-| C | small tables packed into bank 7's node-plane page tails and empty runs and bank 4's free top | 3,544 |
-| D | the Model B low-RAM legacy (the $0800 plot queue page; to verify) | 256 |
-| E | the Tube client's RAM, overwritten once loaded | 1,790 |
-| F | fallback: the wall step by division rather than the reciprocal tables (costs second-processor time) | 3,904 |
-| G | fallback: the plane set-up on the host (costs host time; balances the load) | ~5,000 |
-
-A-E together free 14,992 B against the 14,331 B gap: a margin of only
-661 B, with 1.9K of the total still estimates. F or G would give room to
-spare, at a cost in speed on one side or the other.
+**After A + C: 72,110 B -- still 8.6K over (6.8K overwriting the Tube
+client).** (An earlier count had bank 7 already packed and then took C
+off again; corrected here.)
 
 ## 3. The host drawer. — first version done
 
