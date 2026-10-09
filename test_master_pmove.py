@@ -62,5 +62,40 @@ for k, h in enumerate((-7, 0, 7, 14)):
     bad += batch(20 + k, 100, h)
 if 59 in movers:
     mp[movers.index(59)] = (ph(dw.sectors[59][0])) & 0xFF
+
+# the frame's displacement (pm_frame_i, up to pf_move) against
+# colmap.walk_disp: every key combination of forward / back / strafe left
+# (Z) / strafe right (X), every angle, every field count; cold (cache
+# miss) then again (cache hit)
+class _AtMove(Exception):
+    pass
+def _stop(mpu):
+    raise _AtMove
+R.sc.pc_hooks = {sym('pf_move'): _stop, sym('pf_nomove'): _stop}
+PMS = abi.DRV_ORG                         # PM_SCRATCH (pmove.s)
+def s16(a): v = bm[a] | bm[a + 1] << 8; return v - 65536 if v & 0x8000 else v
+dbad = 0
+for bits in range(16):
+    inp = (bits & 3) | (bits & 12) << 2   # b0 b1 fwd/back, b4 b5 strafes
+    for ang in range(64):
+        for f in range(1, 11):
+            want = C.walk_disp(f, bits & 1, bits & 2, ang, bits & 4, bits & 8)
+            bm[PMS + 0x8D] = 0xFF         # pmc_ang: cold
+            for rep in range(2):
+                bm[abi.DV_ANGIDX] = ang
+                bm[PMS + 0x4D:PMS + 0x51] = [0, 0, 0, 0]
+                mpu.a, mpu.x = f, inp
+                try:
+                    R.sc._run(sym('pm_frame_i'))
+                    got = (0, 0)          # returned: pf_none
+                except _AtMove:
+                    got = (s16(PMS + 0x4D), s16(PMS + 0x4F))
+                if got != want:
+                    dbad += 1
+                    if dbad <= 4:
+                        print('  displacement', dict(bits=bits, ang=ang, f=f, rep=rep), 'model', want, '6502', got)
+R.sc.pc_hooks = {}
+print(f'  walk displacement: 16 key sets x 64 angles x 10 field counts x (miss, hit): {dbad} mismatches')
+bad += dbad
 print('MASTERPMOVE: FAIL' if bad else 'MASTERPMOVE: PASS')
 sys.exit(1 if bad else 0)

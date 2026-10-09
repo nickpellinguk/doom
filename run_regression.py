@@ -75,6 +75,8 @@ run('master_tex', ['test_master_tex.py'], lambda o: 'MASTERTEX: PASS' in o)
 run('master_gun', ['test_master_gun.py'], lambda o: 'MASTERGUN: PASS' in o)
 # the divides against Python
 run('master_div', ['test_master_div.py'], lambda o: 'MASTERDIV: PASS' in o)
+# movement: pmove_try and the walk / strafe displacement against colmap
+run('master_pmove', ['test_master_pmove.py'], lambda o: 'MASTERPMOVE: PASS' in o)
 # the music player (master_music.py the spec, src/master/mmusic.s)
 run('master_music', ['test_master_music.py'], lambda o: 'MASTERMUSIC: PASS' in o)
 # BAKED ADDRESSES: a literal address is a copy of a fact. This ratchets: the

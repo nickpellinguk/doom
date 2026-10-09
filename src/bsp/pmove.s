@@ -892,7 +892,8 @@ wo_rts:
 ; (banked) — pm_frame cannot page itself in.
 ;
 ;   in : A = PAL fields elapsed (clamped PM_FCAP), X = input (b0 fwd,
-;        b1 back, b2/b3 turn), DV_ANGIDX / DV_PXF.. (24-bit 8.8
+;        b1 back, b2/b3 turn, b4/b5 strafe left / right), DV_ANGIDX /
+;        DV_PXF.. (24-bit 8.8
 ;        positions), pm_vz.
 ;   out: position + pm_vz updated, PM_TURNREM carried.
 ;
@@ -950,7 +951,8 @@ pm_vy     = PM_SCRATCH+$7D
 pm_axu    = PM_SCRATCH+$83              ; split |fd| work
 pm_ayu    = PM_SCRATCH+$85
 pm_sv     = PM_SCRATCH+$87              ; fallback stash
-pm_bk     = PM_SCRATCH+$89              ; back-key flag (0/1)
+                                        ; (PM_SCRATCH+$89 FREE 2026-10-09: the
+                                        ;  back-key flag; back is +32 now)
 pm_sh     = PM_SCRATCH+$8A              ; shift counter
 pm_bycl0  = PM_SCRATCH+$8B              ; box ymin cell (prescreen,
 pm_bycl1p = PM_SCRATCH+$8C              ;  2026-08-29) / ymax cell + 1
@@ -1041,15 +1043,23 @@ pf_go:
 ; momentum state, fdx/fdy = PF_MOVE[fields] * unit(angidx) * dir — a
 ; pure function of (angidx, fields, keys). Straight-line frames hit
 ; the one-entry cache and skip pmf_unit + both sc16 multiplies.
+; The walk's direction (2026-10-09: Z / X strafe): PF_DIR by fwd | back
+; << 1 | strafe left << 2 | strafe right << 3 (input b0 b1 b4 b5) is the
+; offset from the view angle, $FF = no move (colmap.WALK_DIR).
+   LDA pm_in
+   AND #$30
+   LSR A
+   LSR A
+   STA pm_sh
    LDA pm_in
    AND #3
-   BEQ pf_nm_j                          ; neither key
-   CMP #3
-   BNE pfc_probe                        ; both cancel ->
-pf_nm_j:
+   ORA pm_sh
+   TAY
+   LDA PF_DIR,Y
+   BPL pfc_probe
    JMP pf_nomove                        ;  (cache code pushed it from range)
 pfc_probe:
-   TAY                                  ; Y = key bits (1 or 2)
+   TAY                                  ; Y = direction offset (0..56)
    LDA DV_ANGIDX
    CMP pmc_ang
    BNE pfc_miss
@@ -1078,14 +1088,14 @@ pfc_miss:
    STX pmc_fld
    TYA
    STA pmc_in
-   LSR A                                ; A = 1 or 2 -> b1 (back) to b0
-   AND #1
-   STA pm_bk
    LDA PF_MOVE_L-1,X                    ; the frame's whole displacement
    STA pm_spd                           ; magnitude, by field count
    LDA PF_MOVE_H-1,X
    STA pm_spd+1
-   LDA DV_ANGIDX
+   TYA
+   CLC
+   ADC DV_ANGIDX                        ; the walk's angle: view + offset
+   AND #63                              ;  (back = +32, the exact negation)
    JSR pmf_unit
    LDX #0
 pf_thr:
@@ -1096,9 +1106,7 @@ pf_thr:
    LDA pm_wu,X
    STA pm_umag
    JSR pmf_sc16                         ; (speed*mag)>>8 — pm_ax positive
-   LDA pm_wu+1,X
-   EOR pm_bk                            ; sign = unitneg XOR back
-   AND #1
+   LDA pm_wu+1,X                        ; sign = the unit's
    JSR pmf_negif                        ; (preserves X)
    LDA pm_ax
    STA pm_fdx,X
@@ -1271,6 +1279,8 @@ pt_right:                               ; RIGHT: angidx -= steps
 ; f = 1..PM_FCAP (f = 0 exits early), so both are indexed -1 and carry
 ; no dead row.
 SEG_PMB2
+PF_DIR:                                 ; walk offsets (colmap.WALK_DIR)
+   .byte $FF, 0, 32, $FF, 16, 8, 24, 16, 48, 56, 40, 48, $FF, 0, 32, $FF
 PF_MOVE_L:
    .byte <143, <286, <430, <573, <716, <859, <1002, <1146, <1289, <1432
 SEG_PMB3

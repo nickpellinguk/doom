@@ -213,6 +213,16 @@ async function engineMode() {
     const s3 = st();
     out.walk = [[s2.px, s2.py], [s3.px, s3.py]];
     if (s3.px === s2.px && s3.py === s2.py) fails.push("UP did not move");
+    s.keyDownRaw([1, 6]);                    // Z ($61): strafe left
+    await s.runFrames(200);
+    s.keyUpRaw([1, 6]);
+    await s.runFrames(10);
+    const s4 = st();
+    out.strafe = [[s3.px, s3.py], [s4.px, s4.py]];
+    if (s4.px === s3.px && s4.py === s3.py) fails.push("Z did not strafe");
+    if (s4.ang !== s3.ang) fails.push("Z turned the view");
+    // (its direction is test_master_pmove's: here the pose is against a
+    // wall, so any move slides)
     out.holes = { frames_checked: holeChecked, frames_with_holes: holeFrames, cells: holeCells };
     if (holeChecked < 5) fails.push(`hole check ran on only ${holeChecked} frames`);
     if (holeFrames) fails.push(`engine left ${holeCells} cells undrawn over ${holeFrames} frames`);

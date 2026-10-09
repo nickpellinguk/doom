@@ -1026,24 +1026,43 @@ def wall_project(dx, dy, wall_ang):
     return (-sdx if cn else sdx), (-sdy if sn else sdy)
 
 
-def walk_disp(fields, fwd, back, angidx):
-    """The frame's displacement: a constant-speed step along the view
-    ray, scaled by the field count.  Returns (dx, dy).
+# Walk direction offsets on the 64-step angle grid, by key bits
+# fwd | back << 1 | strafe-left << 2 | strafe-right << 3: opposed keys
+# cancel; None = no move.  Left is +angle (as turn_frame's left), so a
+# left strafe is +16 (90 degrees) and forward-left +8.  The speed is the
+# same in every direction (DOOM's strafe is a little slower and its
+# diagonals faster: one speed keeps the step one table and one unit).
+def _walk_dir(bits):
+    f = (bits & 1) - (bits >> 1 & 1)
+    s = (bits >> 2 & 1) - (bits >> 3 & 1)
+    return {(1, 0): 0, (1, 1): 8, (0, 1): 16, (-1, 1): 24, (-1, 0): 32,
+            (-1, -1): 40, (0, -1): 48, (1, -1): 56}.get((f, s))
 
-    No momentum, no friction and no coasting — releasing the key stops
-    dead.  fwd and back cancel, matching the old thrust gate."""
+
+WALK_DIR = [_walk_dir(b) for b in range(16)]
+
+
+def walk_disp(fields, fwd, back, angidx, sleft=False, sright=False):
+    """The frame's displacement: a constant-speed step along the view
+    ray turned by the walk direction (WALK_DIR: forward, back, the Z / X
+    strafes and their diagonals), scaled by the field count.  Returns
+    (dx, dy).
+
+    No momentum, no friction and no coasting -- releasing the key stops
+    dead.  Opposed keys cancel.  (Back is the unit at +32: the exact
+    negation of forward's on the sign-magnitude grid, as before.)"""
     f = min(fields, MM_FIELDS_CAP)
-    if f == 0 or fwd == back:
+    d = WALK_DIR[int(bool(fwd)) | int(bool(back)) << 1 | int(bool(sleft)) << 2
+                 | int(bool(sright)) << 3]
+    if f == 0 or d is None:
         return 0, 0
     mag = MOVE_TAB[f]
-    cw, cn, sw, sn = _unit8(angidx)
+    cw, cn, sw, sn = _unit8(angidx + d)
     dx, dy = _sc16(mag, cw), _sc16(mag, sw)
     if cn:
         dx = -dx
     if sn:
         dy = -dy
-    if back:
-        dx, dy = -dx, -dy
     return dx, dy
 
 
@@ -1098,7 +1117,7 @@ def _blk_ang(px, py, nx, ny, z_ps, mover_pos):
 
 
 def move_frame(px88, py88, z_ps, angidx, turnrem, fields, fwd, back,
-               left, right, mover_pos):
+               left, right, mover_pos, sleft=False, sright=False):
     """One driver frame: rotate, then walk, with chunked displacement
     and wall projection.  Positions 24-bit 8.8 prescaled center-relative.
 
@@ -1121,7 +1140,7 @@ def move_frame(px88, py88, z_ps, angidx, turnrem, fields, fwd, back,
 
     Returns (px88, py88, z_ps, angidx, turnrem, d_fwd)."""
     angidx, turnrem = turn_frame(angidx, turnrem, left, right, fields)
-    dx, dy = walk_disp(fields, fwd, back, angidx)
+    dx, dy = walk_disp(fields, fwd, back, angidx, sleft, sright)
     if dx == 0 and dy == 0:
         return px88, py88, z_ps, angidx, turnrem, 0
     tdx, tdy = dx, dy                     # the frame's intended move

@@ -1191,6 +1191,30 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7ad. Strafing: Z and X. — DONE.** Z steps left and X right, with the
+view held; with UP or DOWN they make the diagonals. The driver reads the
+two keys (internal $61 and $42) into input bits 4 and 5 beside the
+cursor keys. `colmap.walk_disp` takes the walk's direction from
+`WALK_DIR`, indexed by forward | back << 1 | strafe left << 2 | strafe
+right << 3: an offset on the 64-step angle grid (0 forward, 32 back, 16
+left, 48 right, 8 / 56 / 24 / 40 the diagonals; opposed keys cancel), so
+the frame's step is the unit at view + offset. Left is +angle, the same
+sense as the LEFT turn key. One speed in every direction (DOOM strafes a
+little slower and its diagonals are faster); collision, wall sliding and
+the eye height (7z) are unchanged, since they act on whatever
+displacement the frame makes. Back is now the unit at +32 rather than
+the forward unit negated through `pm_bk`: on the sign-magnitude grid
+these are bit-identical, at every angle and field count. On the 6502,
+`pm_frame_i` looks the offset up in `PF_DIR` (16 B), adds it to
+`DV_ANGIDX` before `pmf_unit`, and caches on the offset instead of the
+key bits; `pm_bk` is gone. CODE +22 B, the driver +28 B (ends $1313).
+*Gates*: `test_master_pmove.py`, now in `run_regression.py`, also runs
+`pm_frame_i` up to the move for all 16 key sets x 64 angles x 10 field
+counts, cache miss then hit, against `walk_disp`: 0 mismatches.
+`test_master_disc.py` holds Z on jsbeeb and checks that the player moves
+and the view doesn't turn. Engine cycles 27,577,771 -> 27,577,006 (code
+moved; rebaselined).
+
 **7ac. Music: the E1M1 tune on the SN76489. — DONE.** The disc plays
 D_E1M1 ("At Doom's Gate") throughout, looping, from the beebtune BASIC
 listing `music/e1m1.bas` (made by `music/beebtune.py` from DOOM1.WAD's lump

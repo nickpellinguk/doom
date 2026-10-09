@@ -14,7 +14,8 @@ The design, memory map and step-by-step history are in
 
 `doom_master.ssd` is the disc. Boot it on a Master 128 (or jsbeeb's Master
 128 model) with SHIFT-BREAK, or `*RUN !BOOT`. Cursor keys turn and walk,
-SPACE opens doors.
+Z and X strafe left and right, SPACE opens doors. The E1M1 music plays
+throughout.
 
 ## Building
 

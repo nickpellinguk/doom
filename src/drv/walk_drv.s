@@ -691,8 +691,9 @@ pq_force:
 ; (IC32 addr 3 low) with DDRA bits 0-6 out; writing a key number to $FE4F
 ; and reading bit 7 back (BIT -> N) gives that key's state directly.
 ; Keys (internal key numbers): $19 LEFT / $79 RIGHT turn, $39 UP / $29
-; DOWN walk. All four are now just INPUT BITS for ENG_PM_FRAME
-;   b0 fwd  b1 back  b2 left  b3 right
+; DOWN walk, $61 Z / $42 X strafe (2026-10-09). All are just INPUT BITS
+; for ENG_PM_FRAME
+;   b0 fwd  b1 back  b2 left  b3 right  b4 strafe left  b5 strafe right
 ; which owns position, rotation, slide and D_FWD. Rotation moved there
 ; (2026-08-22) because only pm_frame knows the field count: stepping
 ; angidx here turned one step per FRAME, i.e. faster the faster the
@@ -730,6 +731,22 @@ ri_nup:
     ORA #2
     TAX
 ri_ndown:
+    LDA #$61
+    STA $FE4F
+    BIT $FE4F
+    BPL ri_nz   ; Z: strafe left
+    TXA
+    ORA #$10
+    TAX
+ri_nz:
+    LDA #$42
+    STA $FE4F
+    BIT $FE4F
+    BPL ri_nx   ; X: strafe right
+    TXA
+    ORA #$20
+    TAX
+ri_nx:
     STX mv_in
     ; SPACE: DOOM 'use' on the press edge (doors, the exit switch)
     LDA #$62
