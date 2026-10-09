@@ -151,10 +151,14 @@ def draw(dl, tex, tparams, flats):
                           & 0xFFFF) >> 8
                     v = (((v >> 8) + dh) & 0xFF) << 8
                 put(y, r['k'], M.wall_pair(left, int(t[(v >> 11) & m, r['cr']])))
+        elif r['kind'] == 'SPAN' and 'far' in r:
+            b = M.FLIP[r['far']] if r['y'] & 1 else r['far']
+            for k in range(r['k0'], r['k1'] + 1):
+                put(r['y'], k, b)
         elif r['kind'] == 'SPAN':
             u, v = r['u0'], r['v0']
             for k in range(r['k0'], r['k1'] + 1):
-                b = r['far'] if 'far' in r else int(flats[r['flat']][v >> 4, u >> 4])
+                b = int(flats[r['flat']][v >> 4, u >> 4])
                 put(r['y'], k, M.FLIP[b] if r['y'] & 1 else b)
                 u, v = (u + r['du']) & 0xFF, (v + r['dv']) & 0xFF
         else:
@@ -176,3 +180,91 @@ def size(dl):
         else:
             b += FILL_B
     return b, n
+
+
+# ---------------------------------------------------------------------------
+# The byte encoding (step 2): what crosses the Tube. A frame is groups,
+# then $00:
+#   WALL  $80 | n-1, tid, k0, then n byte columns k0, k0+1, ...:
+#           y0, y1, cl (| $80: the right strip has its own row), cr,
+#           v0 lo, hi, step lo, hi [, dh0, ddh lo, hi]       (8 or 11 B)
+#   SPAN  $40 | n-1, y, then n spans on line y:
+#           k0, k1, flat, u0, v0, du, dv                       (7 B)
+#           k0, k1, $FF, far byte                              (4 B)
+#   FILL  $01, k, y0, y1, byte  (FLIPped on odd lines iff the sky byte)
+# Groups hold at most 64 entries; a WALL group is one texture over
+# consecutive byte columns, a SPAN group one line.
+# ---------------------------------------------------------------------------
+def encode(dl, fid):
+    """The display list as bytes; fid: flat name -> id."""
+    out = bytearray()
+    walls = [r for r in dl if r['kind'] == 'WALL']
+    i = 0
+    while i < len(walls):
+        j = i + 1
+        while (j < len(walls) and j - i < 64 and walls[j]['tid'] == walls[i]['tid']
+               and walls[j]['k'] == walls[j - 1]['k'] + 1):
+            j += 1
+        out += bytes((0x80 | (j - i - 1), walls[i]['tid'], walls[i]['k']))
+        for r in walls[i:j]:
+            assert r['cl'] < 0x80 and r['cr'] < 0x80
+            out += bytes((r['y0'], r['y1'], r['cl'] | (0 if r['share'] else 0x80), r['cr'],
+                          r['v0'] & 0xFF, r['v0'] >> 8, r['step'] & 0xFF, r['step'] >> 8))
+            if not r['share']:
+                out += bytes((r['dh0'], r['ddh'] & 0xFF, r['ddh'] >> 8))
+        i = j
+    spans = [r for r in dl if r['kind'] == 'SPAN']
+    i = 0
+    while i < len(spans):
+        j = i + 1
+        while j < len(spans) and j - i < 64 and spans[j]['y'] == spans[i]['y']:
+            j += 1
+        out += bytes((0x40 | (j - i - 1), spans[i]['y']))
+        for r in spans[i:j]:
+            if 'far' in r:
+                out += bytes((r['k0'], r['k1'], 0xFF, r['far']))
+            else:
+                out += bytes((r['k0'], r['k1'], fid[r['flat']], r['u0'], r['v0'], r['du'], r['dv']))
+        i = j
+    for r in dl:
+        if r['kind'] == 'FILL':
+            assert r['flip'] == (r['byte'] == M.SKY_BYTE)
+            out += bytes((0x01, r['k'], r['y0'], r['y1'], r['byte']))
+    return bytes(out + b'\0')
+
+
+def decode(b, flat_name):
+    """The display list from its bytes; flat_name: id -> flat name."""
+    dl, p = [], 0
+    while b[p]:
+        op = b[p]
+        if op & 0x80:
+            n, tid, k = (op & 0x3F) + 1, b[p + 1], b[p + 2]
+            p += 3
+            for _ in range(n):
+                r = dict(kind='WALL', k=k, tid=tid, y0=b[p], y1=b[p + 1], cl=b[p + 2] & 0x7F,
+                         cr=b[p + 3], v0=b[p + 4] | b[p + 5] << 8, step=b[p + 6] | b[p + 7] << 8,
+                         share=not b[p + 2] & 0x80)
+                p += 8
+                if not r['share']:
+                    r['dh0'], r['ddh'] = b[p], b[p + 1] | b[p + 2] << 8
+                    p += 3
+                dl.append(r)
+                k += 1
+        elif op & 0x40:
+            n, y = (op & 0x3F) + 1, b[p + 1]
+            p += 2
+            for _ in range(n):
+                r = dict(kind='SPAN', y=y, k0=b[p], k1=b[p + 1])
+                if b[p + 2] == 0xFF:
+                    r['far'] = b[p + 3]
+                    p += 4
+                else:
+                    r.update(flat=flat_name[b[p + 2]], u0=b[p + 3], v0=b[p + 4], du=b[p + 5], dv=b[p + 6])
+                    p += 7
+                dl.append(r)
+        else:
+            dl.append(dict(kind='FILL', k=b[p + 1], y0=b[p + 2], y1=b[p + 3], byte=b[p + 4],
+                           flip=b[p + 4] == M.SKY_BYTE))
+            p += 5
+    return dl

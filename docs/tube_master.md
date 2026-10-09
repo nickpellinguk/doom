@@ -30,14 +30,78 @@ the host only draws it, one frame behind, while the next is computed.
 1. **The display list, in the Python models. — DONE.** Define it on the
    spec models; a host-side model draws a frame from the list alone,
    byte for byte the Master's frame.
-2. **Measure.** The list's size per frame over the poses and a compact
-   encoding; the Tube's transfer cost on jsbeeb (65C102 second
-   processor); the host's drawing cycles from the list. Go / no-go.
+2. **Measure. — DONE: go.** The list's size per frame over the poses and
+   a compact encoding; the Tube's transfer cost on jsbeeb (65C102 second
+   processor); the host's drawing cycles from the list.
 3. **The host drawer** in 6502: the existing inner loops fed from the
    list, gated against `tube_dl.draw`.
 4. **The second processor**: the engine and the fill's set-up relinked
    flat for the 64K map, emitting the list; the two halves joined over
    the Tube.
+
+## 2. Measure. — DONE: go
+
+**The encoding** (`tube_dl.encode` / `decode`, documented there): WALL
+records grouped by texture over consecutive byte columns (a 3-byte group
+header, then 8 bytes a column, 11 with its own right row; the texture
+column's spare bit carries the flag), SPANs grouped by line (2-byte
+header, 7 bytes a span, 4 for a far tone), FILL 5 bytes, $00 to end. The
+gate now also draws every frame from the decoded bytes: byte-exact at
+all 35 poses. Mean 2,278 B a frame over the 35, worst 5,132 B (2,161 B
+over the 24 baseline poses). 45% of span lines are one of a matching pair
+(the same span on both lines of a line pair, as the Master draws them):
+a pair flag would take the mean to about 1,950 B.
+
+**The Tube** (`tools/tube_bench.mjs`, jsbeeb's Master 128 with its 65C102,
+both CPUs taken over, interrupts off): the second processor writes 4,096
+bytes through register 1 (24-byte FIFO, parasite to host; it never
+interrupts the host) while the host reads them, polled. Host: **20.04
+cycles a byte for a read-and-store loop** (BIT 4, BPL 2, LDA 4, STA abs,Y
+5, INY 2, BNE 3): the Tube is on the 2MHz bus, no stretching, and the
+read itself is **10 cycles** (BIT, BPL, LDA). Slowing the second processor
+by 80 of its cycles a byte gives 66.0 host cycles a byte at 3MHz and 49.5
+at 4MHz, exactly its clock, so the measure is sound. jsbeeb fits the 4MHz
+Master Turbo 65C102; the bench scales it to the 3MHz Second Processor.
+The list costs the host about 22K cycles a frame on average, 51K at
+worst: under 2% of today's frame.
+
+**The split frame** (`tools/tube_estimate.py`, the 24 baseline poses). The
+host is priced at the Master's documented loop costs (a wall line pair
+69 cycles with its own right row, +8 a character row, 52 shared; a plane
+byte 58 for a matching line pair, 35 for a line alone; far tone 8 and fill
+8 a line), each record's set-up (WALL 60, SPAN 50, FILL 30), 10 cycles a
+list byte and 10K a frame for the rest. The second processor gets
+today's measured frame less those loops, plus 12 of its cycles a list
+byte to emit it. Means:
+
+| | cycles a frame | ms |
+|---|---|---|
+| Today, one 2MHz CPU | 1,149,042 | 575 (1.7 fps) |
+| Host: drawing loops 219,034 + set-up, list, frame | 262,591 | 131 |
+| Second processor, today's frame less the loops + emitting | 955,942 | 319 at 3MHz, 239 at 4MHz |
+| **Split, pipelined (the longer side)** | | **319 (3.1 fps) at 3MHz, 239 (4.2 fps) at 4MHz** |
+
+Per pose the speed-up is 1.6-2.1x at 3MHz and 2.1-2.8x at 4MHz; the
+heaviest pose (1046.7, -3090.4, 157) goes from 1,320 ms to 812 / 609 ms.
+
+**Verdict: go.** The Tube is not the limit (2% of the host). The second
+processor is: it carries 80% of the work and the host idles about 60% of
+each frame. So:
+
+- *Balance.* Give the host back some set-up that is cheap to describe in
+  the list -- e.g. the plane rows' maths (`pl_row` ~1.3K a row) or the
+  per-span u/v set-up -- until the two sides meet: balanced, a frame is
+  the whole work over both clocks, about 245 ms at 3MHz (2.3x) and about
+  205 ms at 4MHz (2.8x).
+- *The second processor's own speed* now sets the frame rate: its flat
+  64K drops the bank paging and frees table space, so its maths (the
+  BSP walk, the clipper, the wall and plane set-up) is where step 4's
+  optimisation goes.
+- *Pair spans* in the encoding (one record for a line pair's matching
+  spans): fewer bytes and records.
+
+The loop costs are estimates from the Master's loops; step 3 measures the
+host drawer itself.
 
 ## 1. The display list. — DONE
 
