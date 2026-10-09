@@ -1191,6 +1191,30 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
 
+**7z. Movement: the eye height from four half-box probes. — DONE.** Walking
+into room 24's narrow stair flight (west of the start: a 64-unit strip of
+16-unit steps with room floor either side) off its centre line, the player
+stuck at the first step -- long-standing, the build before 7x does the
+same. DOOM stands the player on the highest floor under the whole 32-unit
+box (tmfloorz); `pmove` used the centre's subsector, so with the box over
+step 1 but the centre still over the room the eye stayed at room height,
+and the next move met step 2's 32-unit side from too low. Now the eye
+height is the max over the centre and four probes 12 units out on both
+axes (`colmap.dest_check` CORNER_OFFS; `pm_corners`, 253 B at main
+$6D38, segment PMCOR in the clipper's CBITS slack; scratch PM_SCRATCH+$A0):
+a probe over a lift takes its live floor + 5, anything else its static
+SS_VZ; a door's passability stays the centre's test. 12 is Eben's middle
+ground: +-8 left a stuck band 6-14 units beside the flight, the full 16
+removes it but lifts a player walking right alongside; 12 leaves a 3-unit
+band (13-15 units out). The fast commit (box crosses no sector line) stays
+valid: the probes are inside the box. Gates: `test_master_pmove.py` (new)
+locksteps pmove_try against colmap.try_move -- 800 random moves, room 24
+and the playable area, and around lift 59 at four heights: 0 mismatches
+(20 with the model's probes off, so it sees them). jsbeeb: the four
+off-centre approaches that stuck now climb or slide off the flight's side;
+the straight climb and the helmet alcove are unchanged. Render cycles
+unchanged (-0.01%, code shifted).
+
 **7y. Floor and ceiling boundaries at equal heights. — DONE.** With the
 nukage room's lift (sector 59) lowered to -48, level with the nukage
 (NUKAGE3), its floor (FLOOR4_8) painted over the nearer nukage floor. Two

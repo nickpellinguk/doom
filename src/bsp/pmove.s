@@ -2121,6 +2121,7 @@ pt_static:
    LDA SS_VZ_BASE,X
    STA pm_dvz
 pt_step:
+   JSR pm_corners                       ; dvz = max(dvz, the 4 box probes)
 ; crossed-port floors bind: dvz = max(dvz, tm_ob) — DOOM's tmfloorz
    LDA pm_tmob
    SEC
@@ -2177,4 +2178,131 @@ pm_col_lo:
 pm_col_hi:
    LDA #35
    RTS
+.endscope
+
+; ============================================================================
+; pm_corners (2026-10-09; colmap.dest_check's CORNER_OFFS): pm_dvz =
+; max(pm_dvz, eye height over each of four probes 12 units out on both
+; axes) -- DOOM's tmfloorz (the highest floor under the box), short of
+; the full 16 so a player brushing a step isn't lifted onto it. A probe
+; over a lift takes its live floor + 5; anything else (doors included)
+; its static SS_VZ. BANK_WALK paged (pm_find_ss). The candidate's raws
+; and tie-broken doubled raws are offset in place and restored; the
+; fractions (PM_FXW) are unchanged by an integer offset.
+; ============================================================================
+pmc_sx    = PM_SCRATCH+$A0              ; saved pxraw lo/hi, pyraw lo/hi
+pmc_s2    = PM_SCRATCH+$A4              ; saved px2 lo/hi, py2 lo/hi
+pmc_k     = PM_SCRATCH+$A8              ; probe index 3..0
+PMC_OFF   = 12
+
+.segment "PMCOR"
+.scope
+::pm_corners:
+   LDA zp_br_pxraw_l
+   STA pmc_sx
+   LDA zp_br_pxraw_h
+   STA pmc_sx+1
+   LDA zp_br_pyraw_l
+   STA pmc_sx+2
+   LDA zp_br_pyraw_h
+   STA pmc_sx+3
+   LDA zp_br_px2_l
+   STA pmc_s2
+   LDA zp_br_px2_h
+   STA pmc_s2+1
+   LDA zp_br_py2_l
+   STA pmc_s2+2
+   LDA zp_br_py2_h
+   STA pmc_s2+3
+   LDA #3
+   STA pmc_k
+pc_lp:
+   LDX pmc_k
+   LDA pmc_dx,X                         ; raw x = saved + dx (s8)
+   CLC
+   ADC pmc_sx
+   STA zp_br_pxraw_l
+   LDA pmc_dxh,X
+   ADC pmc_sx+1
+   STA zp_br_pxraw_h
+   LDA pmc_dy,X                         ; raw y = saved + dy
+   CLC
+   ADC pmc_sx+2
+   STA zp_br_pyraw_l
+   LDA pmc_dyh,X
+   ADC pmc_sx+3
+   STA zp_br_pyraw_h
+   LDA pmc_dx,X                         ; doubled: saved2 + 2 dx
+   ASL A
+   CLC
+   ADC pmc_s2
+   STA zp_br_px2_l
+   LDA pmc_dxh,X                        ; (|2 dx| < 128: hi = the sign)
+   ADC pmc_s2+1
+   STA zp_br_px2_h
+   LDA pmc_dy,X
+   ASL A
+   CLC
+   ADC pmc_s2+2
+   STA zp_br_py2_l
+   LDA pmc_dyh,X
+   ADC pmc_s2+3
+   STA zp_br_py2_h
+   JSR pm_find_ss                       ; X = the probe's subsector
+   TXA
+   LDY #0
+pc_mv:
+   CMP MV_SS_ID,Y
+   BEQ pc_mvhit
+   INY
+   CPY #8
+   BNE pc_mv
+pc_static:
+   LDA SS_VZ_BASE,X
+   BRA pc_max
+pc_mvhit:
+   LDA MV_SS_INFO,Y
+   BMI pc_static                        ; a door: its static floor
+   AND #$3F                             ; lift idx -> live pos_hi + 5
+   STA pmc_k+1
+   ASL A
+   CLC
+   ADC pmc_k+1
+   TAY
+   LDA ANIM_WS+1,Y
+   CLC
+   ADC #5
+pc_max:
+   STA pmc_k+1                          ; dvz = max(dvz, vz) (small: the
+   SEC                                  ;  SBC sign is exact, as pt_step)
+   SBC pm_dvz
+   BMI pc_next
+   LDA pmc_k+1
+   STA pm_dvz
+pc_next:
+   DEC pmc_k
+   BMI pc_done
+   JMP pc_lp
+pc_done:
+   LDA pmc_sx
+   STA zp_br_pxraw_l
+   LDA pmc_sx+1
+   STA zp_br_pxraw_h
+   LDA pmc_sx+2
+   STA zp_br_pyraw_l
+   LDA pmc_sx+3
+   STA zp_br_pyraw_h
+   LDA pmc_s2
+   STA zp_br_px2_l
+   LDA pmc_s2+1
+   STA zp_br_px2_h
+   LDA pmc_s2+2
+   STA zp_br_py2_l
+   LDA pmc_s2+3
+   STA zp_br_py2_h
+   RTS
+pmc_dx:  .byte <-PMC_OFF, <PMC_OFF, <-PMC_OFF, <PMC_OFF
+pmc_dxh: .byte $FF, $00, $FF, $00
+pmc_dy:  .byte <-PMC_OFF, <-PMC_OFF, <PMC_OFF, <PMC_OFF
+pmc_dyh: .byte $FF, $FF, $00, $00
 .endscope

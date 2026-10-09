@@ -829,9 +829,35 @@ def dest_check(rx, ry, z_ps, mover_pos, fx=0, fy=0):
     else:
         vz = m['ss_vz'][ss]
     svz = vz - (256 if vz >= 128 else 0)
+    # HALF-BOX PROBES (2026-10-09, pm_corners): DOOM stands the player on
+    # the highest floor under the whole 32-unit box (tmfloorz). The centre
+    # alone left the eye at room height while the box straddled the first
+    # stair of room 24's narrow flight, and the next move met the second
+    # step's 32-unit side from too low: stuck. Four probes 12 units out
+    # along both axes (3/4 of the radius: Eben's middle ground between
+    # +-8, which left a 9-unit stuck band, and DOOM's full box) leave a
+    # 3-unit band and don't lift a player merely brushing a step.
+    for dx, dy in CORNER_OFFS:
+        svz = max(svz, _point_vz(m, find_ss(rx + dx, ry + dy, fx, fy), mover_pos))
     if svz - z_ps > STEP_PS:
         return False, z_ps
     return True, svz
+
+
+CORNER_OFFS = ((-12, -12), (12, -12), (-12, 12), (12, 12))
+
+
+def _point_vz(m, ss, mover_pos):
+    """Eye height (prescaled s8) over subsector ss for a probe: a lift's
+    live floor + EYE_PS, else its static SS_VZ (a door's floor is static;
+    passability is the centre's test)."""
+    info = m['ss_info'][ss]
+    if info != 0xFF and not info & 0x80:
+        mi = info & 0x3F
+        pos = mover_pos[mi] - (256 if mover_pos[mi] >= 128 else 0)
+        return pos + EYE_PS
+    vz = m['ss_vz'][ss]
+    return vz - (256 if vz >= 128 else 0)
 
 
 def try_move(px, py, nx, ny, z_ps, mover_pos, fx=0, fy=0):
