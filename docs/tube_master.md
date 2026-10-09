@@ -397,15 +397,55 @@ What it says:
 - **The link itself is cheap:** sending and taking bytes cost the second
   processor 7-9%, and the host waits to send only on the slower one.
 - **The drawer is the largest single cost.** It takes about 400K host
-  cycles a frame on a 1.6-1.8K list, against the 221K that
-  `test_tube_hreq.py` measures over the regression poses. The views here
-  fill more of the screen with cells, which is what the drawer pays for,
-  not list bytes. Beyond about 3MHz, it alone sets the frame rate.
+  cycles a frame, as it does over the regression poses (386K; see H4e).
+  Beyond about 3MHz, it alone sets the frame rate.
 
 So the next steps, in order of payoff: the host drawer (both speeds; the
 only lever at 4MHz), then the fill (at 3MHz). Letting the server start
 the next frame before the host has drained the last list would need a
 third list buffer; it gains nothing while the host is the slower side.
+
+## H4e. The host drawer against the Master's own writers. — MEASURED
+
+On `tools/master_profile.py`'s 20 on-map poses, the Master-only fill's
+screen-writing loops against the host drawer (`hd_frame`) drawing the
+same frames from their lists, profiled by label in the engine link
+(py65). The cells are the same: a frame has 5,616 wall byte-lines, 2,913
+span byte-lines and 173 fill byte-lines on average.
+
+| A frame | Master-only | Host drawer |
+|---|---|---|
+| Wall texel loops | 210K (37 a byte-line) | 200K (36) |
+| Span loops | 88K (30 a byte-line) | 96K (33) |
+| Solid fills | 3K | 4K |
+| **Writing the screen** | **301K** | **300K** |
+| Per wall column: reading its entry, the column's address | (in the 640K below) | 52K |
+| Per span: reading it, patching the loop | (in the 640K below) | 29K |
+| Cell pointers, next row, dispatch, the rest | | 41K |
+| Set-up the Master does and the server now does | ~640K | - |
+| **Total** | 941K of a 1,239K frame | **422K** |
+
+- **The inner loops are at parity.** The Master's wall bodies are
+  unrolled a character row at a time and step two strips' v; the
+  drawer's loop is rolled, but its shared-row case reads one v. Both come
+  to about 36 cycles a wall byte-line. The drawer's span loop is about
+  10% slower than the Master's Duff's-device bodies (73 against 58
+  cycles a line pair: its loop count, and U and V reloaded each byte).
+- **The drawer's own cost is the list's decoding: 122K, 29% of it.** Each
+  wall column reads 8 or 11 bytes off register 1, each with a status
+  poll (about 10 cycles a byte), then finds its texture column (`colad`)
+  and screen cell (`cellptr`). That is what replaced the Master's ~640K
+  of set-up (wall v and steps per column, the column walk, plane rows,
+  their arithmetic), which the second processor now does.
+- So the host draws a frame in 422K where the Master-only build spends
+  1,239K, and its engine and sending add about 165K: about 590K, under
+  half the Master-only frame. Speeding the drawer means the decoding (the
+  status polls, per-column addressing) and unrolling its loops as the
+  Master's are; the writes themselves are no slower than the Master's.
+
+`test_tube_hreq.py` reported the drawer at 221K until this: it timed
+`hd_frame` from the engine's cycle count, which `_run` had reset. It now
+reads 386K over its 35 poses, the host's frame 550K with the engine.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

@@ -135,9 +135,8 @@ def main():
         # served list into the back buffer: the Master's frame again
         r.bm.__class__ = ListMem
         r.bm.dl, r.bm.lp = tube_dl.encode(S.dl, S.fid), 0
-        c0 = r.sc.mpu.processorCycles
-        r.sc._run(hd)
-        dcyc.append(r.sc.mpu.processorCycles - c0)
+        r.sc._run(hd)                           # (_run counts from 0)
+        dcyc.append(r.sc.mpu.processorCycles)
         r.bm.__class__ = TubeMem
         if r.bm.lp != len(r.bm.dl):
             why.append(f'hd_frame read {r.bm.lp} of {len(r.bm.dl)} list bytes')
