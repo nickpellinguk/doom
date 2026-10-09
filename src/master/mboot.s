@@ -24,7 +24,8 @@
 ;      call too); the panel shadow $7A00 -> $5800 (MPANEL, the one panel
 ;      both buffers show: buffer 0 runs into it, buffer 1 wraps onto it
 ;      at the 10K screen size; the parked ANDY block covered it), gun_b0
-;      $7400 -> $3000 (MGUN0, which parked HAZEL covered); JMP DRV_ORG.
+;      $7400 -> $3000 (MGUN0, which parked HAZEL covered); the music
+;      player bank 5 $B800 -> $0300-$07FF (MUS_ORG); JMP DRV_ORG.
 ;      No OS call after this point.
 ;
 ; (The first cut staged MHAZEL at $3000 AFTER the engine image was in
@@ -246,6 +247,14 @@ stub:
         lda $FE34
         and #$FB
         sta $FE34
+        lda #5                          ; the music player (step 7ac): bank 5
+        sta $FE30                       ;  MUS_STAGE -> MUS_ORG, pages 3..7,
+        lda #>MUS_STAGE                 ;  the OS's until its last call
+        sta $81
+        lda #>MUS_ORG
+        sta $83
+        ldx #5
+        jsr s_copy
         stz $FE30                       ; ANDY out (the engine pages its own)
         jmp DRV_ORG                     ; -> driver (SEI held; no OS from here)
 s_copy:                                 ; X pages ($80) -> ($82), Y = 0

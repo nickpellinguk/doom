@@ -122,9 +122,9 @@ and ceilings write `FLIP[B]` on the odd line (step 6d).
 |---|---|
 | Main RAM | All engine code; per-frame caches and workspaces moved out of the banks as needed |
 | Shadow RAM (20K) | Step 7w: `gun_b0` (the buffer-0 gun overlay, 1,195 B since 7ab, run with ACCCON X set) &3000–&34AA, free to &35FF (341 B); buffer 0's view &3600–&57FF; the one control panel &5800–&5DFF (character rows 17–19 of both buffers: buffer 0 runs into it, buffer 1 wraps onto it at the 10K screen size); buffer 1's view &5E00–&7FFF |
-| Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): free but for the MOS IRQ1V ($0204), which points at the raster-split handler |
-| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C69F (with `pc_lv`, step 7n; free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D647 (with `cyc_tab`, step 6e; 7c, 7d), **free $D648–$D7FF (440 B)**; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
-| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8F3F: the wall step's reciprocal tables and per-part m / table page (step 7v; free since 7m, textures and flats to $82FF before); bank 6 $9000–$B8D9 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b1`, steps 6f, 7b; `gun_b0` in shadow since 7w), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free $B360–$B8FF (1,440 B, step 7w: `gun_b0` moved to shadow); bank 6 tail $B900–$BE23: wall part records + texture constants |
+| Main $0200–$07FF | Model B: the quarter-square quad. Master (step 6c): page 2 keeps the MOS IRQ1V ($0204), which points at the raster-split handler; step 7ac: the music player (`MUS_ORG`, 1,201 B) $0300–$07B0, copied from bank 5 by the boot stub |
+| HAZEL (8K) | Boot pattern + HUD at $C000–$C27F; span snapshot, plane spans + row cache $C280–$C69F (with `pc_lv`, step 7n; free to $C7FF); the fill's hot code and tables (x16 tables `hi16` / `lo16` and the floor cross-hatch `flip`, page-aligned at $C800, $C900, $CA00; texel and span loops, `mf_frame`, sky map, the raster-split handler) $C800–$D685 (with `cyc_tab`, step 6e; 7c, 7d; `HZM` ends at $D6FF since 7ac), **free $D686–$D6FF (122 B)**; the music ring (`MUS_RING`, step 7ac) $D700–$D7FF; the quarter-square quad + mirrors (`sqr_quad_m`, MSQR, step 6c) $D800–$DDFF; BSS $DE00–$DFFF |
+| Sideways RAM banks 4–7 (64K) | Level data and tables (~24K), wall column data (8.75K, step 7m), flats (5.25K), all in bank 5 to $B7FF; bank 6 $8000–$8F3F: the wall step's reciprocal tables and per-part m / table page (step 7v; free since 7m, textures and flats to $82FF before); bank 6 $9000–$B8D9 (step 7i: was from $9500): the fill's cold set-up code (steps 5f–5h; `tx_seg` since 7i), the gun overlay (`gun_draw` + the compiled `gun_b1`, steps 6f, 7b; `gun_b0` in shadow since 7w), `rm_patch` (7c), `mul16` (7k) and the unrolled divides `dq_core` (7f) and `dv8f` / `d8_fast` (7h), the far-tone span loops and `far_dm` / `far_tone` (7n), free $B360–$B8FF (1,440 B, step 7w: `gun_b0` moved to shadow); bank 6 tail $B900–$BE23: wall part records + texture constants; step 7ac: bank 5 $B800–$BCB0 the music player's boot image, bank 7 $A600–$AF20 the tune stream |
 | ANDY (4K) | Per-seg wall tables (slot planes, dressings, merged-seg pieces) + per-subsector flats, 3.9K |
 | Main $7A00–$7E1F | Texture column index bytes (996 B) |
 | Main $7E20–$7F57 | The fill's multiply and divide routines (step 5c; `pl_hq` / `pl_dh` / `pl_dhn`, step 7o; `mf_mul8` removed, 7p) |
@@ -1190,6 +1190,65 @@ step close to it, the extrapolated step up to ~4x more (e.g. 70 -> 16,
 7e reuse when Br - Tr = B - T still skips the division). Gate 94.82%
 within one texel (94.79%); 18 poses 22,232,296 -> 22,398,078 (+0.75%),
 byte-exact. Bank 6 code $9500-$B7FC.
+
+**7ac. Music: the E1M1 tune on the SN76489. — DONE.** The disc plays
+D_E1M1 ("At Doom's Gate") throughout, looping, from the beebtune BASIC
+listing `music/e1m1.bas` (made by `music/beebtune.py` from DOOM1.WAD's lump
+with its defaults: 3 voices + noise, 1,452 events in 34 blocks of 85 steps,
+96 s a loop). `master_music.py` is the spec: `parse()` reads the listing
+itself -- S%, K%, Q%, R%, the alphabet, the ENVELOPEs and the DATA (lengths,
+play order, block texts) -- so a re-made or edited .bas plays with no code
+change; `pack()` turns the blocks into byte tokens (173 distinct events in
+a dictionary, 6 wait sizes, $FF a block end); `Player` is the 6502's
+twin.
+
+- *Timing* is the BASIC player's, exactly: W and Z in 1/256 cs (32 bits),
+  a block starting at Z (Z += K% x S% a block, Z -= R% when the order
+  wraps), each wait adding D x S% to W, a note sounding once TIME >= W DIV
+  256 and never before the note ahead of it. TIME is the raster IRQ's 50 Hz
+  tick (2 cs), so a note is due at tick ceil((W DIV 256) / 2).
+  `basic_events()` runs the listing's own program line for line; the
+  packed tune reproduces its first 4,000 SOUND commands (2.8 loops).
+- *Sound* follows the MOS for what the tune uses: SOUND 1-3 a tone (pitch
+  4 x note: equal-tempered from B2, period 125000 / f), length code 0 a
+  silent note, else envelope 1; SOUND 0 noise, envelope note DIV 8 + 2,
+  control note AND 7. Envelopes are amplitude-only with 1 cs steps
+  (asserted): attack +AA to ALA, decay +AD down to ALD, sustain +AS, and
+  release +AR to 0 once the duration (1/20 s units, 255 held) runs out;
+  attenuation 15 - level / 8, written only when it changes. Two steps a
+  tick.
+- *6502* (`src/master/mmusic.s`, 1,201 B resident at main $0300-$07B0):
+  `MUS_TICK`, called from `split_irq @top` (vsync), decodes tokens from the
+  ring, starts the notes now due (a note not yet due waits in the ring),
+  steps the four envelopes and writes the chip; `MUS_REFILL`, at the top
+  of the driver's frame loop, copies tokens from bank 7 into the ring in
+  play order; `MUS_INIT` (driver init, before the split's CLI) silences
+  the chip and fills the ring. The ring is HAZEL $D700-$D7FF (a new
+  `HZR` area; `HZM` ends at $D6FF), seen by both whatever ROMSEL holds:
+  255 tokens are 8.6 s of the tune at its densest, against frames under
+  1 s, so the IRQ never needs a bank. The resident image rides in bank 5
+  at $B800 (after the textures) and the boot stub copies it down after
+  the last OS call; the stream (play order, block addresses, 2,201 B of
+  tokens; 2,337 B) is bank 7 $A600-$AF20, in the planes freed on
+  2026-09-04, below COLIDX_BASE.
+- *Port A*: the chip and the keyboard share the System VIA's port A, so
+  the tick saves DDRA and the port, puts the keyboard on auto-scan (latch
+  bit 3 high: off PA7) while it writes with DDRA $FF, pulses the write
+  enable (latch bit 0) for 8 us a byte, and restores all three: a key scan
+  interrupted between writing a key number and reading bit 7 reads the
+  same key.
+- *Cost* (py65): a tick 772 cycles on average (676 median, 2,325 worst),
+  under 2% of the CPU; a refill 507 cycles (1,532 worst). Engine cycles
+  unchanged (the filler's HAZEL code moved by the IRQ's 3-byte JSR:
+  27,577,867 -> 27,577,771 over 24 poses, rebaselined).
+- *Gates*: `test_master_music.py` (in `run_regression.py`) runs the
+  resident player in py65 against `Player` for 11,000 ticks (2.3 loops)
+  with refills at random frame gaps, some long enough to drain the ring:
+  every tick's chip bytes equal, the port, DDRA and latch as the key scan
+  left them, chip writes only with DDRA $FF and the keyboard off PA7; and
+  the BASIC check above. `test_master_disc.py` captures every byte jsbeeb's
+  SN76489 receives (through the VIA and latch) while the engine renders,
+  turns and walks: 1,028 ticks (20.6 s), 1,668 bytes, all as `Player`.
 
 **7ab. The gun overlay: TRB / TSB and one-byte value steps. — DONE.** The
 compiled overlay (`master_gun.source`) loaded each opaque value with LDA #

@@ -62,3 +62,10 @@ The listing is meant to be edited:
 
 `mountain-king.ssd` and `mountain-king.bas` are a short public-domain example
 (Grieg, "In the Hall of the Mountain King", 1875) made with this tool.
+
+`e1m1.bas` / `e1m1.ssd` are DOOM's E1M1 tune, "At Doom's Gate", made with
+`python3 beebtune.py DOOM1.WAD --lump D_E1M1 -o e1m1`. The Master engine disc
+plays `e1m1.bas` through its own interrupt-driven player
+(`master_music.py`, `src/master/mmusic.s`), which reads the listing's DATA
+and ENVELOPE lines, so an edited or re-made `e1m1.bas` is what the disc
+plays next time it is built.

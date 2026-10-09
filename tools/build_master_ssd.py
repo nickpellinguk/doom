@@ -11,8 +11,9 @@ in solid shades (src/master/mfill.s).
 Files on the disc (DFS, boot option *RUN):
   !BOOT   loader, $1900 (src/master/mboot.s)
   MBANK4  bank A image (seg headers, verts, recips, ...)  staged $3000
-  MBANK7  bank B image (nodes, bbox, collision, anim)     staged $3000
-  MBANK5  wall textures                                   staged $3000
+  MBANK7  bank B image (nodes, bbox, collision, anim), the
+          music stream at $A600                           staged $3000
+  MBANK5  wall textures; the music player at $B800        staged $3000
   MBANK6  wall textures, flats, the mb6 part records      staged $3000
   MMAIN   engine MAIN $0F00-$57FF (driver + code)         loads in place
   MCBITS  bank-C content laid linear, $5800-$79FF, and
@@ -106,10 +107,26 @@ def engine_images():
     return b4, b7, ti['b5'], b6, ti['andy'], main, cbits, hzeng
 
 
+def music(b5, b7):
+    """The music (step 7ac, master_music.py): the resident player into bank
+    5 at MUS_STAGE (the boot stub copies it to MUS_ORG), the tune stream
+    into bank 7 at MUS_STREAM; both regions must be empty."""
+    import master_music
+    res, stream, _, _ = master_music.build()
+
+    def put(img, at, data, what):
+        o = at - 0x8000
+        assert not any(img[o:o + len(data)]), f'{what}: ${at:04X} is not free'
+        return img[:o] + data + img[o + len(data):]
+    return (put(b5, abi.MUS_STAGE, res, 'music player'),
+            put(b7, abi.MUS_STREAM, stream, 'music stream'))
+
+
 def build():
     os.makedirs(OUT, exist_ok=True)
     hazel_tables()
     b4, b7, b5, b6, andy, main, cbits, hzeng = engine_images()
+    b5, b7 = music(b5, b7)
     hz = asm('mhazel')
     assert len(hz) <= 0x280, 'boot HAZEL block runs into the plane caches at $C280'
     hz = hz.ljust(0x800, b'\0') + hzeng            # $C000 pattern/HUD | $C800 filler

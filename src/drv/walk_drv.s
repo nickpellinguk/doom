@@ -351,6 +351,8 @@ vxinit:
                                     ; ok_flip: that toggles, and OFF is
                                     ; already the default -- it turned
                                     ; them ON: holes the filler skipped)
+    JSR MUS_INIT                    ; MASTER: the music (step 7ac): silence,
+                                    ; rewind, fill the ring (pages WALK)
     JSR split_init                  ; MASTER: the Mode 2 / Mode 1 panel
                                     ; raster split (its IRQ; CLI)
 ; ---------------------------------------------------------------------------
@@ -377,6 +379,9 @@ vxinit:
 ;   flip_sched                  show it; beam-safe clear of the other buffer
 ; ---------------------------------------------------------------------------
 frame:
+    JSR MUS_REFILL                                  ; the music ring topped up
+                                                    ; (pages WALK; mv_frame
+                                                    ; pages it anyway)
     JSR read_input
     JSR mv_frame                                    ; field clock -> rotate +
                                                     ; walk (pages WALK)

@@ -174,6 +174,10 @@ sn_bden:      .res 32                   ;  (POOL_BXLO / BDEN; 2026-10-08 -- read
 .segment "MSQR"                         ; HAZEL $D800 (engine_master.cfg HZQ)
 sqr_quad_m: .res $600                   ; SQR_MIR_LO on the Master (abi.inc)
 
+.segment "MUSRING"                      ; HAZEL $D700 (HZR): the music ring,
+mus_ring_m: .res $100                   ;  MUS_RING (src/master/mmusic.s)
+.assert mus_ring_m = MUS_RING, error, "MUS_RING is HZR's page"
+
 .segment "MFILLBSS"
 zw_dl:   .res 1                         ; step 7t: zw_dh's fraction byte
 zw_ddl:  .res 1                         ;  and zw_ddh's
@@ -1485,6 +1489,8 @@ split_irq:
    STA $FE66
    LDA #>SPLIT_PV
    STA $FE67
+   JSR MUS_TICK                         ; the music's 50 Hz tick (step 7ac,
+                                        ;  main $0300: X Y kept)
 @ack:
    LDA #$40
    STA $FE6D                            ; T1's flag down

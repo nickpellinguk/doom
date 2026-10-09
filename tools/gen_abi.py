@@ -35,6 +35,13 @@ ABI = [
     ('MHZ_PATTERN',    0xC000, 'MASTER build: HAZEL entry -- draw the step-1 test pattern into both buffers (caller sets ACCCON D|X|Y)'),
     ('MHZ_HUD',        0xC003, 'MASTER build: HAZEL entry -- draw the cycles HUD into the back buffer (A = buffer page hi; args at MHZ_ARGS; caller sets ACCCON D|X|Y)'),
     ('MHZ_ARGS',       0xC006, 'MASTER build: HUD argument block in HAZEL: +0/+1 frame time in 1MHz ticks (lo/hi), +2 fields. Written by the driver with HAZEL paged in, so HAZEL code never reads main RAM above $3000 (X is set while it draws)'),
+    ('MUS_RING',       0xD700, 'MASTER build: the music ring (step 7ac): HAZEL $D700-$D7FF (engine_master.cfg HZR), 256 B of 6-byte note records, written by mus_refill (main loop), read by mus_tick (50 Hz IRQ)'),
+    ('MUS_ORG',        0x0300, 'MASTER build: the resident music player $0300-$07FF (master_music.py, src/master/mmusic.s; main $0300-$07FF is free on the Master once the OS is done): copied from MUS_STAGE by the boot stub after the last OS call'),
+    ('MUS_INIT',       'MUS_ORG+0', 'music: silence the chip, rewind the tune, first refill (SEI held; pages BANK_WALK)'),
+    ('MUS_REFILL',     'MUS_ORG+3', 'music: decode the tune into the ring while a record fits (main loop; pages BANK_WALK; A X Y clobbered)'),
+    ('MUS_TICK',       'MUS_ORG+6', 'music: the 50 Hz tick, from split_irq @top (A free; X Y kept)'),
+    ('MUS_STAGE',      0xB800, 'MASTER build: bank 5 home of the resident music image ($B800-$BCFF, after the wall textures), copied to MUS_ORG at boot'),
+    ('MUS_STREAM',     0xA600, 'MASTER build: the tune stream in BANK_WALK (play order, block offsets, token blocks), in the freed corner-memo / extent-cache planes, to COLIDX_BASE'),
     ('BANK_L2',        7, 'legacy alias for BANK_WALK'),
     ('BANK_WALK',      7, 'sideways bank B: node SoA, L8/AE/VATOX, bbox, COLIDX, ANIM CFG — held for the whole BSP walk. FREED 2026-09-04: the extent cache psi planes $A900-$AEFF + RCACHE_STATE $AF00 (137 B), and the corner memo 6 planes $A600-$A8FF (768 B)'),
     # Jump tables are GONE (2026-07-16, forbidden): engine entry points

@@ -164,6 +164,24 @@ async function engineMode() {
         }
         return false;
     });
+    // the music (step 7ac): every byte the SN76489 itself receives (through
+    // the VIA port and latch), tagged with the music tick it came in (-1:
+    // MUS_INIT), for test_master_disc to hold against master_music.Player
+    const music = { ticks: 0, pokes: [] };
+    let musTick = null;
+    if (A.mus_init !== undefined) {
+        cpu.debugInstruction.add((addr) => {
+            if (addr === A.mus_init) musTick = -1;
+            else if (addr === A.mus_tick && musTick !== null) music.ticks = ++musTick + 1;
+            return false;
+        });
+        const chip = s._soundChip;
+        const poke = chip.poke.bind(chip);
+        chip.poke = (v) => {
+            if (musTick !== null) music.pokes.push([musTick, v]);
+            poke(v);
+        };
+    }
     await s.type("*RUN !BOOT\r");
     // Loading ~76K through the emulated drive takes a while: run until the
     // driver has flipped a few frames (or give up after 6000 fields).
@@ -199,6 +217,11 @@ async function engineMode() {
     if (holeChecked < 5) fails.push(`hole check ran on only ${holeChecked} frames`);
     if (holeFrames) fails.push(`engine left ${holeCells} cells undrawn over ${holeFrames} frames`);
     fs.writeFileSync(path.join(outdir, "engine.png"), await s.screenshotActive({ scale: 1 }));
+    if (A.mus_init !== undefined) {
+        fs.writeFileSync(path.join(outdir, "music.json"), JSON.stringify(music));
+        out.music_ticks = music.ticks;
+        out.music_pokes = music.pokes.length;
+    }
     // the control panel: both buffers' bottom 24 lines, exactly as loaded,
     // after the engine has drawn and flipped many frames over them
     const panel = new Uint8Array(fs.readFileSync(A.panel_bin));
