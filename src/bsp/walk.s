@@ -162,9 +162,15 @@ bif_clr2:
 ; inline each arm directly — see rc_node below.)
 
 ; --- seed: rc_node(ROOT) ---
+.ifdef TUBE
+.import rq_end
+   JSR rf_seed                             ; TUBE: the frame's requests end
+   JMP rq_end
+.else
 .import mf_flush
    JSR rf_seed                             ; MASTER: the walk returns (or
    JMP mf_flush                            ;  unwinds) here; then the frame's
+.endif
 rf_seed:                                   ;  pending plane spans are drawn
    TSX
    STX zp_bsp_stack_sp                     ; unwind target

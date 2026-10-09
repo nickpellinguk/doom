@@ -88,7 +88,10 @@ HZ_PAIR = HZ_LINE / 2                   ; its pair (34); the rows per side
 VIEW_PAIRS = VIEW_LINES / 2             ; line pairs in the view (68)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
-.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame
+.export mf_snap, mf_xt
+.ifndef TUBE
+.export mf_fill, mf_skymap, mf_frame
+.endif
 .ifndef SERVER
 .export split_init, gun_draw
 .else
@@ -107,6 +110,7 @@ HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 .endif
 .ifdef TUBE
 .export rq_frame, rq_fill, rq_end
+.export hi16, flip                      ; (tube/hdraw.s: lsr4 and flip)
 .endif
 
 ; ----------------------------------------------------------------------------
@@ -534,6 +538,7 @@ mf_snap:
 @rts:
    RTS
 
+.ifndef TUBE                            ; (the fill: on the second processor)
 ; ============================================================================
 ; mf_fill: fill what the seg's span updates removed
 ; ============================================================================
@@ -1285,6 +1290,7 @@ run:
    STA r_ye
    ; fall into hz_run
 
+.endif
 .macro HZ_DRIVE S, SIZE
    ; Y = a (the first line's place in its row), hz_n = n lines: rows
    ; r = (a + n - 1) >> 3 after the first. The LAST row first: a temporary
@@ -1522,6 +1528,7 @@ split_irq:
    LDA $FC
    RTI
 
+.ifndef TUBE                            ; (the fill: on the second processor)
 .segment "MB6C"
 ; ============================================================================
 ; hz_run: byte column mf_x >> 2, screen lines [r_ys, r_ye], shade r_part
@@ -1609,6 +1616,7 @@ h2_tab:
 .endrepeat
 .assert h2_t - h2_b0 = 56, error, "h2 bodies must be 7 bytes (hz_x absolute)"
 
+.endif
 .segment "MB6C"
 
 ; ============================================================================
@@ -1642,6 +1650,7 @@ hz_run:
    JMP fs_mark
 .endif
 
+.ifndef TUBE                            ; (the fill: on the second processor)
 ; ============================================================================
 ; STEP 4: WALL TEXTURES (tex_ref.py is the executable spec; master_walls.py
 ; generates every table read here -- ANDY, the bank-6 tail, mtex_ix).
@@ -5881,6 +5890,7 @@ sml_lp:
 
 .include "mfar_tab.s"
 
+.endif
 .ifdef TUBE
 ; ============================================================================
 ; HOST-LED TUBE MASTER (docs/tube_master.md H2): the fill REQUEST in place
@@ -5911,9 +5921,11 @@ rq_frame:                               ;  the sender is in bank 6
    LDA #BANK_WALK
    STA $FE30
    RTS
-rq_end:
-   LDA #0
+rq_end:                                 ; (walk.s: the frame's end, in place
+   LDA #0                               ;  of mf_flush, which leaves WALK paged)
    PUTB
+   LDA #BANK_WALK
+   STA $FE30
    RTS
 
 .segment "MB6C"

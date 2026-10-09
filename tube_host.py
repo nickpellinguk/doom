@@ -56,6 +56,40 @@ def tables(R):
     return '\n'.join(s) + '\n'
 
 
+_MT = None
+
+
+def master_tables(L):
+    """The Master host drawer's tables (src/tube/hdraw.s, MASTER), seeded by
+    symbol L (name -> address): [(address, bytes)]. The same tables as
+    tables() makes for the flat drawer, from the Master build's assets."""
+    global _MT
+    if _MT is None:
+        import textured_ref
+        T = textured_ref.TexturedRef()
+        _MT = T.A.man, MW.Walls(T.dw, T.tex, T.A.man).tparams
+    man, tparams = _MT
+    tex = sorted(man['textures'], key=lambda t: t['id'])
+    assert [t['id'] for t in tex] == list(range(len(tex))) and len(tex) <= 32
+    flats = sorted(man['flats'], key=lambda f: f['id'])
+    assert len(flats) <= 32
+    ix, ixo = [], []
+    for t in tex:
+        ixo.append(len(ix))
+        ix += t['index']
+    assert len(ix) <= 896, 'the column indexes overrun tx_ix'
+    base = L('tx_ix')
+    return [(L('tx_bank'), bytes(t['bank'] for t in tex)),
+            (L('tx_ph'), bytes(t['ptr'] >> 8 for t in tex)),
+            (L('tx_ro'), bytes(t['rowoff'] for t in tex)),
+            (L('tx_rm'), bytes((tparams[t['id']]['th'] - 1) * 8 for t in tex)),
+            (L('tx_ixl'), bytes((base + o) & 0xFF for o in ixo)),
+            (L('tx_ixh'), bytes((base + o) >> 8 for o in ixo)),
+            (L('tx_ix'), bytes(ix)),
+            (L('fl_bank'), bytes(f['bank'] for f in flats)),
+            (L('fl_page'), bytes(f['ptr'] >> 8 for f in flats))]
+
+
 def build(R):
     """(code bytes, labels)."""
     os.makedirs(OUT, exist_ok=True)

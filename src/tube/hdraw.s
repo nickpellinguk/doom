@@ -16,31 +16,59 @@
 ; end) is patched into the loops' operands. hdraw_tab.inc (tube_host.py)
 ; supplies SCREEN, the texture and flat tables, lsr4 and flip.
 
-        .include "hdraw_tab.inc"
+; MASTER (the Tube Master host, docs/tube_master.md H4): assembled into the
+; engine link with TUBE. The code and its tables sit in HAZEL (MFILL); the
+; tables are .res, seeded by symbol (tube_host.master_tables); lsr4 and
+; flip are the fill's own hi16 and flip pages. The screen is the back
+; buffer (DV_BACKHI) in shadow RAM, written with ACCCON X set for the
+; whole list; zero page is the engine's vertex block, seg scratch that is
+; dead between frames (the split IRQ and the music touch none of it).
 
-scr     = $70                           ; screen pointer (page-aligned row)
-v       = $72                           ; a wall's v (5.11); a span's v (4.4)
-vst     = $74                           ; a wall's step a line pair (2 x the
+.ifdef MASTER
+        .setcpu "65C02"
+        .include "../zp.inc"
+        .import hi16, flip
+lsr4    = hi16
+SKY_BYTE = $3D                          ; master_assets.SKY_BYTE (cyan + white)
+PAIR_Y  = $88                           ; tube_dl.PAIR_Y
+ACC_DY  = $09                           ; (master/mfill.s) render-time ACCCON,
+ACC_DXY = $0D                           ;  and with X: the CPU on the shadow
+ZB      = VX1                           ; 26 bytes of scratch, then 2 more
+.export hd_frame
+.export tx_bank, tx_ph, tx_ro, tx_rm, tx_ixl, tx_ixh, tx_ix, fl_bank, fl_page
+.else
+        .include "hdraw_tab.inc"
+ZB      = $70
+.endif
+
+scr     = ZB + $00                      ; screen pointer (page-aligned row)
+v       = ZB + $02                           ; a wall's v (5.11); a span's v (4.4)
+vst     = ZB + $04                           ; a wall's step a line pair (2 x the
                                         ;  list's: (y & ~1) moves by 2)
-dha     = $76                           ; right row delta: hi = dh (5.3)
-ddh     = $78                           ;  and its step a character row
-nl      = $7A                           ; lines in the run
-ln      = $7B                           ; first line (wall, fill), line (span)
-cnt     = $7C                           ; entries left in the group
-kk      = $7D                           ; byte column
-np      = $7E                           ; line pairs left
-tail    = $7F                           ; a last line alone
-tph     = $80                           ; texture ptr hi
-ixp     = $81                           ; 2: the texture's column index
-own     = $83                           ; bit 7: the right strip's own row
-cur     = $84                           ; a fill's byte
-tmp     = $85
-su      = $86                           ; a span's u
-k1      = $87                           ; a span's last byte column
-pair    = $88                           ; b7 pair span, b6 odd line
-slo     = $89                           ; a span line's place in its cell
-spg     = $8A                           ; its screen row's page
-odb     = $8B                           ; a fill's odd-line byte
+dha     = ZB + $06                           ; right row delta: hi = dh (5.3)
+ddh     = ZB + $08                           ;  and its step a character row
+nl      = ZB + $0A                           ; lines in the run
+ln      = ZB + $0B                           ; first line (wall, fill), line (span)
+cnt     = ZB + $0C                           ; entries left in the group
+kk      = ZB + $0D                           ; byte column
+np      = ZB + $0E                           ; line pairs left
+tail    = ZB + $0F                           ; a last line alone
+tph     = ZB + $10                           ; texture ptr hi
+ixp     = ZB + $11                           ; 2: the texture's column index
+own     = ZB + $13                           ; bit 7: the right strip's own row
+cur     = ZB + $14                           ; a fill's byte
+tmp     = ZB + $15
+su      = ZB + $16                           ; a span's u
+k1      = ZB + $17                           ; a span's last byte column
+pair    = ZB + $18                           ; b7 pair span, b6 odd line
+slo     = ZB + $19                           ; a span line's place in its cell
+.ifdef MASTER                           ; (MASTER: zp_tmp0, past VX1's 26)
+spg     = zp_tmp0
+odb     = zp_tmp0 + 1
+.else
+spg     = ZB + $1A                           ; its screen row's page
+odb     = ZB + $1B                      ; a fill's odd-line byte
+.endif
 
 ; one byte off the Tube (register 1, polled)
 .macro GETB
@@ -50,8 +78,20 @@ w:      bit $FEE0
         lda $FEE1
 .endmacro
 
+.ifdef MASTER
+        .segment "MFILL"
+SCRHI   = DV_BACKHI                     ; the back buffer's first page
+hd_frame:
+        lda #ACC_DXY                    ; the shadow buffer, for the list
+        sta $FE34
+        jsr next
+        lda #ACC_DY
+        sta $FE34
+        rts
+.else
         .segment "CODE"
 hd_frame:
+.endif
 next:   GETB
         beq done
         bmi wall
@@ -331,7 +371,11 @@ cellptr:
         and #$FE
         clc
         adc tmp
+.ifdef MASTER
+        adc SCRHI
+.else
         adc #>SCREEN
+.endif
         sta scr+1
         lda ln
         and #7
@@ -415,7 +459,11 @@ span:   and #$3F
         lsr a
         and #$FE
         clc
+.ifdef MASTER
+        adc SCRHI
+.else
         adc #>SCREEN
+.endif
         sta spg
         stz scr
 sp_each:
@@ -627,4 +675,17 @@ rp_end: cpy #$FF
         bne rp_lp
         rts
 
+.ifdef MASTER
+; the tables, seeded by symbol (tube_host.master_tables)
+tx_bank: .res 32                        ; per texture: bank, page, row
+tx_ph:   .res 32                        ;  offset and mask, column index
+tx_ro:   .res 32                        ;  address
+tx_rm:   .res 32
+tx_ixl:  .res 32
+tx_ixh:  .res 32
+fl_bank: .res 32                        ; per flat: bank, page
+fl_page: .res 32
+tx_ix:   .res 896                       ; the column indexes, every texture
+.else
         TABLES
+.endif

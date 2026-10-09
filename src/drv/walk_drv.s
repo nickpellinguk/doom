@@ -100,6 +100,9 @@ RAWY_MAX = $0490        ;  1168
 .import ok_flip
 .import ok_clear
 .import gun_draw
+.ifdef TUBE
+.import hd_frame
+.endif
 .import split_init
 .import fb_clr0
 .import fb_clr1
@@ -460,6 +463,12 @@ frame:
     LDA #BANK_L0
     STA $FE30
     JSR ENG_RENDER_FRAME   ; (init is inline at render entry)
+.ifdef TUBE
+    JSR hd_frame           ; TUBE MASTER: the frame's requests are out (the
+                           ;  walk's rq_end); draw the frame before's display
+                           ;  list from the second processor (register 1) --
+                           ;  it built that while this frame's engine ran
+.endif
     LDA #BANK_C
     STA $FE30
     JSR gun_draw           ; the gun overlay (bank 6, step 6f)

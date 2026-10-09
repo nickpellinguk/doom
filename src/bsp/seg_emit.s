@@ -407,11 +407,12 @@ hgp_fwd:
 ; to the four-class arm cascade below (top/bottom x step-up/step-down),
 ; which loses its solid tests in exchange.
 ; ============================================================================
-.import mf_snap, mf_fill
+.import mf_snap
 .ifdef TUBE
 .import rq_fill
 .define FILLSEG rq_fill                  ; TUBE MASTER: request the fill
 .else
+.import mf_fill
 .define FILLSEG mf_fill
 .endif
    JSR mf_snap                             ; MASTER: snapshot the spans this

@@ -361,6 +361,13 @@ def build_banked(flatr):
             d = open(fn, 'rb').read()
             for i, b in enumerate(d):
                 bm[addr + i] = b
+    from symmap import _load as _symtab
+    if 'hd_frame' in _symtab()[0]:      # TUBE: the host drawer's tables (HAZEL,
+        import tube_host                #  over the code image's .res zeros)
+        from symmap import sym as _hs
+        for _a, _b in tube_host.master_tables(_hs):
+            for _i, _v in enumerate(_b):
+                bm[_a + _i] = _v
 
     # (ROM-pointer block retired 2026-07-10: bases are layout.inc constants)
     bm[0xFF00] = 0x00

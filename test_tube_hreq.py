@@ -5,7 +5,7 @@ The engine is linked with TUBE (DOOM_ASMDEFS=TUBE=1): walk.s calls
 rq_frame in place of mf_frame and seg_emit calls rq_fill in place of
 mf_fill (src/master/mfill.s). The rig's memory captures every write to
 the Tube's register 3 data ($FEE5; the status $FEE4 reads room). At every
-regression pose:
+regression pose (the walk's end sends rq_end's $00 itself):
 
   1. the bytes sent, through rq_end, decode (tube_req.decode) to the
      Python host's requests (tube_req.ReqRef): the same segs in the same
@@ -37,6 +37,7 @@ os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 FRAMES = os.path.join(ROOT, 'build', 'tube', 'master_frames.bin')
 R3_STATUS, R3_DATA = 0xFEE4, 0xFEE5
+R1_STATUS, R1_DATA = 0xFEE0, 0xFEE1
 
 
 def renderer():
@@ -84,19 +85,31 @@ def main():
                 return
             super().__setitem__(i, v)
 
+    class ListMem(TubeMem):
+        """... and register 1 holding a display list (while hd_frame runs:
+        reads cost, so only then)."""
+        def __getitem__(self, i):
+            if i == R1_STATUS:
+                return 0x80 if self.lp < len(self.dl) else 0
+            if i == R1_DATA:
+                self.lp += 1
+                return self.dl[self.lp - 1]
+            return list.__getitem__(self, i)
+
     dw, r = renderer()
     r.bm.__class__ = TubeMem
     r.bm.sent = []
     list.__setitem__(r.bm, R3_STATUS, 0x40)     # always room
-    rq_end = sym('rq_end')
     H, S = tube_req.ReqRef(), tube_req.FillServer()
+    import tube_dl
+    hd = sym('hd_frame')
+    dcyc = []
     strict = ('si', 'ss', 'dz', 'lo', 'hi', 'solid', 'c1', 'c2', 'm', 't')
     bad, sizes, cycles, same, nreq, gaps = 0, [], [], 0, 0, {'line': 0, 'spans': 0}
     for n, p in enumerate(all_poses()):
         r.bm.sent = []
         r.render_frame(*p, dw.player_floor(*p[:2]))
         cyc = r.sc.total_cycles
-        r.sc._run(rq_end)
         got = bytes(r.bm.sent)
         H.render(*p)
         want = H.frame()
@@ -119,6 +132,21 @@ def main():
         diff = sum(x != y for x, y in zip(frame, ref))
         if diff:
             why.append(f'served frame: {diff} bytes differ from the Master\'s')
+        # 3. the host drawer (src/tube/hdraw.s in this link) draws the
+        # served list into the back buffer: the Master's frame again
+        r.bm.__class__ = ListMem
+        r.bm.dl, r.bm.lp = tube_dl.encode(S.dl, S.fid), 0
+        c0 = r.sc.mpu.processorCycles
+        r.sc._run(hd)
+        dcyc.append(r.sc.mpu.processorCycles - c0)
+        r.bm.__class__ = TubeMem
+        if r.bm.lp != len(r.bm.dl):
+            why.append(f'hd_frame read {r.bm.lp} of {len(r.bm.dl)} list bytes')
+        drawn = r.framebuffer()
+        diff = sum(x != y for x, y in zip(drawn, ref))
+        if diff:
+            k = next(i for i, (x, y) in enumerate(zip(drawn, ref)) if x != y)
+            why.append(f'drawn frame: {diff} bytes differ from the Master\'s, first at {k}')
         bad += bool(why)
         sizes.append(len(got))
         cycles.append(cyc)
@@ -127,6 +155,8 @@ def main():
     k = len(sizes)
     print(f'  {k} poses: requests mean {sum(sizes) // k} B (max {max(sizes)}), '
           f'host engine + send mean {sum(cycles) // k:,} cycles (max {max(cycles):,})')
+    print(f'  host drawer: mean {sum(dcyc) // k:,} cycles a frame (max {max(dcyc):,}); '
+          f'host engine + send + draw mean {(sum(cycles) + sum(dcyc)) // k:,}')
     print(f'  {same}/{k} poses byte-identical to the Python host; of {nreq} requests, '
           f'{gaps["line"]} carry engine line ends and {gaps["spans"]} engine span splits '
           f'the model does not (drawn the same)')
