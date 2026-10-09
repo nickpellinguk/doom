@@ -215,14 +215,19 @@ class Walls:
                 cur = (start, dr)
         return cur[0], self.dress[cur[1]]
 
-    def images(self, man):
+    def images(self, man, L=None, server=False):
         """The 6502's copies: {'andy': 4K at man_slot_d's page (ANDY),
         'b6t': bytes at mb6_pt_tid (bank 6 tail), 'ix': bytes at mtex_ix},
-        laid out by the MASTER link's labels (src/master/mfill.s)."""
-        from symmap import sym
-        L = lambda n: sym(n)
+        laid out by the MASTER link's labels (src/master/mfill.s) -- or by
+        L (name -> address), the fill server's (tube_server.py), whose
+        column index holds each column's texture column itself (the
+        display list's), not its texels' address."""
+        if L is None:
+            from symmap import sym
+            L = lambda n: sym(n)
+            assert L('man_slot_d') == 0x8000 and L('mb6_rc') == 0x8000
         andy_base, b6t_base = L('man_slot_d'), L('mb6_pt_tid')
-        assert andy_base == 0x8000
+        assert andy_base & 0xFF == 0
         andy = bytearray(0x1000)
         put = lambda n, i, v: andy.__setitem__(L(n) - andy_base + i, v)
         n = len(self.slot_dress)
@@ -276,7 +281,7 @@ class Walls:
             bput('mb6_pt_v1', i, p['vtop'] >> 8)
         # step 7v: the step tables and per-part m / table page (bank 6 $8000)
         b6r_base = L('mb6_rc')
-        assert b6r_base == 0x8000
+        assert b6r_base & 0xFF == 0
         b6r = bytearray(0x1000)
         zs = sorted(set(p['z'] for p in self.parts if p['m']))
         assert len(zs) <= RT_ZMAX, 'too many step-table exponents'
@@ -307,7 +312,8 @@ class Walls:
             bput('mb6_tp_ixl', i, a & 0xFF)
             bput('mb6_tp_ixh', i, a >> 8)
             assert len(t['index']) == tp['tw']
-            ix += bytes(t['index'][j * tp['tw'] // tp['n']] for j in range(tp['n']))
+            ix += bytes((j * tp['tw'] // tp['n']) if server else t['index'][j * tp['tw'] // tp['n']]
+                        for j in range(tp['n']))
         assert len(ix) <= 0x420, 'column index blob overruns mtex_ix'
         # step 5: flat bank / page by flat id, and the map centre's 4.12 terms
         assert len(man['flats']) <= 0x20

@@ -50,9 +50,8 @@ at 3MHz, 257 ms (host-bound) at 4MHz, against 575 ms today.
 5. **H1. The fill request, in the Python models. — DONE.**
 6. **H2. The host side in 6502. — DONE: the requests draw the Master's
    frame byte for byte; host engine + send 164K cycles a frame.**
-7. **H3.** The second processor's fill server in 6502: the Master's fill
-   set-up fed from requests, emitting the list; gated against
-   `tube_req.FillServer` / `tube_dl.encode`.
+7. **H3. The second processor's fill server in 6502. — DONE: byte-exact
+   display lists; 970K cycles a frame (323 ms at 3MHz, 242 ms at 4MHz).**
 8. **H4.** The two halves joined over the Tube (requests through
    register 3, the list back through register 1), the disc and jsbeeb.
 
@@ -139,6 +138,86 @@ Open for H4: register 3 holds one byte (two in its two-byte mode), so the
 host's polling runs at the parasite's reading rate. The parasite must
 take bytes as they come (an NMI, or a poll between its own jobs) into a
 request buffer, and serve from that, so the host never waits on the fill.
+
+## H3. The fill server in 6502. — DONE
+
+**H3a.** The request grew two things the server would otherwise need the
+map or a table for:
+- the view's trig: |sin|, |cos| and their sign and unity flags (3 bytes a
+  frame);
+- per seg, its sector's `ch - vz` and `fh - vz` (2 bytes: the engine's
+  `zp_seg_top_dlt` / `zp_seg_bot_dlt`, which the host's movers change).
+
+`PlaneRef` reads a plane's D through `_plane_d`, which `FillServer` takes
+from the request. The requests are now mean 941 B, worst 2,610 B.
+
+**The server** is `src/tube/fserve.s` linked with `src/master/mfill.s`
+assembled with `SERVER` (`src/tube/fserve.cfg`; `tube_server.py` builds
+it and runs it in py65). The fill is the Master's own code. Under
+`SERVER` its screen code goes: the raster split, the gun, every write
+loop, and the plane spans' sweep and flush. Where it drew, it now records:
+- `tr_screen` → `fs_wall`: the run's WALL record, straight to the list
+  (consecutive byte columns of one texture grouped as `tube_dl.encode`
+  groups them);
+- `hz_run` → `fs_mark`: a solid run (sky, shade) into its column's solid
+  list;
+- `prun`'s textured lines → `fs_mark`: into its column's plane list, coded
+  with the seg's plane. `fs_planes`, at the end of `pl_seg`, names the
+  frame's planes by (D, flat).
+
+`tcol` keeps the texture column itself: the server's column index table
+holds column numbers, not texel addresses. `pl_row` makes a far row's U
+and V too, because the list joins neighbouring far cells on their row
+maths. The request reader puts each request where the engine would have
+left it: zero page, the snapshot `sn_*`, and the live spans as the pool.
+
+At the frame's end:
+- `fs_sweep` compares each column's plane list with the column before.
+  Only lines whose plane changes open or close a run in that line's list,
+  so the cost goes with the run edges, not the cells.
+- `fs_spans` joins each line's runs where the row maths, flat and far
+  tone match, pairs the two lines of each line pair where their runs
+  match, and writes the line's own spans, the pair spans, then the odd
+  line's own (`tube_dl.encode`'s order).
+- `fs_fills` writes the solid lists as FILLs, joining touching marks of
+  one shade.
+
+A frame has about 140 marks (worst 384), and at most 9 in a column.
+
+*Gate* `test_tube_server.py` (in `run_regression.py`). At all 35 poses
+the Python host's requests, served by the 6502, give a display list
+byte for byte `tube_dl.encode` of `FillServer`'s.
+
+**Server: mean 970K cycles a frame, worst 2.28M** (56 segs at
+(1046.7, -3090.4, 157)). That is 323 ms at 3MHz and 242 ms at 4MHz.
+`tools/tube_server_prof.py` breaks it down:
+
+| Part | Cycles a frame |
+|---|---|
+| The Master's fill set-up | ~660K |
+| End-of-frame sweep, runs, pairs and spans | ~220K |
+| Request reading, marks and WALL emission | ~85K |
+
+An empty frame is 25K. The first version marked a 136 × 64 cell grid and
+scanned it at the frame's end: 640K for an empty frame, 1.7M on average.
+
+**Memory** (`fserve.cfg`), all below `$F800`:
+
+| Area | Size |
+|---|---|
+| Code | 11.6K |
+| Tables (quarter squares, column index, ANDY's wall tables, step tables, part records) | 11.6K |
+| Fill workspace and the span pool | 2.1K |
+| Marks and line runs | 16.5K |
+| Display list buffer | 7K |
+| Request buffer | 3K |
+| Server workspace | 3.1K |
+
+The two buffers become streams in H4.
+
+Against the host's ~556K (278 ms at 2MHz), the server is the slower half
+at 3MHz and the host at 4MHz. A frame overlapped across the two would
+take about 323 ms at 3MHz and 278 ms at 4MHz, against 575 ms today.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

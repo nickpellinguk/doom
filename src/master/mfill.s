@@ -88,7 +88,23 @@ HZ_PAIR = HZ_LINE / 2                   ; its pair (34); the rows per side
 VIEW_PAIRS = VIEW_LINES / 2             ; line pairs in the view (68)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
-.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame, split_init, gun_draw
+.export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame
+.ifndef SERVER
+.export split_init, gun_draw
+.else
+; THE FILL SERVER (docs/tube_master.md H3, src/tube/fserve.s): this file
+; assembled for the second processor. The screen's code goes (the split,
+; the gun, every write loop, the plane spans' sweep and flush); what
+; drew now records -- hz_run and the planes mark fserve's cell grid,
+; tr_screen emits the run's WALL record.
+.import fs_mark, fs_wall, fs_planes
+.export pl_rowc, uvat, hz_run, tr_screen, mf_ep, pl_p, pl_d, pl_kb, pl_u, pl_v
+.export pc_uc, pc_du, pc_vc, pc_dv, pc_lv, far_tone, pl_kind, pl_df, pl_dc
+.export pl_ff, pl_fc, tw_ll, tw_rl, tw_sh, l_v, l_step, t_v, t_tid, t_step
+.export zw_dl, zw_ddl, sn_xs, sn_xe, sn_xlo, sn_den, sn_tl, sn_tr, sn_bl, sn_br
+.export sn_bxlo, sn_bden, sn_n, tx_slot, mf_x, r_ys, r_ye
+.exportzp zw_ddh
+.endif
 .ifdef TUBE
 .export rq_frame, rq_fill, rq_end
 .endif
@@ -177,9 +193,11 @@ sn_bden:      .res 32                   ;  (POOL_BXLO / BDEN; 2026-10-08 -- read
 .segment "MSQR"                         ; HAZEL $D800 (engine_master.cfg HZQ)
 sqr_quad_m: .res $600                   ; SQR_MIR_LO on the Master (abi.inc)
 
+.ifndef SERVER
 .segment "MUSRING"                      ; HAZEL $D700 (HZR): the music ring,
 mus_ring_m: .res $100                   ;  MUS_RING (src/master/mmusic.s)
 .assert mus_ring_m = MUS_RING, error, "MUS_RING is HZR's page"
+.endif
 
 .segment "MFILLBSS"
 zw_dl:   .res 1                         ; step 7t: zw_dh's fraction byte
@@ -1338,6 +1356,7 @@ run:
    JMP (.ident(.concat(.string(S), "_tab")),X)
 .endmacro
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 .segment "MFILL"                        ; (HAZEL: paged for the whole run)
 ; ============================================================================
 ; THE PANEL RASTER SPLIT (step 6c). The 3D view is Mode 2; the control
@@ -1611,6 +1630,14 @@ gun_draw:
    RTS
 
 .include "mgun_tab.s"
+.else
+.segment "MB6C"
+; hz_run (SERVER): the run's lines [r_ys, r_ye] (unbiased) of byte column
+; mf_x >> 2 are its shade r_part: fserve's cell grid
+hz_run:
+   LDA r_part
+   JMP fs_mark
+.endif
 
 ; ============================================================================
 ; STEP 4: WALL TEXTURES (tex_ref.py is the executable spec; master_walls.py
@@ -2256,14 +2283,18 @@ trun:
    STA q_d+1
    LDY #tw_rl - tw_ll                   ; -> tw_rl, tw_rh
    JSR tcol
+.ifndef SERVER
    LDX t_tid
    LDA mb6_tp_rowm,X
    STA zw_rowm
    CMP rm_cur
    BEQ :+
    JSR rm_patch                         ; a new mask: into the pair bodies
-:  JMP tr_screen
+:
+.endif
+   JMP tr_screen
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 .segment "MFILL"
 ; trun's screen side (HAZEL: it pages the texture's bank). X = t_tid.
 tr_screen:
@@ -2401,7 +2432,13 @@ tb_end:
    LDA #BANK_C
    STA $FE30
    RTS
+.else
+.segment "MB6C"
+tr_screen:                              ; (SERVER: the run's WALL record)
+   JMP fs_wall
+.endif
 
+.segment "MFILL"
 ; sh_lim: step 5n, the seg's shared-v limit (tex_ref.shared_limit):
 ; tw_slim = (384 w - 1) // max(|DT|, |DB|), $FFFF if that overflows or w
 ; or the rise is 0 -- a run whose left step is <= it shares one v
@@ -2472,6 +2509,7 @@ sh_lim:
    STA tw_slim+1
    RTS
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 ; tr_fetch: A = the current pair's combined texel byte (Y kept)
 tr_fetch:
    STY tw_ly
@@ -3247,6 +3285,7 @@ rm_cur:  .byte $FF                      ; the bodies' assembled mask
 
 ts_end:
    JMP tb_end                           ; (zw_dh = 0: one v for both)
+.endif
 
 .segment "MB6C"
 
@@ -3532,6 +3571,10 @@ tcol:                                   ; (Y = 0: -> tw_ll / tw_lh; 2: ->
    STA TP+1
    LDA (TP)
    PLY
+.ifdef SERVER
+   STA tw_ll,Y                          ; (SERVER: the column number)
+   RTS
+.endif
    PHA
    AND #7                               ; texel column = page + idx>>3,
    CLC                                  ;  byte idx&7, + row offset
@@ -3546,6 +3589,7 @@ tcol:                                   ; (Y = 0: -> tw_ll / tw_lh; 2: ->
    STA tw_lh,Y
    RTS
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 ; ln_ptr: r_ys (unbiased line) -> PTR = the back buffer's byte column
 ; mf_x >> 2 at that line's character row, Y = r_ys & 7 (X preserved)
 ln_ptr:
@@ -3578,6 +3622,7 @@ ln_ptrk:                                ; (A = byte column k)
    AND #7
    TAY
    RTS
+.endif
 
 ; ============================================================================
 ; STEP 5: FLOORS AND CEILINGS (plane_ref.py is the executable spec). ONE
@@ -3684,7 +3729,11 @@ pl_seg:
    BPL :+
    LDA #0
 :  STA pl_dc
+.ifdef SERVER
+   JMP fs_planes                        ; (the seg's planes: grid codes)
+.else
    RTS
+.endif
 
 ; the five light levels' masks (master_walls.LIGHT_MASKS): FF.FF, AA.FF,
 ; AA.AA, 0A.AA, 0A.0A -- progressively darker
@@ -3789,6 +3838,7 @@ prun:
    CMP r_ys
    BCS @parts
    RTS
+.ifndef SERVER                          ; (the screen: not on the fill server)
 @parts:
    ; an odd first line / even last line: a single line on the spot
    LDA r_ys
@@ -3850,6 +3900,11 @@ prun:
    INC pl_p
    BCC :-
    RTS
+.else
+@parts:                                 ; (SERVER: lines r_ys .. r_ye are the
+   LDA #$80                             ;  plane fs_planes named for this
+   JMP fs_mark                          ;  kind: A = $80 says so)
+.endif
 
 ; pl_shade: lines r_ys .. A (unbiased) in the plane's solid shade (r_ys,
 ; r_ye kept)
@@ -3864,6 +3919,7 @@ pl_shade:
    STA r_ye
    RTS
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 ; pl_cell: A = the texel byte at pair pl_p, byte column pl_kb (X clear)
 pl_cell:
    JSR pl_rowc
@@ -3903,6 +3959,7 @@ pc_rd:
    LDX #BANK_C
    STX $FE30
    RTS
+.endif
 
 .segment "MB6C"
 
@@ -3919,6 +3976,7 @@ pl_rowc:
 @rts:
    RTS
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 ; pl_line: A = one line (unbiased) of column pl_kb: its pair's texel, lit
 pl_line:
    STA pl_y
@@ -3965,6 +4023,7 @@ pl_wr1:
    LDA #ACC_DY
    STA $FE34
    RTS
+.endif
 
 ; mf_planes: the seg's end. Its plane spans stay pending (pd_*): a later
 ; seg on the same plane widens them; another plane, or the frame's end
@@ -3972,6 +4031,7 @@ pl_wr1:
 mf_planes:
    RTS
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 .segment "MFILL"
 ; ---- sp_go2 / sl_go: the span loops (HAZEL: they page the flat's bank).
 ; sp_setup has set U, V, PTR, Y, the patched steps and page; A = the
@@ -4155,6 +4215,7 @@ sl_wr:
    LDA #BANK_C
    STA $FE30
    RTS
+.endif
 
 .segment "MB6C"
 ; uvat: pl_u, pl_v = U, V (4.4) at byte column pl_kb of pair pl_p's row:
@@ -4272,6 +4333,7 @@ m8_nx:
 .segment "MB6C"
 ; ---- tx_seg ----------------------------------------------------------------
 tx_seg:
+.ifndef SERVER                          ; (SERVER: tx_slot is the request's)
    ; slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo / LAY_HDR_STRIDE
    STZ tx_slot
    STZ tx_slot+1
@@ -4300,6 +4362,7 @@ tx_seg:
    INC tx_slot+1
    BRA @l9
 @slot:
+.endif
    ; ---- ANDY: the slot's dressing and length ----
    LDA #BANK_C | $80                    ; ANDY over $8000-$8FFF
    STA $FE30
@@ -4583,7 +4646,11 @@ tx_seg:
    ROL tx_dn+1
    ROL tx_dn+2
    ROL tx_dn+3
+.ifndef SERVER
    JMP pe_init                          ; the plane extents, empty
+.else
+   RTS
+.endif
 
 
 .segment "MFILLV"
@@ -4661,9 +4728,12 @@ pl_row:
    LDA #0
    ROL A
    STA pc_lv,Y
-   BEQ :+
+.ifndef SERVER                          ; (SERVER: the list joins neighbouring
+   BEQ :+                               ;  far cells on their row maths too)
    RTS                                  ; a far row: its U, V are never read
-:  STX pl_j
+:
+.endif
+   STX pl_j
    LDA zr_ep,X
    CMP mf_ep
    BEQ :+
@@ -4820,6 +4890,7 @@ pl_dhn:
    RTS
 .segment "MFILLC"
 
+.ifndef SERVER                          ; (the screen: not on the fill server)
 .segment "MB6C"                         ; (bank 6: the sweep and set-up)
 ; mk_spans: R_MakeSpans over columns pl_k0 .. pl_k1 (+ an empty sentinel):
 ; (t1, b1) the previous column's pair interval, (t2, b2) this one's;
@@ -5322,6 +5393,8 @@ mf_flush:
 :  LDA #BANK_WALK
    STA $FE30
    RTS
+.endif
+.segment "MFILLC"
 
 ; pl_zrow: X = j -> ZC[j] = Zk * |c|, ZS[j] = Zk * |s| (unity: Zk << 8;
 ; < 2^29), stamped with this frame's epoch
@@ -5687,6 +5760,7 @@ d8_n:
 ; D >= FAR_DM[k >> 1]) draws its flat as one byte, far_tone[f] (both
 ; generated into mfar_tab.s by master_assets.py): no U, V, no texel reads,
 ; just the byte on the even line and FLIP of it on the odd.
+.ifndef SERVER                          ; (the screen: not on the fill server)
 .segment "MB6C"
 sm_lv:   .byte 0                        ; sp_setup: this row's level
 sm_b:    .byte 0                        ; the far tone
@@ -5800,6 +5874,7 @@ sml_lp:
    LDA #ACC_DY
    STA $FE34
    RTS
+.endif
 
 .include "mfar_tab.s"
 
