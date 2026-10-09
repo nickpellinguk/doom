@@ -83,6 +83,8 @@ run('tube_dl', ['test_tube_dl.py'], lambda o: 'TUBEDL: PASS' in o)
 run('tube_host', ['test_tube_host.py'], lambda o: 'TUBEHOST: PASS' in o)
 # host-led H1: the fill served from requests alone (tube_req.py)
 run('tube_req', ['test_tube_req.py'], lambda o: 'TUBEREQ: PASS' in o)
+# host-led H2: the host's 6502 sends the requests (TUBE link; rebuilds the normal one)
+run('tube_hreq', ['test_tube_hreq.py'], lambda o: 'TUBEHREQ: PASS' in o)
 # the music player (master_music.py the spec, src/master/mmusic.s)
 run('master_music', ['test_master_music.py'], lambda o: 'MASTERMUSIC: PASS' in o)
 # BAKED ADDRESSES: a literal address is a copy of a fact. This ratchets: the

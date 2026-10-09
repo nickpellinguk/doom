@@ -48,16 +48,8 @@ at 3MHz, 257 ms (host-bound) at 4MHz, against 575 ms today.
    377K cycles a frame (188 ms).** Tuning to come.
 4. *(superseded by the host-led plan: 4a's census below is why)*
 5. **H1. The fill request, in the Python models. — DONE.**
-6. **H2.** The host side in 6502: the Master engine with its fill call
-   replaced by sending the request; gated against `tube_req.encode`. The
-   seam is already there: `mf_snap` (at the head of a seg's clip cascade,
-   seg_emit) copies the pool's spans over the seg's columns -- the
-   request's "before" -- and `mf_fill` (after the update) reads the seg's
-   line terms from zero page and the live pool -- the "after". A
-   host-led link swaps master/mfill.s for a sender: `rq_snap` as
-   `mf_snap`; `rq_fill` sends the header (slot from `zp_seg_hdr_p`, the
-   range, the line ends, `zp_seg_v1/v2_clipped`, the reciprocal terms, the
-   view depths), the snapshot, then the live spans over the range.
+6. **H2. The host side in 6502. — DONE: the requests draw the Master's
+   frame byte for byte; host engine + send 164K cycles a frame.**
 7. **H3.** The second processor's fill server in 6502: the Master's fill
    set-up fed from requests, emitting the list; gated against
    `tube_req.FillServer` / `tube_dl.encode`.
@@ -76,23 +68,77 @@ slot; the segs' sector heights and flats; the flats' far tones) or once a
 frame (the view). The request is exactly that:
 
 - per frame: the view (px88, py88 24-bit, vz, ab): 8 bytes;
-- per wall seg: slot + solid + the two clip flags (2 bytes), the column
-  range clamped to 0-255 (2), the six line ends (12), the ends' reciprocal
-  terms m / S (4), the ends' view depths when exactly one end is clipped
-  (4), and the pool's spans over the range before and after the update
-  (a count, then 10 bytes a span: the clip pool's own fields XSTART XEND
-  TXLO TDEN TL BL TR BR BXLO BDEN, so the host copies them straight out
-  of the pool).
+- per wall seg: slot + solid + the two clip flags (2 bytes), the seg's
+  subsector (1: the fill's flats and sky are by subsector), the column
+  range clamped to 0-255 (2), the six line ends (12), the ends'
+  reciprocal terms m / S (4), the near-plane crossing t when exactly one
+  end is clipped (2: what the engine leaves in `mf_xt`; `tex_ref` reads
+  it through `_cross_t`, which the server overrides), and the pool's spans
+  over the range before and after the update (a count, then 10 bytes a
+  span: the clip pool's own fields XSTART XEND TXLO TDEN TL BL TR BR BXLO
+  BDEN, so the host copies them straight out of the pool);
+- a request only for a seg the fill can draw: [lo, hi) not empty and some
+  span over it before the update (`mf_fill`'s own early-outs); `$00` ends
+  the frame.
 
 `ReqRef` (the host: PlaneRef rendering as before) records each frame's
 requests; `FillServer` (the second processor) is the same fill with no
 engine and no map, served from decoded requests. *Gate*
 `test_tube_req.py` (in `run_regression.py`): at all 35 poses the served
 frame equals PlaneRef's byte for byte and the served display list
-encodes to exactly the host-side list's bytes. **Requests: mean 854 B a
-frame, worst 2,385 B** (56 segs at (1046.7, -3090.4, 157)); 0-56 wall
-segs a frame, 23 on average. At 10 host cycles a byte the requests cost
-the host about 8.5K cycles a frame.
+encodes to exactly the host-side list's bytes. **Requests: mean 894 B a
+frame, worst 2,495 B** (56 segs at (1046.7, -3090.4, 157)); 0-56 wall
+segs a frame, 21 on average.
+
+## H2. The host side in 6502. — DONE
+
+A `TUBE` link of the Master engine (`DOOM_ASMDEFS=TUBE=1`): `walk.s`
+calls `rq_frame` where it called `mf_frame`, and `seg_emit.s` calls
+`rq_fill` where it called `mf_fill` (`FILLSEG`); `mf_snap` stays, so the
+"before" spans are the snapshot exactly as the fill takes it. The sender
+is in `src/master/mfill.s` under `.ifdef TUBE`:
+
+- `rq_frame` (HAZEL): the view, from the walk's `zp_br_px/py`
+  (24-bit), `zp_br_vz` and `bca_ab`;
+- `rq_fill` (bank 6, beside `mf_snap`): `mf_range` and the snapshot count
+  decide whether there is a request; then the slot (from `zp_seg_hdr_p`,
+  as `tx_seg` computes it) with solid (`zp_seg_flags` V) and the clip
+  flags, the subsector (`zp_node_ch_l`), lo / hi, the six line ends from
+  the VX1 / VX2 blocks (the y ends less the engine's Y_BIAS of 48), the
+  reciprocal terms, `mf_xt` when exactly one end is clipped, the
+  snapshot, then the live pool spans over [lo, hi) (counted, then sent);
+- `rq_end` (HAZEL): `$00`.
+
+Each byte goes out through register 3 polled (`BIT $FEE4 / BVC / STA
+$FEE5`, 10 cycles while there is room), inline.
+
+*Gate* `test_tube_hreq.py` (in `run_regression.py`). The rig captures
+writes to `$FEE5` (`$FEE4` reads room). At all 35 poses:
+1. the decoded bytes have the Python host's requests: the same segs in the
+   same order, and the same view, slot, flags, subsector, range,
+   reciprocal terms and t;
+2. served by `FillServer`, they draw **exactly the Master's own 6502
+   frame** (the normal link, rendered in a subprocess).
+
+The line ends and spans are the ENGINE's, and the gate holds them to the
+frame they draw rather than to the Python host's bytes. 29 of 35 poses
+are byte-identical to `tube_req.encode` anyway. Of 740 requests:
+- 2 carry an off-screen sx one away from the model's. This is the
+  reference's rounding where the engine truncates, the gap
+  `test_master_tex.py` names; served, they draw the Master's pixels;
+- 4 have a span the 6502 pool holds as two (a one-column fragment beside
+  its neighbour) where the Python clipper holds one; they draw the same.
+
+**Host engine + send: mean 164K cycles a frame, worst 454K** (the Master
+renders a frame in 1,149K mean today). With step 3's drawer (377K) and
+movement (~15K), the host's frame is about 556K cycles: **278 ms at 2MHz**,
+against the plan's 515K estimate (the engine measured 164K with the send,
+not 128K).
+
+Open for H4: register 3 holds one byte (two in its two-byte mode), so the
+host's polling runs at the parasite's reading rate. The parasite must
+take bytes as they come (an NMI, or a poll between its own jobs) into a
+request buffer, and serve from that, so the host never waits on the fill.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

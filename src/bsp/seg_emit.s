@@ -408,6 +408,12 @@ hgp_fwd:
 ; which loses its solid tests in exchange.
 ; ============================================================================
 .import mf_snap, mf_fill
+.ifdef TUBE
+.import rq_fill
+.define FILLSEG rq_fill                  ; TUBE MASTER: request the fill
+.else
+.define FILLSEG mf_fill
+.endif
    JSR mf_snap                             ; MASTER: snapshot the spans this
                                            ; seg overlaps (master/mfill.s)
    BIT zp_seg_flags
@@ -449,7 +455,7 @@ sc_vs1:
    JSR vs_fresh2
 sc_vs2:
    JSR span_mark_solid                     ; zp_i clamps persisted (stage 3)
-   JSR mf_fill                             ; MASTER: fill what it removed
+   JSR FILLSEG                             ; MASTER: fill what it removed
    JMP s_advance
 sc_esk:
    BMI sc_fb                               ; N rides from the fork's LDA:
@@ -573,7 +579,7 @@ ms_zero_rec:
 ms_solid:
    JSR span_mark_solid
 ms_advance:
-   JSR mf_fill                             ; MASTER: fill what the portal's
+   JSR FILLSEG                             ; MASTER: fill what the portal's
                                            ; updates removed
 
 ; ============================================================================

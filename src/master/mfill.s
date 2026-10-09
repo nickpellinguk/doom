@@ -89,6 +89,9 @@ VIEW_PAIRS = VIEW_LINES / 2             ; line pairs in the view (68)
 HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 
 .export mf_snap, mf_fill, mf_skymap, mf_xt, mf_frame, split_init, gun_draw
+.ifdef TUBE
+.export rq_frame, rq_fill, rq_end
+.endif
 
 ; ----------------------------------------------------------------------------
 ; Step 4 wall tables: filled by the image builders from master_walls.py
@@ -5799,3 +5802,237 @@ sml_lp:
    RTS
 
 .include "mfar_tab.s"
+
+.ifdef TUBE
+; ============================================================================
+; HOST-LED TUBE MASTER (docs/tube_master.md H2): the fill REQUEST in place
+; of the fill. tube_req.py is the spec (encode); test_tube_hreq.py holds
+; this to it byte for byte. Bytes go to the second processor through the
+; Tube's register 3 (host -> parasite), polled.
+;   rq_frame  (walk.s, in place of mf_frame) the view: px88, py88 (24-bit),
+;             vz, ab
+;   rq_fill   (seg_emit, in place of mf_fill, mf_snap's snapshot taken as
+;             before) a seg the fill could draw -- [lo, hi) not empty and
+;             a span over it: $01, slot | solid << 10 | c1 << 11 | c2 <<
+;             12, subsector, lo, hi, the six line ends, the reciprocal
+;             terms, t when exactly one end is clipped, then the snapshot
+;             and the live spans over [lo, hi), the pool's own fields
+;   rq_end    $00: the frame's last request
+; ============================================================================
+.macro PUTB                             ; A -> register 3 (A kept)
+:  BIT $FEE4
+   BVC :-                               ; (status bit 6: room)
+   STA $FEE5
+.endmacro
+
+.segment "MFILL"                        ; HAZEL: walk.s calls it under WALK
+rq_frame:
+   LDA zp_br_px
+   PUTB
+   LDA zp_br_px_h
+   PUTB
+   LDA zp_br_px_x
+   PUTB
+   LDA zp_br_py
+   PUTB
+   LDA zp_br_py_h
+   PUTB
+   LDA zp_br_py_x
+   PUTB
+   LDA zp_br_vz
+   PUTB
+   LDA bca_ab
+   PUTB
+   RTS
+rq_end:
+   LDA #0
+   PUTB
+   RTS
+
+.segment "MB6C"                         ; bank 6, beside mf_snap / mf_fill
+rq_fill:
+   JSR mf_range
+   BCS @rts
+   LDA sn_n
+   BNE @go
+@rts:
+   RTS
+@go:
+   LDA #$01
+   PUTB
+   ; slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo / LAY_HDR_STRIDE
+   STZ tx_slot
+   STZ tx_slot+1
+   SEC
+   LDA zp_seg_hdr_p+1
+   SBC #>ROM_SEG_HDR_C
+   TAX
+   BEQ @lo
+@pg:
+   CLC
+   LDA tx_slot
+   ADC #HDR_PER_PAGE
+   STA tx_slot
+   BCC :+
+   INC tx_slot+1
+:  DEX
+   BNE @pg
+@lo:
+   LDA zp_seg_hdr_p
+@l9:
+   CMP #LAY_HDR_STRIDE
+   BCC @slot
+   SBC #LAY_HDR_STRIDE                  ; (C = 1)
+   INC tx_slot
+   BNE @l9
+   INC tx_slot+1
+   BRA @l9
+@slot:
+   LDA tx_slot
+   PUTB
+   LDA tx_slot+1
+   BIT zp_seg_flags
+   BVC :+
+   ORA #$04                             ; solid
+:  LDX zp_seg_v1_clipped
+   BEQ :+
+   ORA #$08                             ; c1
+:  LDX zp_seg_v2_clipped
+   BEQ :+
+   ORA #$10                             ; c2
+:  PUTB
+   LDA zp_node_ch_l                     ; the subsector
+   PUTB
+   LDA mf_lo
+   PUTB
+   LDA mf_hi
+   PUTB
+   LDX #0                               ; sx1 sx2 ft1 ft2 fb1 fb2 (s16)
+@ln:
+   LDY rq_lof,X
+   LDA VX1,Y
+   CPX #2                               ; the y ends less Y_BIAS
+   BCC @raw
+   SBC #48                              ; (C = 1; the borrow kept through PUTB)
+   PUTB
+   LDA VX1+1,Y
+   SBC #0
+   BRA @put
+@raw:
+   PUTB
+   LDA VX1+1,Y
+@put:
+   PUTB
+   INX
+   CPX #6
+   BNE @ln
+   LDA zp_seg_v1_r_m8
+   PUTB
+   LDA zp_seg_v1_r_s
+   PUTB
+   LDA zp_seg_v2_r_m8
+   PUTB
+   LDA zp_seg_v2_r_s
+   PUTB
+   LDA zp_seg_v1_clipped                ; t when exactly one end is clipped
+   BEQ @c1n
+   LDA zp_seg_v2_clipped
+   BNE @spans
+   BRA @xt
+@c1n:
+   LDA zp_seg_v2_clipped
+   BEQ @spans
+@xt:
+   LDA mf_xt
+   PUTB
+   LDA mf_xt+1
+   PUTB
+@spans:
+   LDA sn_n                             ; before: the snapshot
+   PUTB
+   LDX #0
+@sn:
+   LDA sn_xs,X
+   PUTB
+   LDA sn_xe,X
+   PUTB
+   LDA sn_xlo,X
+   PUTB
+   LDA sn_den,X
+   PUTB
+   LDA sn_tl,X
+   PUTB
+   LDA sn_bl,X
+   PUTB
+   LDA sn_tr,X
+   PUTB
+   LDA sn_br,X
+   PUTB
+   LDA sn_bxlo,X
+   PUTB
+   LDA sn_bden,X
+   PUTB
+   INX
+   CPX sn_n
+   BNE @sn
+   LDY #0                               ; after: the live spans over [lo, hi)
+   LDX zp_head                          ;  (counted, then sent)
+@cn:
+   CPX #0
+   BEQ @cd
+   LDA POOL_XSTART,X
+   CMP mf_hi
+   BCS @cd
+   LDA mf_lo
+   CMP POOL_XEND,X
+   BCS :+
+   INY
+:  LDA POOL_NEXT,X
+   TAX
+   BRA @cn
+@cd:
+   TYA
+   PUTB
+   LDX zp_head
+   BRA @lv
+@out:
+   RTS
+@lv:
+   CPX #0
+   BEQ @out
+   LDA POOL_XSTART,X
+   CMP mf_hi
+   BCS @out
+   LDA mf_lo
+   CMP POOL_XEND,X
+   BCS @nx
+   LDA POOL_XSTART,X
+   PUTB
+   LDA POOL_XEND,X
+   PUTB
+   LDA POOL_TXLO,X
+   PUTB
+   LDA POOL_TDEN,X
+   PUTB
+   LDA POOL_TL,X
+   PUTB
+   LDA POOL_BL,X
+   PUTB
+   LDA POOL_TR,X
+   PUTB
+   LDA POOL_BR,X
+   PUTB
+   LDA POOL_BXLO,X
+   PUTB
+   LDA POOL_BDEN,X
+   PUTB
+@nx:
+   LDA POOL_NEXT,X
+   TAX
+   JMP @lv
+
+; the six line ends' offsets in the VX1 / VX2 blocks: sx1 sx2 ft1 ft2 fb1 fb2
+rq_lof:
+   .byte zp_seg_sx1_l - VX1, zp_seg_sx2_l - VX1, zp_seg_sy1_top_l - VX1
+   .byte zp_seg_sy2_top_l - VX1, zp_seg_sy1_bot_l - VX1, zp_seg_sy2_bot_l - VX1
+.endif

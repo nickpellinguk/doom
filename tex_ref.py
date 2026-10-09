@@ -163,11 +163,11 @@ class TexRef(Fm.FillRef):
         L16 = W.slot_len[si]
         d1, d2 = 0, L16
         near = self.near[si]
-        c1, c2, tvx1, tvy1, tvx2, tvy2 = near[:6]
+        c1, c2 = near[:2]
         if c1 and not c2:
-            d1 = (L16 * cross_t(tvy1, tvy2, self.near_cross) + 128) >> 8
+            d1 = (L16 * self._cross_t(si) + 128) >> 8
         elif c2 and not c1:
-            d2 = L16 - ((L16 * cross_t(tvy2, tvy1, self.near_cross) + 128) >> 8)
+            d2 = L16 - ((L16 * self._cross_t(si) + 128) >> 8)
         # endpoint weights: the engine's 1/depth, (256 + M8) / 2^S, the
         # nearer end shifted left by the S difference, both to 16 bits
         m1, s1, m2, s2 = near[6:10]
@@ -291,6 +291,13 @@ class TexRef(Fm.FillRef):
                                                  & 0xFFFF) >> 8)))
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
+
+    def _cross_t(self, si):
+        """The near-plane crossing fraction t (0..256) from the CLIPPED
+        end (the engine's mf_xt), for a seg with exactly one end clipped."""
+        c1, c2, _, tvy1, _, tvy2 = self.near[si][:6]
+        return (cross_t(tvy1, tvy2, self.near_cross) if c1
+                else cross_t(tvy2, tvy1, self.near_cross))
 
     def _wall_run(self, si, x, part, u, ur, T, B, ys, ye, step, share, delta):
         """One byte column's wall rows ys..ye (biased lines) of one band,
