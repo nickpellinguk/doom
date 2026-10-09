@@ -110,10 +110,7 @@ class PlaneRef(X.TexRef):
         info = self.W.info[si]
         if kind == 'c' and info['sky']:
             return ('b', shade)
-        svwh = dw.fp_segs_vwh[si]
-        fh, ch = svwh[3], svwh[4]                   # prescaled s8 (the engine's)
-        vz = self.view['vz']
-        D = (vz - fh) if kind == 'f' else (ch - vz)
+        D = self._plane_d(si, kind)
         r = self.row(y >> 1, kind, D)
         if r is None:
             return ('b', shade)
@@ -126,6 +123,14 @@ class PlaneRef(X.TexRef):
         if self.level(y >> 1, kind, D):             # step 7n: the far tone
             return ('F', self.far[pic], kind, u >> 4, v >> 4, pic)
         return ('F', int(self.flat[pic][v >> 4, u >> 4]), kind, u >> 4, v >> 4, pic)
+
+    def _plane_d(self, si, kind):
+        """D: the eye's height over seg si's floor ('f') or its ceiling's
+        over the eye ('c'), prescaled s8 as the engine has them."""
+        svwh = self.dw.fp_segs_vwh[si]
+        fh, ch = svwh[3], svwh[4]
+        vz = self.view['vz']
+        return (vz - fh) if kind == 'f' else (ch - vz)
 
     def level(self, p, kind, D):
         """Step 7n: 1 (the far tone) iff D >= FAR_DM[k >> 1]."""

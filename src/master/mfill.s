@@ -5810,11 +5810,11 @@ sml_lp:
 ; this to it byte for byte. Bytes go to the second processor through the
 ; Tube's register 3 (host -> parasite), polled.
 ;   rq_frame  (walk.s, in place of mf_frame) the view: px88, py88 (24-bit),
-;             vz, ab
+;             vz, ab, the view trig
 ;   rq_fill   (seg_emit, in place of mf_fill, mf_snap's snapshot taken as
 ;             before) a seg the fill could draw -- [lo, hi) not empty and
 ;             a span over it: $01, slot | solid << 10 | c1 << 11 | c2 <<
-;             12, subsector, lo, hi, the six line ends, the reciprocal
+;             12, subsector, ch - vz, fh - vz, lo, hi, the six line ends, the reciprocal
 ;             terms, t when exactly one end is clipped, then the snapshot
 ;             and the live spans over [lo, hi), the pool's own fields
 ;   rq_end    $00: the frame's last request
@@ -5825,8 +5825,21 @@ sml_lp:
    STA $FEE5
 .endmacro
 
-.segment "MFILL"                        ; HAZEL: walk.s calls it under WALK
-rq_frame:
+.segment "MFILL"                        ; HAZEL: walk.s calls it under WALK,
+rq_frame:                               ;  the sender is in bank 6
+   LDA #BANK_C
+   STA $FE30
+   JSR rq_view
+   LDA #BANK_WALK
+   STA $FE30
+   RTS
+rq_end:
+   LDA #0
+   PUTB
+   RTS
+
+.segment "MB6C"
+rq_view:
    LDA zp_br_px
    PUTB
    LDA zp_br_px_h
@@ -5843,13 +5856,21 @@ rq_frame:
    PUTB
    LDA bca_ab
    PUTB
-   RTS
-rq_end:
-   LDA #0
+   LDA zp_br_smag                       ; the view trig: |sin|, |cos|, then
+   PUTB                                 ;  sneg | sone << 1 | cneg << 2 |
+   LDA zp_br_cmag                       ;  cone << 3 (each 0 / 1)
+   PUTB
+   LDA zp_br_cone
+   ASL A
+   ORA zp_br_cneg
+   ASL A
+   ORA zp_br_sone
+   ASL A
+   ORA zp_br_sneg
    PUTB
    RTS
 
-.segment "MB6C"                         ; bank 6, beside mf_snap / mf_fill
+; (bank 6, beside mf_snap / mf_fill)
 rq_fill:
    JSR mf_range
    BCS @rts
@@ -5902,6 +5923,10 @@ rq_fill:
    ORA #$10                             ; c2
 :  PUTB
    LDA zp_node_ch_l                     ; the subsector
+   PUTB
+   LDA zp_seg_top_dlt                   ; ch - vz, fh - vz
+   PUTB
+   LDA zp_seg_bot_dlt
    PUTB
    LDA mf_lo
    PUTB

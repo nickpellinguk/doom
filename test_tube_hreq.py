@@ -9,8 +9,8 @@ regression pose:
 
   1. the bytes sent, through rq_end, decode (tube_req.decode) to the
      Python host's requests (tube_req.ReqRef): the same segs in the same
-     order, with the same view, slot, flags, subsector, columns,
-     reciprocal terms and crossing t;
+     order, with the same view and trig, slot, flags, subsector, heights
+     over the eye, columns, reciprocal terms and crossing t;
   2. served (tube_req.FillServer), they draw EXACTLY the Master's own
      frame -- the normal link's 6502 fill, rendered in a subprocess
      (the two links share bin names).
@@ -90,7 +90,7 @@ def main():
     list.__setitem__(r.bm, R3_STATUS, 0x40)     # always room
     rq_end = sym('rq_end')
     H, S = tube_req.ReqRef(), tube_req.FillServer()
-    strict = ('si', 'ss', 'lo', 'hi', 'solid', 'c1', 'c2', 'm', 't')
+    strict = ('si', 'ss', 'dz', 'lo', 'hi', 'solid', 'c1', 'c2', 'm', 't')
     bad, sizes, cycles, same, nreq, gaps = 0, [], [], 0, 0, {'line': 0, 'spans': 0}
     for n, p in enumerate(all_poses()):
         r.bm.sent = []
@@ -103,7 +103,7 @@ def main():
         same += got == tube_req.encode(want)
         req = tube_req.decode(got)
         why = []
-        if req['view'] != want['view']:
+        if req['view'] != want['view'] or req['trig'] != tuple(map(int, want['trig'])):
             why.append('view')
         if len(req['reqs']) != len(want['reqs']):
             why.append(f'{len(req["reqs"])} requests, model {len(want["reqs"])}')

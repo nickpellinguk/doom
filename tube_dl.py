@@ -77,8 +77,7 @@ class DLRef(P.PlaneRef):
         cell = super()._plane(si, kind, y, x, shade)
         if cell[0] == 'F':
             info = self.W.info[si]
-            svwh = self.dw.fp_segs_vwh[si]
-            D = (self.view['vz'] - svwh[3]) if kind == 'f' else (svwh[4] - self.view['vz'])
+            D = self._plane_d(si, kind)
             sec = info['front']
             pic = P._name(sec[2] if kind == 'f' else sec[3])
             far = self.level(y >> 1, kind, D)
