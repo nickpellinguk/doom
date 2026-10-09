@@ -351,10 +351,61 @@ fixed batch of 150 random ones.
 | Tube, 3MHz | 15 | 1.9 fps (533 ms) |
 | Tube, 4MHz | 21 | 2.6 fps (381 ms) |
 
-This is slower than the overlapped estimate (323 ms at 3MHz). The host
-draws a list only after sending the next frame's requests, and the
-server holds a finished list until the host reads it. The next step is
-to measure where each side waits.
+Those 400 fields are spent standing at the spawn, one of the map's
+heaviest views. Walking (below) runs faster.
+
+## H4d. Where each side waits. — MEASURED
+
+`tools/tube_waits.py` boots the Tube disc on jsbeeb, walks a fixed key
+plan from the spawn for 30 s and classes every cycle of both processors
+(`tools/tube_waits.mjs`):
+- **Host:** the engine and sending (`render_frame`), with its `PUTB`
+  polls that loop counted as waiting to send; drawing (`hd_frame`), with
+  its `GETB` polls that loop counted as waiting for list bytes;
+  `flip_sched`; and the rest.
+- **Second processor:** the fill; sending the list (`fs_poll` called from
+  the fill); taking request bytes (`fs_irq`); waiting for requests
+  (`fs_get` on an empty ring); and waiting for the host to take the last
+  list (`fs_main` before it swaps buffers).
+
+Movement is capped at 10 fields a frame, so the slower run covers less of
+the walk. Each run's own split holds, but their per-frame fill and list
+sizes are not the same views.
+
+| A frame | 3MHz (2.73 fps, 365 ms) | 4MHz (3.63 fps, 275 ms) |
+|---|---|---|
+| Host: engine and sending | 66 ms | 43 ms |
+| Host: waiting to send | 13 ms | 1 ms |
+| Host: drawing | **210 ms** | **201 ms** |
+| Host: waiting for list bytes | 61 ms | 17 ms |
+| Host: flip, driver, gun, HUD, IRQs | 16 ms | 13 ms |
+| Second: the fill | **322 ms** | 187 ms |
+| Second: sending the list | 21 ms | 12 ms |
+| Second: taking requests | 10 ms | 4 ms |
+| Second: waiting for requests | 7 ms | 17 ms |
+| Second: waiting for the host to take the list | 5 ms | 55 ms |
+
+What it says:
+- **At 3MHz the second processor is the bottleneck.** It is busy 97% of
+  the frame, the fill alone 88%. The host waits 74 ms a frame on it,
+  most of that inside `hd_frame` for list bytes still being made. A
+  faster fill gains until the host's own 292 ms a frame, about 10%.
+- **At 4MHz the host is the bottleneck.** It is busy 94% of the frame,
+  and drawing is 73% of its time. The second processor sits idle for
+  26%, mostly waiting for the host to drain the last list: the host reads
+  it as it draws, so the drain takes the whole 200 ms of drawing.
+- **The link itself is cheap:** sending and taking bytes cost the second
+  processor 7-9%, and the host waits to send only on the slower one.
+- **The drawer is the largest single cost.** It takes about 400K host
+  cycles a frame on a 1.6-1.8K list, against the 221K that
+  `test_tube_hreq.py` measures over the regression poses. The views here
+  fill more of the screen with cells, which is what the drawer pays for,
+  not list bytes. Beyond about 3MHz, it alone sets the frame rate.
+
+So the next steps, in order of payoff: the host drawer (both speeds; the
+only lever at 4MHz), then the fill (at 3MHz). Letting the server start
+the next frame before the host has drained the last list would need a
+third list buffer; it gains nothing while the host is the slower side.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 
