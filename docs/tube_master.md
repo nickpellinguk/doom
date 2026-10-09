@@ -88,11 +88,11 @@ heaviest pose (1046.7, -3090.4, 157) goes from 1,320 ms to 812 / 609 ms.
 processor is: it carries 80% of the work and the host idles about 60% of
 each frame. So:
 
-- *Balance.* Give the host back some set-up that is cheap to describe in
-  the list -- e.g. the plane rows' maths (`pl_row` ~1.3K a row) or the
-  per-span u/v set-up -- until the two sides meet: balanced, a frame is
-  the whole work over both clocks, about 245 ms at 3MHz (2.3x) and about
-  205 ms at 4MHz (2.8x).
+- *Balance: not now (decided).* Moving set-up back to the host (the plane
+  rows' maths, the span set-up) would even the sides -- about 245 ms at
+  3MHz, 205 ms at 4MHz -- but the host's idle time is earmarked for what
+  the Master build lacks: billboards, monsters and the panel's duties. The
+  split stays as it is.
 - *The second processor's own speed* now sets the frame rate: its flat
   64K drops the bank paging and frees table space, so its maths (the
   BSP walk, the clipper, the wall and plane set-up) is where step 4's
