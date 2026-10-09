@@ -89,7 +89,7 @@ class Server:
 
     def serve(self, req, limit=20_000_000):
         """Run fs_frame over a frame's request bytes, put in its ring as
-        fs_nmi would: (the list, cycles)."""
+        fs_irq would: (the list, cycles)."""
         L, m, mpu = self.L, self.mem, self.mpu
         q = L['fs_ring']
         assert len(req) < 0x2000

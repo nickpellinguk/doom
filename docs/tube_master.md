@@ -52,8 +52,9 @@ at 3MHz, 257 ms (host-bound) at 4MHz, against 575 ms today.
    frame byte for byte; host engine + send 164K cycles a frame.**
 7. **H3. The second processor's fill server in 6502. — DONE: byte-exact
    display lists; 970K cycles a frame (323 ms at 3MHz, 242 ms at 4MHz).**
-8. **H4.** The two halves joined over the Tube (requests through
-   register 3, the list back through register 1), the disc and jsbeeb.
+8. **H4. The two halves joined over the Tube. — DONE: the Tube disc
+   runs on jsbeeb; 1.9 fps at 3MHz, 2.6 fps at 4MHz, against 1.1 fps
+   for the Master disc.**
 
 ## H1. The fill request. — DONE
 
@@ -218,6 +219,94 @@ The two buffers become streams in H4.
 Against the host's ~556K (278 ms at 2MHz), the server is the slower half
 at 3MHz and the host at 4MHz. A frame overlapped across the two would
 take about 323 ms at 3MHz and 278 ms at 4MHz, against 575 ms today.
+
+## H4. The Tube disc. — DONE
+
+`build_master_ssd.py --tube` writes `build/master/doom_tube.ssd`: the
+host engine linked with `TUBE`, and the fill server as the file `SERVER`.
+
+**The link.** Both directions use register 1:
+- the host sends each request byte with `PUTB` in `mfill.s` (`$FEE0`
+  room, `$FEE1` data);
+- the server takes each byte by IRQ (`fs_irq` at `$FFFE`, flag I) into
+  an 8K ring at `$C000`;
+- the server pushes the list back through register 1's 24-byte FIFO
+  while there is room (`fs_poll`, called from `fs_get` and from the
+  fill's column loop);
+- the host reads it in `hd_frame`.
+
+The first version sent the requests through register 3 by NMI. The host
+writes the next byte before the handler's tail has finished, so the NMIs
+nested until the stack overflowed. The IRQ is masked inside its own
+handler, so it cannot nest.
+
+**Pipelining.** Each frame the host:
+1. runs the engine, sending frame N's requests as it goes (`rq_frame`,
+   `rq_fill`, then `rq_end`'s `$00`);
+2. draws frame N - 1's list (`hd_frame`, in the driver after
+   `ENG_RENDER_FRAME`, before the gun).
+
+The server serves frame N as its requests come in, then waits for list
+N - 1 to finish going out before it swaps its two list buffers (A at
+`$A300`, B at `$E000`). Frame -1's list is a single `$00`, so the
+first frame shown is empty.
+
+**The boot.** `!BOOT` (`mboot.s`) first does `*LOAD SERVER`; the image
+loads to the second processor at `$0C00`-`$71FF`. Then it claims the
+Tube (`$C0+$3D` at `&0406`) and executes the image (type 4) at
+`fs_main`. Type 4 leaves the host in the MOS's Tube loop, so `fs_main`
+sends `*GOIO 1903` back by register 2, as OSCLI, to return the host to
+`!BOOT`'s `l_cont`. The server then:
+- clears its zero page, `$0200`-`$0BFF` and its BSS;
+- sets its ring;
+- puts its IRQ vector into RAM at `$FFFE`;
+- waits for flag I.
+
+The host loads the rest. Under the Tube a bare load address means the
+second processor, so the host's loads say `FFFF3000`. Then, in `s_go`,
+it clears flags Q, J, M and V, sets I, and jumps to the driver.
+
+**The second processor's memory** (`fserve.cfg`):
+
+| Area | Contents |
+|---|---|
+| `$0000`-`$00FF` | Zero page |
+| `$0200`-`$07FF` | Fill workspace |
+| `$0A00`-`$0BFF` | Span pool (`SPAN_POOL`) |
+| `$0C00`-`$71FF` | The file: tables and code |
+| `$7200`-`$A2FF` | Marks and line runs |
+| `$A300`, `$E000` | List buffers A and B |
+| `$B900` | Server workspace |
+| `$C000`-`$DFFF` | Request ring |
+| `$F600`-`$F7FF` | Fill workspace |
+| `$FFFE` | IRQ vector |
+
+**Gates** (all in `run_regression.py`):
+- `test_tube_link.py`: the server on jsbeeb's second processor with a
+  host pump (`src/tube/lpump.s`). At 35 poses each list is byte for byte
+  the model's. Host mean 745K cycles a frame at 3MHz (372 ms), which is
+  the server's pace.
+- `test_tube_hreq.py`: the TUBE engine's register 1 bytes decode to the
+  Python host's requests, and `hd_frame` draws the encoded lists to the
+  Master's frames.
+- `test_master_disc.py --tube 3` (`--disc`): the Tube disc on jsbeeb with
+  a 3MHz second processor. It walks, turns and strafes, with no holes,
+  the panel and raster split intact, and the music as the model. The
+  first flip shows frame -1's empty list, so it is left out of the hole
+  check.
+
+**Frame rate** on the disc test's walk, flips in 400 fields (8 s):
+
+| Machine | Flips | Rate |
+|---|---|---|
+| Master, no Tube | 9 | 1.1 fps |
+| Tube, 3MHz | 15 | 1.9 fps (533 ms) |
+| Tube, 4MHz | 21 | 2.6 fps (381 ms) |
+
+This is slower than the overlapped estimate (323 ms at 3MHz). The host
+draws a list only after sending the next frame's requests, and the
+server holds a finished list until the host reads it. The next step is
+to measure where each side waits.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

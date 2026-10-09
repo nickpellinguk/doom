@@ -87,7 +87,7 @@ run('tube_req', ['test_tube_req.py'], lambda o: 'TUBEREQ: PASS' in o)
 run('tube_hreq', ['test_tube_hreq.py'], lambda o: 'TUBEHREQ: PASS' in o)
 # host-led H3: the 6502 fill server's display list (src/tube/fserve.s + mfill.s SERVER)
 run('tube_server', ['test_tube_server.py'], lambda o: 'TUBESERVER: PASS' in o)
-# host-led H4a: the server on jsbeeb's second processor, over the Tube (NMI in, register 1 out)
+# host-led H4a: the server on jsbeeb's second processor, over the Tube (register 1 both ways, IRQ in)
 run('tube_link', ['test_tube_link.py'], lambda o: 'TUBELINK: PASS' in o)
 # the music player (master_music.py the spec, src/master/mmusic.s)
 run('master_music', ['test_master_music.py'], lambda o: 'MASTERMUSIC: PASS' in o)
@@ -97,6 +97,8 @@ run('bakedscan', ['tools/bakedscan.py', '--gate'],
     lambda o: 'BAKEDSCAN: PASS' in o or 'baseline written' in o)
 if '--disc' in sys.argv:
     run('master_disc', ['test_master_disc.py'], lambda o: 'MASTERDISC: PASS' in o)
+    # host-led H4b: the Tube disc, the server on a 3MHz second processor
+    run('tube_disc', ['test_master_disc.py', '--tube', '3'], lambda o: 'MASTERDISC: PASS' in o)
 
 baseline = None
 if os.path.exists(BASELINE_PATH):

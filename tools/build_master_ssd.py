@@ -122,7 +122,12 @@ def music(b5, b7):
             put(b7, abi.MUS_STREAM, stream, 'music stream'))
 
 
-def build():
+def build(tube=False):
+    """The Master disc, or (tube) the Tube Master's (docs/tube_master.md H4):
+    the TUBE engine link (its fill a request to the second processor, its
+    host drawer in HAZEL) and SERVER, the fill server's image, which !BOOT
+    loads into the second processor and starts. DOOM_ASMDEFS must already
+    say TUBE=1 for it (__main__ sets it)."""
     os.makedirs(OUT, exist_ok=True)
     hazel_tables()
     b4, b7, b5, b6, andy, main, cbits, hzeng = engine_images()
@@ -131,7 +136,15 @@ def build():
     assert len(hz) <= 0x280, 'boot HAZEL block runs into the plane caches at $C280'
     hz = hz.ljust(0x800, b'\0') + hzeng            # $C000 pattern/HUD | $C800 filler
     assert len(andy) == 0x1000
-    boot = asm('mboot', (f'HAZEL_PAGES={(len(hz) + 255) // 256}',))
+    defs = [f'HAZEL_PAGES={(len(hz) + 255) // 256}']
+    server = []
+    if tube:
+        import tube_req
+        import tube_server
+        load, img, entry = tube_server.Server(tube_req.ReqRef()).image()
+        server = [('SERVER', load, entry, img)]     # (no HOST bits: the parasite)
+        defs += ['TUBE=1', f'SERVER_ENTRY=${entry:04X}']
+    boot = asm('mboot', defs)
     assert len(main) == 0x4900 and len(cbits) == 0x2800
     gun = open(os.path.join(ROOT, 'engine_gun_m.bin'), 'rb').read()   # gun_b0
     assert len(gun) <= 0x600, 'gun_b0 overruns shadow $3000-$35FF'
@@ -145,8 +158,8 @@ def build():
              ('MHAZEL', HOST | 0x3000, HOST | 0x3000, hz),
              ('MANDY', HOST | 0x3000, HOST | 0x3000, andy),
              ('MPANEL', HOST | 0x3000, HOST | 0x3000, master_panel.panel_bytes()),
-             ('MGUN', HOST | 0x3000, HOST | 0x3000, gun)]
-    path = os.path.join(OUT, 'doom_master.ssd')
+             ('MGUN', HOST | 0x3000, HOST | 0x3000, gun)] + server
+    path = os.path.join(OUT, 'doom_tube.ssd' if tube else 'doom_master.ssd')
     ssd(files, path)
     for n, l, e, d in files:
         print(f'  {n:7s} &{l & 0xFFFF:04X}  {len(d):>6} B')
@@ -155,4 +168,6 @@ def build():
 
 if __name__ == '__main__':
     sys.path.insert(0, os.path.join(ROOT, 'tools'))
-    build()
+    tube = '--tube' in sys.argv
+    os.environ['DOOM_ASMDEFS'] = 'TUBE=1' if tube else ''
+    build(tube)

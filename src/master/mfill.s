@@ -5896,7 +5896,7 @@ sml_lp:
 ; HOST-LED TUBE MASTER (docs/tube_master.md H2): the fill REQUEST in place
 ; of the fill. tube_req.py is the spec (encode); test_tube_hreq.py holds
 ; this to it byte for byte. Bytes go to the second processor through the
-; Tube's register 3 (host -> parasite), polled.
+; Tube's register 1 (host -> parasite: its IRQ takes them), polled.
 ;   rq_frame  (walk.s, in place of mf_frame) the view: px88, py88 (24-bit),
 ;             vz, ab, the view trig
 ;   rq_fill   (seg_emit, in place of mf_fill, mf_snap's snapshot taken as
@@ -5907,10 +5907,10 @@ sml_lp:
 ;             and the live spans over [lo, hi), the pool's own fields
 ;   rq_end    $00: the frame's last request
 ; ============================================================================
-.macro PUTB                             ; A -> register 3 (A kept)
-:  BIT $FEE4
+.macro PUTB                             ; A -> register 1 (A kept)
+:  BIT $FEE0
    BVC :-                               ; (status bit 6: room)
-   STA $FEE5
+   STA $FEE1
 .endmacro
 
 .segment "MFILL"                        ; HAZEL: walk.s calls it under WALK,

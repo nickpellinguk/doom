@@ -130,8 +130,11 @@ process.exit(fails.length ? 1 : 0);
 async function engineMode() {
     fs.mkdirSync(outdir, { recursive: true });
     const A = JSON.parse(fs.readFileSync(expectPath, "utf8"));
-    const s = new MachineSession("Master");
+    // the Tube Master disc (A.tube_mhz): with the 65C102 second processor,
+    // clocked to it (jsbeeb fits the 4MHz part to a Master)
+    const s = new MachineSession("Master", A.tube_mhz ? { tube: true } : {});
     await s.initialise();
+    if (A.tube_mhz) s._machine.processor.tube.cpuMultiplier = A.tube_mhz / 4;
     await s.boot(30);
     s.loadDisc(disc);
     const fails = [], out = {}, out0 = out;
@@ -151,7 +154,9 @@ async function engineMode() {
                 let n = 0;
                 for (let i = 0; i < 8704; i++) if (v[i] === A.hole_marker) n++;
                 holeChecked++;
-                if (n) { holeFrames++; holeCells += n; }
+                // under the Tube the first flip shows frame -1's list, empty
+                // by design (the host draws each frame's list a frame late)
+                if (n && !(A.tube_mhz && holeChecked === 1)) { holeFrames++; holeCells += n; }
                 holeArm = null;
             }
         }

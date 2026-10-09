@@ -5,8 +5,8 @@
 // Boots jsbeeb's Master 128 with its 65C102 second processor (clocked to
 // in.mhz), puts the fill server's image (tube_server.py) in the second
 // processor's memory and starts it at fs_main. The host runs a pump, as
-// the real host will, pipelined: frame N's requests out through register 3
-// (the server takes them by NMI), then frame N - 1's display list in
+// the real host will, pipelined: frame N's requests out through register 1
+// (the server takes them by IRQ), then frame N - 1's display list in
 // through register 1, polled. in.json: {mhz, image: {load, hex, entry},
 // frames: [request hex], lists: [length of each list, frame -1's first],
 // pump: {hex, pump_n, done}}.

@@ -4,7 +4,7 @@
 jsbeeb's Master 128 and 65C102 second processor (tools/tube_link_rig.mjs):
 the fill server's image (tube_server.py) runs on the second processor as
 its program (fs_main); a host pump sends each regression pose's requests
-(tube_req.encode of the Python host's frame) through register 3 and reads
+(tube_req.encode of the Python host's frame) through register 1 (taken by IRQ) and reads
 the frame before's display list back through register 1, pipelined as
 the host will. Every list must be byte for byte tube_dl.encode of
 tube_req.FillServer's. Prints the host's cycles a frame (send + wait +

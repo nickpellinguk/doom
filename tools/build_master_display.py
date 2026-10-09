@@ -70,7 +70,8 @@ def ssd(files, path):
         disc[off + 7] = ord('$')
         disc[m:m + 6] = bytes((load & 255, load >> 8 & 255, exe & 255, exe >> 8 & 255,
                                len(data) & 255, len(data) >> 8 & 255))
-        disc[m + 6] = (nxt >> 8 & 3) | (len(data) >> 16 & 3) << 4 | 0xCC   # load/exe &FFxxxx: host
+        disc[m + 6] = ((nxt >> 8 & 3) | (len(data) >> 16 & 3) << 4      # load / exe bits 16-17:
+                       | (load >> 16 & 3) << 2 | (exe >> 16 & 3) << 6)  #  &FFxxxx (3) is the host
         disc[m + 7] = nxt & 255
         disc[nxt * 256:nxt * 256 + len(data)] = data
         nxt += (len(data) + 255) // 256

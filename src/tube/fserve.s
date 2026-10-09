@@ -27,8 +27,8 @@
 ; lines' runs then make the SPANs (fs_spans), the solid lists the FILLs
 ; (fs_fills). A frame has ~140 marks, at most ~10 in a column.
 ;
-; On the second processor (H4, fs_main) the host's register 3 bytes come
-; in by NMI (fs_nmi) into a ring the frame reads (fs_get); the list is
+; On the second processor (H4, fs_main) the host's register 1 bytes come
+; in by IRQ (fs_irq) into a ring the frame reads (fs_get); the list is
 ; written to one of two buffers while the other's goes out through
 ; register 1, topped up (fs_poll) from the frame's own loops -- so the
 ; host draws frame N while this builds N + 1. Register 1's FIFO never
@@ -56,7 +56,7 @@ SKY_EV   = $3D                          ; the sky's FILL byte (SKY_BYTE)
 VIEW_PAIRS = VIEW_LINES / 2
 
 fs_rp = zp_tmp0                         ; the request ring's read and
-fs_rw = zp_pm_p                         ;  write (fs_nmi) pointers
+fs_rw = zp_pm_p                         ;  write (fs_irq) pointers
 fs_sp = zp_anim_p                       ; the list going out: next byte, end
 fs_se = zp_anim_w
 RING = $2000                            ; fs_ring's size (page-aligned at a
@@ -160,8 +160,8 @@ fs_mb:   .res 1
 .segment "FSCODE"
 
 ; ---- fs_main: the second processor's program (H4). Entered once, by
-; the host (a Tube execute); never returns. Its own NMI takes the
-; host's register 3 bytes; then frame after frame: build the list, wait
+; the host (a Tube execute); never returns. Its own IRQ takes the
+; host's register 1 bytes; then frame after frame: build the list, wait
 ; for the last one to be out, send this one (fs_poll does, in the next
 ; frame's loops).
 fs_main:
@@ -169,8 +169,13 @@ fs_main:
    CLD
    LDX #$FF
    TXS
-   LDX #6                               ; the workspace clear: $0200-$07FF
-   LDA #2                               ;  and the high BSS, fs_ivp .. $F7FF
+   LDX #0                               ; zero page (the client's leftovers:
+:  STZ $00,X                            ;  py65 starts from zeros, so does
+   INX                                  ;  this)
+   BNE :-
+   LDX #10                              ; the workspace clear: $0200-$0BFF
+   LDA #2                               ;  (pages 2-7, the pool) and the
+                                        ;  high BSS, fs_ivp .. $F7FF
    STA PTR+1
    STZ PTR
    LDY #0
@@ -185,12 +190,22 @@ fs_main:
    LDA #>fs_ring
    STA fs_rp+1
    STA fs_rw+1
-   STA $FEFD                            ; (register 3 keeps a byte back to
-                                        ;  the host: no NMI from its side)
-   LDA #<fs_nmi                         ; the host's bytes, from here on (it
-   STA $FFFA                            ;  sends none before frame -1's list
-   LDA #>fs_nmi                         ;  reaches it)
-   STA $FFFB
+   LDA #<fs_irq                         ; the host's bytes, from here on
+   STA $FFFE                            ;  (the IRQ / BRK vector: no BRK here)
+   LDA #>fs_irq
+   STA $FFFF
+   LDX #0                               ; the host is in the MOS's Tube loop
+:  BIT $FEFA                            ;  (it started this with a Tube
+   BVC :-                               ;  execute): an OSCLI over register 2
+   LDA fs_cli,X                         ;  sends it back to its boot loader
+   STA $FEFB
+   INX
+   CMP #13
+   BNE :-
+:  LDA $FEF8                            ; which sets I, the IRQ this takes its
+   AND #$02                             ;  requests by: then frame -1's list
+   BEQ :-                               ;  may go (the MOS loop would have
+   CLI                                  ;  taken it for a character)
    LDA #<fs_listb                       ; frame -1's list: empty ($00)
    STA fs_sp
    STA fs_se
@@ -241,10 +256,14 @@ fs_main:
    BNE :-
    RTS
 
-; fs_nmi: a request byte from the host (register 3), into the ring
-fs_nmi:
+fs_cli:  .byte 2, "GOIO 1903", 13        ; R2: OSCLI (2), the command, CR
+
+; fs_irq: a request byte from the host (register 1), into the ring. An
+; IRQ, not register 3's NMI: the next byte (which the host may write the
+; moment this one is read) cannot land inside this one.
+fs_irq:
    PHA
-   LDA $FEFD
+   LDA $FEF9
    STA (fs_rw)
    INC fs_rw
    BNE :+

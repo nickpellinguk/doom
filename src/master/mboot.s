@@ -44,9 +44,17 @@ GUN_STAGE   = PANEL_STAGE - GUN_PAGES * 256   ; parked at $7400 meanwhile
 .assert $3000 + (HAZEL_PAGES + ANDY_PAGES) * 256 <= GUN_STAGE, error, "parked HAZEL + ANDY reach the gun's stage"
 ; the bounce page is $0A00, one free OS buffer page (written inline)
 
+.ifdef TUBE
+.define STAGE "FFFF3000"                ; (a second processor is on: a bare
+.else                                   ;  3000 would be ITS address)
+.define STAGE "3000"
+.endif
+
         .segment "CODE"
 ldr:
-        ldx #0
+        jmp l_start
+l_cont:                                 ; $1903 (TUBE: *GOIO 1903, from the
+        ldx #0                          ;  fill server, started below)
 @vdu:   lda vdu_init,x                  ; MODE 130 first
         jsr $FFEE
         inx
@@ -93,6 +101,7 @@ ldr:
         ldx #<c_gn
         ldy #>c_gn
         jsr $FFF7                       ; *LOAD MGUN 3000
+
         lda #>GUN_STAGE                 ; park it below the panel
         ldx #GUN_PAGES
         jsr park
@@ -102,6 +111,32 @@ ldr:
         dex
         bne :-
         jmp $0900
+
+l_start:
+.ifndef TUBE
+        jmp l_cont
+.else
+        ; TUBE MASTER (docs/tube_master.md H4): first, while nothing is parked
+        ; in the shadow screen (the MOS writes it from here), the fill server:
+        ; SERVER into the second processor (its own address), started there
+        ; through the MOS's Tube host code at &0406 -- claim, then transfer
+        ; type 4, execute. The host then serves the second processor (the
+        ; MOS's Tube loop) until the server's first act, an OSCLI: *GOIO
+        ; 1903, l_cont above, the rest of the boot.
+        ldx #<c_sv
+        ldy #>c_sv
+        jsr $FFF7                       ; *LOAD SERVER
+@claim: lda #$C0 + TUBE_ID
+        jsr $0406
+        bcc @claim
+        lda #4
+        ldx #<s_entry
+        ldy #>s_entry
+        jsr $0406
+@hang:  bra @hang                       ; (not reached: the MOS serves the Tube)
+TUBE_ID = $3D                           ; (any client id: the claim is ours)
+s_entry: .dword SERVER_ENTRY            ; fs_main, in the second processor
+.endif
 
 park:                                   ; main $3000 (X pages) -> shadow page A
         sta $83
@@ -162,14 +197,17 @@ copy:                                   ; A = bank: $3000-$6FFF -> $8000
         cli
         rts
 oldrom: .byte 0
-c_b4:   .byte "LOAD MBANK4 3000", 13
-c_b7:   .byte "LOAD MBANK7 3000", 13
-c_b5:   .byte "LOAD MBANK5 3000", 13
-c_b6:   .byte "LOAD MBANK6 3000", 13
-c_hz:   .byte "LOAD MHAZEL 3000", 13
-c_an:   .byte "LOAD MANDY 3000", 13
-c_pn:   .byte "LOAD MPANEL 3000", 13
-c_gn:   .byte "LOAD MGUN 3000", 13
+c_b4:   .byte "LOAD MBANK4 ", STAGE, 13
+c_b7:   .byte "LOAD MBANK7 ", STAGE, 13
+c_b5:   .byte "LOAD MBANK5 ", STAGE, 13
+c_b6:   .byte "LOAD MBANK6 ", STAGE, 13
+c_hz:   .byte "LOAD MHAZEL ", STAGE, 13
+c_an:   .byte "LOAD MANDY ", STAGE, 13
+c_pn:   .byte "LOAD MPANEL ", STAGE, 13
+c_gn:   .byte "LOAD MGUN ", STAGE, 13
+.ifdef TUBE
+c_sv:   .byte "LOAD SERVER", 13
+.endif
 vdu_init:
         .byte 22, 130                   ; MODE 130: Mode 2 in shadow RAM
 vdu_end:
@@ -177,12 +215,15 @@ vdu_end:
 stub_image:
         .segment "STUB"                 ; runs at $0900
 stub:
-        ldx #<s_main
-        ldy #>s_main
-        jsr $FFF7                       ; *LOAD MMAIN (to its own $0F00)
-        ldx #<s_cbits
-        ldy #>s_cbits
-        jsr $FFF7                       ; *LOAD MCBITS (to its own $5800) -- LAST
+        jmp s_load
+s_go:                                   ; the loads are done
+.ifdef TUBE
+        sei
+        lda #$1D                        ; no Tube interrupts (clear Q J M V)
+        sta $FEE0
+        lda #$82                        ; but the server's IRQ from register
+        sta $FEE0                       ;  1 (set I): it waits to see I
+.endif
         sei
         lda #$00
         sta $80
@@ -257,6 +298,14 @@ stub:
         jsr s_copy
         stz $FE30                       ; ANDY out (the engine pages its own)
         jmp DRV_ORG                     ; -> driver (SEI held; no OS from here)
+s_load:
+        ldx #<s_main
+        ldy #>s_main
+        jsr $FFF7                       ; *LOAD MMAIN (to its own $0F00)
+        ldx #<s_cbits
+        ldy #>s_cbits
+        jsr $FFF7                       ; *LOAD MCBITS (to its own $5800) -- LAST
+        jmp s_go
 s_copy:                                 ; X pages ($80) -> ($82), Y = 0
 @cp:    lda ($80),y
         sta ($82),y
@@ -272,3 +321,4 @@ s_cbits: .byte "LOAD MCBITS", 13
 s_end:
 stub_len = s_end - stub
         .assert stub_len <= 256, error, "stub must fit page 9"
+        .assert l_cont = $1903, error, "the server's *GOIO 1903 lands on l_cont"

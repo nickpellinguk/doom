@@ -4,7 +4,7 @@
 The engine is linked with TUBE (DOOM_ASMDEFS=TUBE=1): walk.s calls
 rq_frame in place of mf_frame and seg_emit calls rq_fill in place of
 mf_fill (src/master/mfill.s). The rig's memory captures every write to
-the Tube's register 3 data ($FEE5; the status $FEE4 reads room). At every
+the Tube's register 1 data ($FEE5; the status $FEE4 reads room). At every
 regression pose (the walk's end sends rq_end's $00 itself):
 
   1. the bytes sent, through rq_end, decode (tube_req.decode) to the
@@ -36,8 +36,7 @@ sys.path.insert(0, ROOT)
 os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 FRAMES = os.path.join(ROOT, 'build', 'tube', 'master_frames.bin')
-R3_STATUS, R3_DATA = 0xFEE4, 0xFEE5
-R1_STATUS, R1_DATA = 0xFEE0, 0xFEE1
+R1_STATUS, R1_DATA = 0xFEE0, 0xFEE1   # requests out, the list in
 
 
 def renderer():
@@ -78,9 +77,9 @@ def main():
     from symmap import sym
 
     class TubeMem(BankedMemory):
-        """The banked memory with register 3 captured."""
+        """The banked memory with register 1's writes captured."""
         def __setitem__(self, i, v):
-            if i == R3_DATA:
+            if i == R1_DATA:
                 self.sent.append(v & 0xFF)
                 return
             super().__setitem__(i, v)
@@ -90,7 +89,7 @@ def main():
         reads cost, so only then)."""
         def __getitem__(self, i):
             if i == R1_STATUS:
-                return 0x80 if self.lp < len(self.dl) else 0
+                return 0x40 | (0x80 if self.lp < len(self.dl) else 0)
             if i == R1_DATA:
                 self.lp += 1
                 return self.dl[self.lp - 1]
@@ -99,7 +98,7 @@ def main():
     dw, r = renderer()
     r.bm.__class__ = TubeMem
     r.bm.sent = []
-    list.__setitem__(r.bm, R3_STATUS, 0x40)     # always room
+    list.__setitem__(r.bm, R1_STATUS, 0x40)     # always room
     H, S = tube_req.ReqRef(), tube_req.FillServer()
     import tube_dl
     hd = sym('hd_frame')
