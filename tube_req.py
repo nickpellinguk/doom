@@ -27,7 +27,8 @@ Bytes, one frame:
             tvy1 tvy2 (s16) when exactly one end is clipped      4 B
             nb, nb spans; na, na spans: the pool's spans over
             [lo, hi) before and after the seg's update; a span
-            is x0 x1 tx0 tx1 top0 bot0 top1 bot1 bx0 bx1 (u8)  1 + 10 B each
+            is the pool's own fields, XSTART XEND TXLO TDEN TL BL
+            TR BR BXLO BDEN (u8: line ends as start + delta)  1 + 10 B each
 """
 import struct
 
@@ -57,8 +58,11 @@ class ReqRef(tube_dl.DLRef):
 
 
 def _span_bytes(s):
-    bx = (s.bxlo, s.bxhi) if hasattr(s, 'bxlo') else (s[2], s[3])
-    return bytes(tuple(s[:8]) + bx)
+    """A span as the clip pool holds it: XSTART XEND TXLO TDEN TL BL TR BR
+    BXLO BDEN (the line ends as start + delta, mod 256: read_spans)."""
+    xs, xe, tx0, tx1, tl, bl, tr, br = s
+    bx0, bx1 = (s.bxlo, s.bxhi) if hasattr(s, 'bxlo') else (tx0, tx1)
+    return bytes((xs, xe, tx0, (tx1 - tx0) & 0xFF, tl, bl, tr, br, bx0, (bx1 - bx0) & 0xFF))
 
 
 def encode(frame):
@@ -107,9 +111,9 @@ def decode(b):
             k, p = b[p], p + 1
             lst = []
             for _ in range(k):
-                f = b[p:p + 10]
-                s = Span(tuple(f[:8]))
-                s.bxlo, s.bxhi = f[8], f[9]
+                xs, xe, tx0, tden, tl, bl, tr, br, bx0, bden = b[p:p + 10]
+                s = Span((xs, xe, tx0, (tx0 + tden) & 0xFF, tl, bl, tr, br))
+                s.bxlo, s.bxhi = bx0, (bx0 + bden) & 0xFF
                 lst.append(s)
                 p += 10
             spans.append(lst)

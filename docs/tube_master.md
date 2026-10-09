@@ -49,7 +49,15 @@ at 3MHz, 257 ms (host-bound) at 4MHz, against 575 ms today.
 4. *(superseded by the host-led plan: 4a's census below is why)*
 5. **H1. The fill request, in the Python models. — DONE.**
 6. **H2.** The host side in 6502: the Master engine with its fill call
-   replaced by sending the request; gated against `tube_req.encode`.
+   replaced by sending the request; gated against `tube_req.encode`. The
+   seam is already there: `mf_snap` (at the head of a seg's clip cascade,
+   seg_emit) copies the pool's spans over the seg's columns -- the
+   request's "before" -- and `mf_fill` (after the update) reads the seg's
+   line terms from zero page and the live pool -- the "after". A
+   host-led link swaps master/mfill.s for a sender: `rq_snap` as
+   `mf_snap`; `rq_fill` sends the header (slot from `zp_seg_hdr_p`, the
+   range, the line ends, `zp_seg_v1/v2_clipped`, the reciprocal terms, the
+   view depths), the snapshot, then the live spans over the range.
 7. **H3.** The second processor's fill server in 6502: the Master's fill
    set-up fed from requests, emitting the list; gated against
    `tube_req.FillServer` / `tube_dl.encode`.
@@ -72,8 +80,9 @@ frame (the view). The request is exactly that:
   range clamped to 0-255 (2), the six line ends (12), the ends' reciprocal
   terms m / S (4), the ends' view depths when exactly one end is clipped
   (4), and the pool's spans over the range before and after the update
-  (a count, then 10 bytes a span: range, top-line anchors and ends, the
-  bottom line's ends and anchors).
+  (a count, then 10 bytes a span: the clip pool's own fields XSTART XEND
+  TXLO TDEN TL BL TR BR BXLO BDEN, so the host copies them straight out
+  of the pool).
 
 `ReqRef` (the host: PlaneRef rendering as before) records each frame's
 requests; `FillServer` (the second processor) is the same fill with no
