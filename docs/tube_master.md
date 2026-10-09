@@ -27,18 +27,63 @@ the host only draws it, one frame behind, while the next is computed.
 
 ## Plan
 
-1. **The display list, in the Python models. — DONE.** Define it on the
-   spec models; a host-side model draws a frame from the list alone,
-   byte for byte the Master's frame.
-2. **Measure. — DONE: go.** The list's size per frame over the poses and
-   a compact encoding; the Tube's transfer cost on jsbeeb (65C102 second
-   processor); the host's drawing cycles from the list.
-3. **The host drawer** in 6502: the existing inner loops fed from the
-   list, gated against `tube_dl.draw`. — **First version done:
-   byte-exact; 377K cycles a frame (188 ms).** Tuning to come.
-4. **The second processor**: the engine and the fill's set-up relinked
-   flat for the 64K map, emitting the list; the two halves joined over
-   the Tube. 4a, the memory census: **does not fit as it stands** (below).
+**Host-led (from H1).** Step 4a's census showed the second processor
+cannot hold the whole renderer: its half came to 80K (72K after moving
+movement off and packing planes) against about 64K. So control is
+inverted: the **host keeps the engine** -- the BSP walk, transform,
+clipping, movement, the map data, in its own large memory -- and the
+drawing; the **second processor is the fill's set-up**, the bulk of the
+frame's arithmetic. For each wall seg the host sends a request (what the
+Master's fill is called with); the second processor answers with the
+display list (step 1), which the host draws (step 3). The second
+processor then needs only the fill's code and its static tables (about
+26K), with room left for faster tables. Estimated split (Master profile,
+step 3's host): host ~515K cycles a frame (engine ~120K, requests ~8K,
+drawing ~377K, movement ~15K), second processor ~813K: 271 ms a frame
+at 3MHz, 257 ms (host-bound) at 4MHz, against 575 ms today.
+
+1. **The display list, in the Python models. — DONE.**
+2. **Measure. — DONE: go.**
+3. **The host drawer** in 6502. — **First version done: byte-exact;
+   377K cycles a frame (188 ms).** Tuning to come.
+4. *(superseded by the host-led plan: 4a's census below is why)*
+5. **H1. The fill request, in the Python models. — DONE.**
+6. **H2.** The host side in 6502: the Master engine with its fill call
+   replaced by sending the request; gated against `tube_req.encode`.
+7. **H3.** The second processor's fill server in 6502: the Master's fill
+   set-up fed from requests, emitting the list; gated against
+   `tube_req.FillServer` / `tube_dl.encode`.
+8. **H4.** The two halves joined over the Tube (requests through
+   register 3, the list back through register 1), the disc and jsbeeb.
+
+## H1. The fill request. — DONE
+
+`tube_req.py`. The Master's fill is called once per wall seg the engine
+draws, after the clipper's span update, with the seg's slot, its column
+range, its projected ends and top / bottom lines, solid or not, and it
+reads the engine's near-clip terms and the clip spans (`_span_at`,
+`_span_top`, `_span_bot` on the pool before and after the update);
+everything else it reads is static (wall parts, dressings and lengths by
+slot; the segs' sector heights and flats; the flats' far tones) or once a
+frame (the view). The request is exactly that:
+
+- per frame: the view (px88, py88 24-bit, vz, ab): 8 bytes;
+- per wall seg: slot + solid + the two clip flags (2 bytes), the column
+  range clamped to 0-255 (2), the six line ends (12), the ends' reciprocal
+  terms m / S (4), the ends' view depths when exactly one end is clipped
+  (4), and the pool's spans over the range before and after the update
+  (a count, then 10 bytes a span: range, top-line anchors and ends, the
+  bottom line's ends and anchors).
+
+`ReqRef` (the host: PlaneRef rendering as before) records each frame's
+requests; `FillServer` (the second processor) is the same fill with no
+engine and no map, served from decoded requests. *Gate*
+`test_tube_req.py` (in `run_regression.py`): at all 35 poses the served
+frame equals PlaneRef's byte for byte and the served display list
+encodes to exactly the host-side list's bytes. **Requests: mean 854 B a
+frame, worst 2,385 B** (56 segs at (1046.7, -3090.4, 157)); 0-56 wall
+segs a frame, 23 on average. At 10 host cycles a byte the requests cost
+the host about 8.5K cycles a frame.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

@@ -81,6 +81,8 @@ run('master_pmove', ['test_master_pmove.py'], lambda o: 'MASTERPMOVE: PASS' in o
 run('tube_dl', ['test_tube_dl.py'], lambda o: 'TUBEDL: PASS' in o)
 # tube-master step 3: the 6502 host drawer draws the list (src/tube/hdraw.s)
 run('tube_host', ['test_tube_host.py'], lambda o: 'TUBEHOST: PASS' in o)
+# host-led H1: the fill served from requests alone (tube_req.py)
+run('tube_req', ['test_tube_req.py'], lambda o: 'TUBEREQ: PASS' in o)
 # the music player (master_music.py the spec, src/master/mmusic.s)
 run('master_music', ['test_master_music.py'], lambda o: 'MASTERMUSIC: PASS' in o)
 # BAKED ADDRESSES: a literal address is a copy of a fact. This ratchets: the
