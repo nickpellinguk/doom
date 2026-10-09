@@ -108,16 +108,21 @@ class DLRef(P.PlaneRef):
         with the same byte joined."""
         dl = list(self.walls)
         sky = ('b', M.wall_byte(Fm.SH_SKY))
+        # a plane cell is the frame's only while the grid still shows a
+        # plane there: a wall or solid run drawn over it later takes it
+        # (H4c; the server's fs_trim)
+        pcell = lambda y, k: (self.pcells.get((y, k))
+                              if (g := self.grid[y][2 * k]) is not None and g[0] == 'F' else None)
         for y in range(Fm.LINES):
             k = 0
             while k < 64:
-                c = self.pcells.get((y, k))
+                c = pcell(y, k)
                 if c is None:
                     k += 1
                     continue
                 (uc, du, vc, dv), pic, far, _ = c
                 k1 = k
-                while k1 + 1 < 64 and (n := self.pcells.get((y, k1 + 1))) is not None \
+                while k1 + 1 < 64 and (n := pcell(y, k1 + 1)) is not None \
                         and n[:3] == c[:3]:
                     k1 += 1
                 rec = dict(kind='SPAN', y=y, k0=k, k1=k1,

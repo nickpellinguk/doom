@@ -90,11 +90,12 @@ class Server:
         a, b = IMAGE
         return a, bytes(self.mem[a:b]), self.L['fs_main']
 
-    def serve(self, req, limit=20_000_000, drop=False):
+    def serve(self, req, limit=20_000_000, drop=False, trace=None):
         """Run fs_frame over a frame's request bytes, put in its ring as
         fs_irq would: (the list, cycles). drop: the records the list's cap
         (LISTCAP) and the marks, runs and planes the server's tables could
-        not take; asserted none unless drop."""
+        not take; asserted none unless drop. trace: {pc: f(mpu)}, called
+        as each of those instructions is reached (tools)."""
         L, m, mpu = self.L, self.mem, self.mpu
         q, n = L['fs_ring'], L['fs_ringsz']
         rp_, rw_ = L['fs_rp'], L['fs_rw']
@@ -122,6 +123,8 @@ class Server:
         mpu.pc, mpu.sp = TRAMP, 0xFF
         c0 = mpu.processorCycles
         while mpu.pc != TRAMP + 3:
+            if trace and mpu.pc in trace:
+                trace[mpu.pc](mpu)
             mpu.step()
             if fed[0] < len(req) and m[rp_ + 1] != fed[1]:
                 fed[1] = m[rp_ + 1]             # a page read: room for more

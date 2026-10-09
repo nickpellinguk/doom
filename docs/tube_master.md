@@ -229,7 +229,7 @@ host engine linked with `TUBE`, and the fill server as the file `SERVER`.
 - the host sends each request byte with `PUTB` in `mfill.s` (`$FEE0`
   room, `$FEE1` data);
 - the server takes each byte by IRQ (`fs_irq` at `$FFFE`, flag I) into
-  a 4K ring at `$C000`. At each page's start the IRQ takes the page only
+  a 2K ring at `$D800`. At each page's start the IRQ takes the page only
   if the reader is in neither it nor the next. Otherwise it leaves the
   byte in register 1, so the host waits on its room, and returns with
   IRQs masked; `fs_get` turns them back on as it frees a page, or finds
@@ -252,10 +252,10 @@ handler, so it cannot nest.
 
 The server serves frame N as its requests come in, then waits for list
 N - 1 to finish going out before it swaps its two list buffers (A at
-`$A300`, B at `$D000`, 7.25K each). The host can be up to two frames of
+`$B400`, B at `$E000`, 7.25K each). The host can be up to two frames of
 requests ahead (frame N + 2 while the server is on N + 1), and one frame's
-requests reach 6.5K, which is why the ring needs its flow control. Frame -1's list is a single `$00`, so the
-first frame shown is empty.
+requests reach 6.5K, which is why the ring needs its flow control.
+Frame -1's list is a single `$00`, so the first frame shown is empty.
 
 **The boot.** `!BOOT` (`mboot.s`) first does `*LOAD SERVER`; the image
 loads to the second processor at `$0C00`-`$71FF`. Then it claims the
@@ -280,12 +280,11 @@ it clears flags Q, J, M and V, sets I, and jumps to the driver.
 | `$0200`-`$07FF` | Fill workspace |
 | `$0A00`-`$0BFF` | Span pool (`SPAN_POOL`) |
 | `$0C00`-`$71FF` | The file: tables and code |
-| `$7200`-`$A2FF` | Marks and line runs |
-| `$A300`-`$BFFF` | List buffer A |
-| `$C000`-`$CFFF` | Request ring |
-| `$D000`-`$ECFF` | List buffer B |
-| `$ED00`-`$F5FF` | Server workspace |
-| `$F600`-`$F7FF` | Fill workspace |
+| `$7200`-`$B3FF` | Marks (16 a column) and line runs (16 a line) |
+| `$B400`-`$D0FF` | List buffer A |
+| `$D100`-`$D7FF` | Server and fill workspace |
+| `$D800`-`$DFFF` | Request ring |
+| `$E000`-`$FCFF` | List buffer B (over the client OS, which the server has replaced) |
 | `$FFFE` | IRQ vector |
 
 **The list's cap.** The first disc had 5.5K list buffers, and a list in
@@ -298,7 +297,34 @@ passes `LISTCAP` (7K). The list stays whole, with its `$00`, and
 `fs_drop` counts the records lost (saturating at 255). The server's mark,
 run and plane tables drop the same way.
 
+**Random poses (H4c).** `tube_fuzz.py` samples poses the player can
+stand at: a point whose sector, and the player's box's, are reachable
+from the spawn (`colmap`'s flood), any angle. Served on the 6502 and by
+the model, about 2% of them differed or dropped. The model's list drew
+the frame every time, so the server was wrong:
+- *Overlapping runs.* The Master's fill sometimes writes a cell twice: a
+  wall's last row over a solid run's first, or a plane's line over
+  another's. The later write wins the frame, but the server kept every
+  mark whole, and the host draws FILLs and SPANs after WALLs. Now
+  `fs_trim` runs before each wall run and each new mark: the column's
+  plane and solid marks lose the lines drawn over (a mark inside them
+  goes, one across an end is cut, one around them is split). The model
+  takes a plane cell only while the frame's grid still shows a plane
+  there. It costs about 3.5% of the server's time.
+- *Full line run lists.* Some views put 9 plane runs on a line, against
+  the server's 8. The lists now hold 16 a line. The ring went to 2K to
+  make room (flow control makes the size a matter of how far the host
+  may run ahead, not of correctness).
+- *A one-line run's step.* The model's step was the full value, the 6502's
+  its 16-bit pair step halved. A one-line run never uses it; the model
+  now keeps the 15 bits the 6502 does.
+
+`test_tube_fuzz.py` holds every pose that caught the server out, and a
+fixed batch of 150 random ones.
+
 **Gates** (all in `run_regression.py`):
+- `test_tube_fuzz.py`: the corpus and the random batch, byte for byte,
+  nothing dropped.
 - `test_tube_link.py`: the server on jsbeeb's second processor with a
   host pump (`src/tube/lpump.s`). At 37 poses (`poses.TUBE_BIG` adds
   the largest requests and list found) each list is byte for byte the

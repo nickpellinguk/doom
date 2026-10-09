@@ -87,6 +87,8 @@ run('tube_req', ['test_tube_req.py'], lambda o: 'TUBEREQ: PASS' in o)
 run('tube_hreq', ['test_tube_hreq.py'], lambda o: 'TUBEHREQ: PASS' in o)
 # host-led H3: the 6502 fill server's display list (src/tube/fserve.s + mfill.s SERVER)
 run('tube_server', ['test_tube_server.py'], lambda o: 'TUBESERVER: PASS' in o)
+# host-led H4c: the fill server at random poses and every pose they caught it out at
+run('tube_fuzz', ['test_tube_fuzz.py'], lambda o: 'TUBEFUZZ: PASS' in o)
 # host-led H4a: the server on jsbeeb's second processor, over the Tube (register 1 both ways, IRQ in)
 run('tube_link', ['test_tube_link.py'], lambda o: 'TUBELINK: PASS' in o)
 # the music player (master_music.py the spec, src/master/mmusic.s)

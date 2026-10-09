@@ -59,8 +59,9 @@ fs_rp = zp_tmp0                         ; the request ring's read and
 fs_rw = zp_pm_p                         ;  write (fs_irq) pointers
 fs_sp = zp_anim_p                       ; the list going out: next byte, end
 fs_se = zp_anim_w
+RN = 16                                 ; runs a line (fs_rn; 9 seen)
 .ifndef RING
-RING = $1000                            ; fs_ring's size (page-aligned at a
+RING = $0800                            ; fs_ring's size (page-aligned at a
 .endif                                  ;  multiple of it; -D for the gates)
 fs_ringsz = RING                        ; (for tube_server's py65 feed)
 LISTSZ = $1D00                          ; each list buffer's size: records
@@ -96,8 +97,8 @@ fs_op = zp_prod_l                       ; the list write pointer
 fs_ivp:  .res $1000                     ; per byte column k: 16 plane marks
 fs_ivf:  .res $1000                     ;  / solid marks (y0, y1, code, -)
                                         ;  at + k * 64, sorted by y0
-fs_rn:   .res $1100                     ; per line y: 8 runs (k0, k1, code,
-                                        ;  -) at + y * 32, in k order
+fs_rn:   .res $2200                     ; per line y: 16 runs (k0, k1, code,
+                                        ;  -) at + y * 64, in k order
 .segment "FSLA"
 fs_lista: .res LISTSZ                   ; the lists: one being built, the
 .segment "FSLB"                         ;  other going out (seen to ~5.7K)
@@ -116,6 +117,13 @@ fs_wt:   .res 1                         ;  texture, last byte column, header
 fs_wk:   .res 1
 fs_wh:   .res 2
 fs_t:    .res 2                         ; scratch
+fs_ty0:  .res 1                         ; fs_trim: the lines drawn over,
+fs_ty1:  .res 1                         ;  the column, its list (0 plane, 64
+fs_tk:   .res 1                         ;  solid), marks left to look at, a
+fs_tl:   .res 1                         ;  mark's place, the shift's end
+fs_tn:   .res 1
+fs_ty:   .res 1
+fs_te:   .res 1
 fs_k:    .res 1
 fs_y:    .res 1
 fs_n:    .res 1
@@ -124,7 +132,7 @@ fs_gn:   .res 1                         ;  and its count
 ; a line's plane runs, even line at re_* + 0.., odd at re_* + RO..: k0,
 ; k1, the row's U V at column 32 and steps (4.4), flat (| $80: far), far
 ; tone
-RO = 16                                 ; (a line's runs: at most 8)
+RO = 16                                 ; (a line's runs: at most RN)
 re_k0:   .res 2 * RO
 re_k1:   .res 2 * RO
 re_uc:   .res 2 * RO
@@ -187,14 +195,14 @@ fs_main:
    BNE :-
    LDX #10                              ; the workspace clear: $0200-$0BFF
    LDA #2                               ;  (pages 2-7, the pool) and the
-                                        ;  high BSS, fs_ivp .. $F7FF
+                                        ;  high BSS, fs_ivp .. $FCFF
    STA PTR+1
    STZ PTR
    LDY #0
    JSR @clr
    LDA #>fs_ivp
    STA PTR+1
-   LDX #>$F800 - >fs_ivp
+   LDX #>$FD00 - >fs_ivp
    JSR @clr
    LDA #<fs_ring
    STA fs_rp
@@ -644,6 +652,20 @@ fs_pid:
 ; lines r_ys .. r_ye (unbiased) of byte column mf_x >> 2: into the
 ; column's plane or solid list, in y0 order
 fs_mark:
+   PHA
+   LDA mf_x
+   LSR A
+   LSR A
+   TAX
+   LDA fs_cnt,X                         ; marks in the column: what the run
+   ORA fs_cnt+64,X                      ;  is drawn over is its (fs_trim)
+   BEQ :+
+   LDA r_ys
+   STA fs_ty0
+   LDA r_ye
+   STA fs_ty1
+   JSR fs_trim
+:  PLA
    CMP #$80
    BNE @code
    LDA pl_kind
@@ -727,6 +749,183 @@ fs_mark:
    STA (fs_cp),Y
    RTS
 
+; ---- fs_trim: lines fs_ty0 .. fs_ty1 of byte column X are drawn over (a
+; wall run, or a later mark): the column's plane and solid marks lose them,
+; as the Master's later write wins the cell. A mark inside them goes, one
+; across an end is cut, one around them both is split in two (dropped if
+; the column's list is full). Each list stays in y0 order, its marks apart.
+fs_trim:
+   STX fs_tk
+   STZ fs_tl                            ; the plane list, then the solid
+   TXA                                  ; PTR: the column's block, (k & 3) *
+   ASL A                                ;  64 into page k >> 2 of its list
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   STA PTR
+   TXA
+   LSR A
+   LSR A
+   CLC
+   ADC #>fs_ivp
+   STA PTR+1
+@list:
+   LDA fs_tk
+   ORA fs_tl
+   TAX
+   LDA fs_cnt,X
+   BEQ @next
+   STA fs_tn
+   LDY #0
+@m:                                     ; Y: the mark's place
+   LDA (PTR),Y                          ; y0 > ty1: this and all after clear
+   CMP fs_ty1
+   BEQ :+
+   BCS @next
+:  INY
+   LDA (PTR),Y                          ; y1 < ty0: clear
+   DEY
+   CMP fs_ty0
+   BCC @keep
+   LDA (PTR),Y
+   CMP fs_ty0
+   BCC @below
+   INY                                  ; y0 >= ty0: y1 <= ty1 goes whole,
+   LDA fs_ty1                           ;  else it starts past ty1
+   CMP (PTR),Y
+   DEY
+   BCS @del
+   INC A
+   STA (PTR),Y
+   BRA @next                            ; (those after start past it)
+@below:                                 ; y0 < ty0: y1 <= ty1 is cut to end
+   INY                                  ;  before ty0, else split
+   LDA fs_ty1
+   CMP (PTR),Y
+   BCC @split
+   LDA fs_ty0
+   DEC A
+   STA (PTR),Y
+   DEY
+@keep:
+   INY
+   INY
+   INY
+   INY
+   DEC fs_tn
+   BNE @m
+@next:
+   LDA fs_tl
+   BNE @rts
+   LDA #64
+   STA fs_tl
+   CLC                                  ; the solid list's page
+   LDA PTR+1
+   ADC #>fs_ivf - >fs_ivp
+   STA PTR+1
+   BRA @list
+@rts:
+   LDX fs_tk
+   RTS
+@del:                                   ; the marks after it move down one
+   STY fs_ty
+   LDA fs_tn
+   DEC A
+   ASL A
+   ASL A
+   CLC
+   ADC fs_ty
+   STA fs_te
+:  CPY fs_te
+   BEQ :+
+   INY
+   INY
+   INY
+   INY
+   LDA (PTR),Y
+   DEY
+   DEY
+   DEY
+   DEY
+   STA (PTR),Y
+   INY
+   BRA :-
+:  LDY fs_ty
+   LDA fs_tk
+   ORA fs_tl
+   TAX
+   DEC fs_cnt,X
+   DEC fs_tn
+   BEQ :+
+   JMP @m
+:  JMP @next
+@split:                                 ; Y: its y1. The part past ty1 is a
+   DEY                                  ;  new mark after it (the marks after
+   STY fs_ty                            ;  move up one)
+   LDA fs_tk
+   ORA fs_tl
+   TAX
+   LDA fs_cnt,X
+   CMP #16
+   BCC :+
+   DROP                                 ; (full: only the part before kept)
+   BRA @cut
+:  INC fs_cnt,X
+   ASL A                                ; the list's end: count * 4 - 1
+   ASL A
+   TAY
+   DEY
+   LDA fs_ty                            ; down to the next mark's first byte
+   CLC
+   ADC #4
+   STA fs_te
+:  CPY fs_te
+   BCC :+
+   LDA (PTR),Y
+   INY
+   INY
+   INY
+   INY
+   STA (PTR),Y
+   DEY
+   DEY
+   DEY
+   DEY
+   DEY
+   CPY #$FF
+   BNE :-
+:  LDY fs_ty
+   INY                                  ; the new mark: ty1 + 1 .. y1, code
+   LDA (PTR),Y
+   INY
+   INY
+   INY
+   INY
+   STA (PTR),Y
+   DEY
+   DEY
+   DEY
+   LDA (PTR),Y
+   INY
+   INY
+   INY
+   INY
+   STA (PTR),Y
+   DEY
+   DEY
+   LDA fs_ty1
+   INC A
+   STA (PTR),Y
+@cut:
+   LDY fs_ty
+   INY
+   LDA fs_ty0
+   DEC A
+   STA (PTR),Y
+   JMP @next
+
 ; ---- fs_wall: (tr_screen) the wall run's WALL record ----------------------
 ; Byte column mf_x >> 2, lines r_ys .. r_ye (biased), texture t_tid; the
 ; columns tw_ll / tw_rl (tcol: SERVER), v l_v and step l_step, shared
@@ -743,6 +942,24 @@ fs_wall:
    LSR A
    LSR A
    STA fs_k
+   PHX                                  ; (the caller's X and Y kept)
+   TAX
+   LDA fs_cnt,X                         ; marks in the column: what the run
+   ORA fs_cnt+64,X                      ;  is drawn over is its (fs_trim)
+   BEQ @nt
+   SEC
+   LDA r_ys
+   SBC #Y_BIAS
+   STA fs_ty0
+   SEC
+   LDA r_ye
+   SBC #Y_BIAS
+   STA fs_ty1
+   PHY
+   JSR fs_trim
+   PLY
+@nt:
+   PLX
    LDA fs_wn
    BEQ @open
    CMP #64
@@ -991,7 +1208,8 @@ fs_change:
    LDA fs_opc,X
    BEQ @open
    STA fs_c
-   TXA                                  ; the line's runs: + y * 32
+   TXA                                  ; the line's runs: + y * 64
+   ASL A
    ASL A
    ASL A
    ASL A
@@ -1001,12 +1219,11 @@ fs_change:
    TXA
    LSR A
    LSR A
-   LSR A
    CLC
    ADC #>fs_rn
    STA fs_lp+1
    LDA fs_rnn,X
-   CMP #8
+   CMP #RN
    BCC :+
    DROP                          ; (full: the run is dropped)
    BRA @open
@@ -1117,9 +1334,9 @@ fs_runs:
    ASL A
    ASL A
    ASL A
+   ASL A
    STA fs_lp
    TYA
-   LSR A
    LSR A
    LSR A
    CLC

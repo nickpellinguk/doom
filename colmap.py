@@ -463,7 +463,7 @@ def build():
                   ss_vz=bytes(ss_vz), ss_info=bytes(ss_info),
                   mv_minpass=bytes(mv_minpass),
                   use_lines=use_lines, walk_lines=walk_lines,
-                  movers=movers)
+                  movers=movers, reach=frozenset(seen))
     return _built
 
 
