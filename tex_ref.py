@@ -267,6 +267,9 @@ class TexRef(Fm.FillRef):
                               - (self._v(part, ys, T, B_, ys=ys) >> 8)) & 0xFF
                         ddh = (8 * (sr - sl)) & 0xFFFF
                         cr0 = (ys - Bz) >> 3
+                    self._wall_run(si, x, part, u, ur, T, B_, ys,
+                                   min(y1, Bz + Fm.LINES - 1, B_), sl, share,
+                                   None if share else (dh, ddh))
                 for yb in range(max(y0, Bz), min(y1, Bz + Fm.LINES - 1) + 1):
                     self.owner[yb - Bz][c] = self.owner[yb - Bz][c + 1] = si
                     if yb < T:
@@ -288,6 +291,11 @@ class TexRef(Fm.FillRef):
                                                  & 0xFFFF) >> 8)))
                         continue
                     self.grid[yb - Bz][c] = self.grid[yb - Bz][c + 1] = ('b', v)
+
+    def _wall_run(self, si, x, part, u, ur, T, B, ys, ye, step, share, delta):
+        """One byte column's wall rows ys..ye (biased lines) of one band,
+        with everything its texels come from: the step-4 model draws them
+        itself; tube_dl.py records them (the display list's WALL)."""
 
     def _plane(self, si, kind, y, x, shade):
         """The cell for line y (unbiased) of byte column x's ceiling
