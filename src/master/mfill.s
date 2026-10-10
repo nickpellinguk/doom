@@ -256,6 +256,9 @@ si_x:    .res 1
 si_y0:   .res 2
 si_d:    .res 2
 si_neg:  .res 1
+si_ns:   .res 1                         ; st_init: no step (a span edge set up
+                                        ;  at the seg's last byte column)
+c_last:  .res 1                         ; this byte column is the seg's last
 si_w:    .res 2
 si_k:    .res 2
 si_xlo:  .res 1
@@ -571,6 +574,15 @@ mf_fill:
    BRA :++
 :  LDA #WB_CEIL
 :  STA sh_ceil
+   ; --- no byte column in [lo, hi) (its pixels in a byte starting before
+   ; lo): nothing to fill, so none of the set-up below (step H4g) ---
+   LDA mf_lo
+   CLC
+   ADC #3
+   BCS @rts0                            ; lo > 252
+   AND #$FC
+   CMP mf_hi
+   BCS @rts0
    ; --- seg line parameters (VX1 is the left endpoint) ---
    LDA zp_seg_sx1_l
    STA l_sx1
@@ -702,8 +714,14 @@ col:
    STZ c_trok                           ; nor the right strip's lines
    LDA mf_x
    CMP mf_hi
-   BCC adv
+   BCC :+
    JMP mf_planes                        ; x >= hi: the seg's planes, done
+:  STZ c_last                           ; the seg's last byte column: x + 4
+   ADC #4                               ;  past hi (or 255) -- its span edge
+   BCS :+                               ;  steppers need no step (C = 0 in)
+   CMP mf_hi
+   BCC adv
+:  INC c_last
    ; --- old span at x: advance while xe <= x ---
 adv:
    LDY mf_i
@@ -930,7 +948,10 @@ done:
 .endmacro
 
 next_col:
-   LDA mf_x
+   LDA c_last                           ; the last byte column: nothing to
+   BEQ :+                               ;  step (step H4g: col would leave)
+   JMP mf_planes
+:  LDA mf_x
    CLC
    ADC #4                               ; the next byte column
    BCC @step
@@ -1009,14 +1030,20 @@ st_init8:
    STA si_k
    STZ si_k+1
    LDX si_x
-   ; fall into st_init
+   LDA c_last                           ; set up at the seg's last column:
+   STA si_ns                            ;  never stepped (next_col leaves)
+   BRA st_body
 
 ; st_init: si_y0, si_d (|D|), si_neg, si_w, si_k  -> stepper X. A stepper
 ; holds y itself: y = y0 + q (y0 - q when negative), the biased remainder
 ; rb = r - W + 2^16 (r + R >= W is then the carry of rb + R), and steps by
 ; rb += R, y += Qs (+/-Q); on the carry rb -= W, y += Qs1 (Qs +/- 1).
 ; A constant (W = 0) is y0 with rb = R = 0: its step never moves it.
+; (si_ns: st_init8's last-column edges skip the step, Q and R.)
 st_init:
+   STZ si_ns
+st_body:
+
    STX si_x
    LDA si_w
    STA st_f+6,X
@@ -1100,7 +1127,10 @@ st_init:
    SBC m_p+1
    STA st_f+1,X
 @qr:
-   LDA si_d                             ; Q, R = 4|D| / W
+   LDA si_ns
+   BEQ :+
+   RTS
+:  LDA si_d                             ; Q, R = 4|D| / W
    ASL A
    STA m_p
    LDA si_d+1
@@ -4538,7 +4568,20 @@ tx_seg:
    STA tx_ra,X
    DEX
    BPL :-
-   LDA tx_xh
+   LDA tx_xh                            ; one strip centre (a single-byte
+   CMP tx_xl                            ;  seg's narrow run): the same d and
+   BNE @xh                              ;  weight (step H4g)
+   LDA tx_dl
+   STA tx_dh
+   LDA tx_dl+1
+   STA tx_dh+1
+   LDX #4
+:  LDA tx_ra,X
+   STA tx_rb,X
+   DEX
+   BPL :-
+   BRA @xhd
+@xh:
    JSR at
    LDA m_p
    STA tx_dh
@@ -4549,6 +4592,7 @@ tx_seg:
    STA tx_rb,X
    DEX
    BPL :-
+@xhd:
    ; A, B: the raw weights shifted together until both fit a byte. Step
    ; 7i: while either is >= 2^16 at least 9 more shifts are due, so a
    ; whole byte goes at once (the same result as 8 single shifts)

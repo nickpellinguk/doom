@@ -1845,6 +1845,16 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
 
 ## 8. Open items
 
+- **Thin walls (from the Tube's slow views, docs/tube_master.md H4g).**
+  Three exact cuts to the per-seg set-up that a wall one byte column wide
+  never uses: a seg with no byte column in [lo, hi) returns before its T
+  / B steppers and `sh_lim`; `tx_seg` copies the first `at` when the last
+  strip centre is the first (one `at`, not two); and on a seg's last
+  byte column (`c_last`) its span-edge steppers skip their step divide
+  (`si_ns`) and `next_col` leaves without stepping. The T / B steppers
+  keep theirs: `tr_lines` peeks T and B one column on. Byte-exact; the
+  regression's frames 27.58M -> 27.36M (-0.78%).
+
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a
   1/width table, u linear across the seg (one exact midpoint d when the

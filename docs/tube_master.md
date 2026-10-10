@@ -518,6 +518,32 @@ set-up and arithmetic (60%) first, then the host's request emission and
 engine (which bound the frame once the server is faster). The drawer is
 not a slow-frame lever.
 
+## H4g. Thin walls. — FIRST STEP DONE
+
+On `TUBE_SLOW` the server's time inside `mf_fill`, by the wall's width:
+a wall one byte column wide 6.4K cycles, two 14.1K; walls up to three
+bytes wide 29% of the frame. A call tree of a one-column wall (14.6K):
+`tx_seg` 5.8K (two `at` 3.7K, the end weights' four `mul16`), the six
+edge steppers 4.0K (`st_init8` x4 for the clip spans, `st_init` x2 for
+T / B), `band` (the column's real work) 2.9K, `sh_lim` 0.6K. Most of
+it is set-up meant to be shared across many columns.
+
+Three exact cuts, in the shared fill (`mfill.s`; the Master-only build
+gets them too, master_textured_spec.md section 8):
+- a request with no byte column in [lo, hi) (16 a frame: its pixels in
+  a byte starting before lo) returns before any set-up;
+- one `at`, not two, when the first and last strip centres are the same
+  (19 a frame);
+- a span-edge stepper set up at a seg's last byte column skips its step
+  divide, and `next_col` leaves without stepping (31 one-column walls a
+  frame). T and B keep theirs: `tr_lines` peeks one column on.
+
+`TUBE_SLOW`: the server 2,663K -> 2,558K cycles a frame (-3.9%; 888 ->
+853 ms at 3MHz, 640 ms at 4MHz). The one-column wall above: 14.6K ->
+11.5K. What is left of it is mostly exact set-up every wall needs (`at`,
+the weights, T / B with their steps, `band`); a byte-sized `st_init8`
+(its inputs are all u8) would save about 150 cycles a call, ~1.5-2%.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
