@@ -677,6 +677,27 @@ call, always 16 steps), its own copies, sum and checks 63K.
 What does cost is the divides across the walls: 304 `div32` and 227
 `divq16` calls a frame.
 
+## H4n. Request bytes as blocks. — DONE
+
+`fs_get` read each request byte with its own empty test and call: 34
+cycles, 4,203 bytes a frame on `TUBE_SLOW` (143K, 6.6%). Most bytes come
+in fixed blocks: a seg's 23 after its type byte (slot to the reciprocal
+terms), and each 10-byte span of its snapshot and pool. Now `fs_need`
+checks once that a block is wholly in the ring and not across the ring's
+end, and the parser reads it as `LDA (fs_bp),Y : INY` (GETY, 7 cycles,
+the same 3 bytes as the `JSR fs_get` it replaces); `fs_used` then moves
+the read pointer past it, re-enabling IRQs on a page change as `fs_get`
+does. The write pointer's two bytes are read with IRQs off, as `fs_irq`
+can move it between them. When the host is behind, or the block would
+cross the ring's end, `fs_get` takes the block a byte at a time into
+`fs_stage` and GETY reads that. The type byte, the optional t and the
+two counts still go through `fs_get`.
+
+`TUBE_SLOW`: the server 2,166K -> 2,104K cycles a frame (-2.9%; 701 ms at
+3MHz, 541 at 4MHz) for 132 B of code and 24 B of workspace. The lists
+are the same (`test_tube_server`, `test_tube_fuzz`, `test_tube_link`
+with its 1K ring).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,

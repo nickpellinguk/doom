@@ -74,6 +74,7 @@ NPLANE = 48                             ; planes a frame (29 seen)
 PTR = RASTER_ZP_X1                      ; (scratch pointer: mfill's screen one)
 fs_cp = pa_dx                           ; a mark list: its column's block,
 fs_cq = pa_dy                           ;  and + 4 (the angle module's zero
+fs_bp = pa_dy                           ;  (fs_need's block: while reading)
 fs_pp = pa_res                          ;  page: not on the server); the
 fs_lp = pa_ptr                          ;  sweep's column before; a line's runs
 fs_op = zp_prod_l                       ; the list write pointer
@@ -81,6 +82,11 @@ fs_op = zp_prod_l                       ; the list write pointer
 
 .macro GETB                             ; A = the next request byte (flags: not A's)
    JSR fs_get
+.endmacro
+
+.macro GETY                             ; A = a block's next byte (fs_need; Y
+   LDA (fs_bp),Y                        ;  its place, flags: not A's)
+   INY
 .endmacro
 
 .macro DROP                             ; one more dropped (fs_drop1)
@@ -176,6 +182,8 @@ fs_kc_fb: .res NPLANE
 fs_ob:   .res 2                         ; the list being built's buffer
 fs_drop: .res 1                         ; marks / runs / planes / records
                                         ;  dropped (full)
+fs_bn:   .res 1                         ; fs_need's block: its size (0:
+fs_stage: .res 23                       ;  taken by fs_get) / its bytes then
 fs_cap:  .res 1                         ; fs_mark: its list's size (PN / SN)
 fs_lim:  .res 1                         ; the list being built's cap: page
 fs_ma:   .res 1                         ; mul8lo operands
@@ -361,6 +369,73 @@ fs_get:
    CLI
 :  RTS
 
+; fs_need: the next A (1-255) request bytes as a block, read by GETY:
+; (fs_bp),Y with Y = 0 .. A - 1; fs_used then moves past them (X kept).
+; Where all of it is in the ring, not across the ring's end, fs_bp is
+; fs_rp: 7 cycles a byte, not fs_get's 34 (H4n). Otherwise (the host
+; behind, or the ring's end) fs_get takes them one by one into fs_stage.
+fs_need:
+   STA fs_bn
+   LDA fs_rp+1                          ; the ring's last page: not across
+   CMP #>(fs_ring + RING - $100)        ;  its end
+   BNE :+
+   LDA fs_rp
+   CLC
+   ADC fs_bn
+   BCS @slow
+:  PHP                                  ; in the ring: rw - rp (mod RING),
+   SEI                                  ;  rw's two bytes read together
+   LDA fs_rw
+   LDY fs_rw+1
+   PLP
+   SEC
+   SBC fs_rp
+   STA fs_t
+   TYA
+   SBC fs_rp+1
+   AND #>(RING - 1)
+   BNE @fast
+   LDA fs_t
+   CMP fs_bn
+   BCC @slow
+@fast:
+   LDA fs_rp
+   STA fs_bp
+   LDA fs_rp+1
+   STA fs_bp+1
+   LDY #0
+   RTS
+@slow:
+   LDY #0
+:  JSR fs_get
+   STA fs_stage,Y
+   INY
+   CPY fs_bn
+   BNE :-
+   STZ fs_bn                            ; (fs_used: fs_get has moved rp)
+   LDA #<fs_stage
+   STA fs_bp
+   LDA #>fs_stage
+   STA fs_bp+1
+   LDY #0
+   RTS
+
+; fs_used: past fs_need's block. A page read frees it for fs_irq (as
+; fs_get). X, Y kept.
+fs_used:
+   LDA fs_bn
+   CLC
+   ADC fs_rp
+   STA fs_rp
+   BCC :+
+   LDA fs_rp+1
+   INC A
+   AND #>(RING - 1)
+   ORA #>fs_ring
+   STA fs_rp+1
+   CLI
+:  RTS
+
 ; fs_poll: the list going out (fs_sp .. fs_se) into register 1 while its
 ; FIFO has room (X, Y kept)
 fs_poll:
@@ -440,9 +515,11 @@ fs_frame:
    CMP #0                               ; (GETB's flags are the pointer's)
    BNE :+
    JMP fs_end
-:  GETB                                 ; ($01) slot | solid | c1 | c2
+:  LDA #23                              ; ($01) slot | solid | c1 | c2,
+   JSR fs_need                          ;  the 23 bytes to the reciprocal
+   GETY                                 ;  terms as a block
    STA tx_slot
-   GETB
+   GETY
    TAX
    AND #3
    STA tx_slot+1
@@ -459,42 +536,47 @@ fs_frame:
    TXA
    AND #$10
    STA zp_seg_v2_clipped
-   GETB                                 ; subsector, ch - vz, fh - vz
+   GETY                                 ; subsector, ch - vz, fh - vz
    STA zp_node_ch_l
-   GETB
+   GETY
    STA zp_seg_top_dlt
-   GETB
+   GETY
    STA zp_seg_bot_dlt
-   GETB                                 ; lo, hi (mf_range makes them again)
-   GETB
-   LDX #0                               ; sx1 sx2 ft1 ft2 fb1 fb2 (s16); the
+   INY                                  ; lo, hi (mf_range makes them again)
+   INY
+   STZ fs_i                             ; sx1 sx2 ft1 ft2 fb1 fb2 (s16); the
 @ln:                                    ;  y ends take the engine's Y_BIAS
-   LDY fs_lof,X                         ;  (fs_get keeps no flags)
-   GETB
-   STA VX1,Y
-   GETB
-   STA VX1+1,Y
-   CPX #2
+   LDX fs_i
+   LDA fs_lof,X
+   TAX
+   GETY
+   STA VX1,X
+   GETY
+   STA VX1+1,X
+   LDA fs_i
+   CMP #2
    BCC @raw
    CLC
-   LDA VX1,Y
+   LDA VX1,X
    ADC #Y_BIAS
-   STA VX1,Y
-   LDA VX1+1,Y
+   STA VX1,X
+   LDA VX1+1,X
    ADC #0
-   STA VX1+1,Y
+   STA VX1+1,X
 @raw:
-   INX
-   CPX #6
+   INC fs_i
+   LDA fs_i
+   CMP #6
    BNE @ln
-   GETB                                 ; the reciprocal terms
+   GETY                                 ; the reciprocal terms
    STA zp_seg_v1_r_m8
-   GETB
+   GETY
    STA zp_seg_v1_r_s
-   GETB
+   GETY
    STA zp_seg_v2_r_m8
-   GETB
+   GETY
    STA zp_seg_v2_r_s
+   JSR fs_used
    LDA zp_seg_v1_clipped                ; t when exactly one end is clipped
    BEQ @c1n
    LDA zp_seg_v2_clipped
@@ -515,26 +597,29 @@ fs_frame:
    CPX sn_n
    BEQ @pool
 @snl:
-   GETB
+   LDA #10                              ; (a span: a block)
+   JSR fs_need
+   GETY
    STA sn_xs,X
-   GETB
+   GETY
    STA sn_xe,X
-   GETB
+   GETY
    STA sn_xlo,X
-   GETB
+   GETY
    STA sn_den,X
-   GETB
+   GETY
    STA sn_tl,X
-   GETB
+   GETY
    STA sn_bl,X
-   GETB
+   GETY
    STA sn_tr,X
-   GETB
+   GETY
    STA sn_br,X
-   GETB
+   GETY
    STA sn_bxlo,X
-   GETB
+   GETY
    STA sn_bden,X
+   JSR fs_used
    INX
    CPX sn_n
    BNE @snl
@@ -550,26 +635,29 @@ fs_frame:
    INX
    STX zp_head
 @pl:
-   GETB
+   LDA #10                              ; (a span: a block)
+   JSR fs_need
+   GETY
    STA POOL_XSTART,X
-   GETB
+   GETY
    STA POOL_XEND,X
-   GETB
+   GETY
    STA POOL_TXLO,X
-   GETB
+   GETY
    STA POOL_TDEN,X
-   GETB
+   GETY
    STA POOL_TL,X
-   GETB
+   GETY
    STA POOL_BL,X
-   GETB
+   GETY
    STA POOL_TR,X
-   GETB
+   GETY
    STA POOL_BR,X
-   GETB
+   GETY
    STA POOL_BXLO,X
-   GETB
+   GETY
    STA POOL_BDEN,X
+   JSR fs_used
    TXA
    INC A
    CPX fs_n
