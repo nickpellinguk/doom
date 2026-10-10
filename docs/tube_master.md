@@ -600,7 +600,12 @@ server, 2,318K cycles a frame (773 ms at 3MHz):
 | The column walk (`adv`, `band`, `mf_fill`, ...) | 172K | 7% |
 | Marks and WALL records | 145K | 6% |
 
-A fresh `scan 500 1`: the slower side's median 295 ms (was 309), 90%
+Then (H4j) a wall of one byte column (31 a frame) skips `tx_seg`'s
+per-byte d stepper and `tx_getd`'s divides: its d are the stepper's own
+values, dL and dH (or dL), known without it. `TUBE_SLOW`: 2,318K ->
+2,269K (-2.1%; 756 ms at 3MHz, 570 at 4MHz).
+
+A fresh `scan 500 1` (before H4j): the slower side's median 295 ms (was 309), 90%
 584 (634), 99% 783 (900), worst 934 (1,106); all 20 slowest still
 server-bound, 19 of them `TUBE_SLOW`'s.
 

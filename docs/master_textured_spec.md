@@ -1858,6 +1858,11 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   the same stepper -- one inline quarter-square 8x8 (`QMUL`, moved up
   the file) for |D| k, `div32`'s 8-bit-divisor path, `st_init`'s step
   tail (`st_q`) only off a seg's last column: 27.36M -> 27.19M (-0.62%).
+  Then a seg of one byte column (`tx_one`) skips `tx_seg`'s per-byte d
+  stepper (four `mul16`) and `tx_getd`'s divides: its left strip's d is
+  n0 / den0 = dL exactly, its right strip's (at x + 3 = xh) 2B dH / 2B =
+  dH, dL when B = 0 (den 0) or past xh -- the stepper's own values.
+  27.19M -> 27.09M (-0.36%).
 
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a

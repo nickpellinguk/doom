@@ -290,6 +290,7 @@ si_y0:   .res 2
 si_d:    .res 2
 si_neg:  .res 1
 c_last:  .res 1                         ; this byte column is the seg's last
+tx_one:  .res 1                         ; the seg has one byte column (H4j)
 si_w:    .res 2
 si_k:    .res 2
 si_xlo:  .res 1
@@ -2018,6 +2019,29 @@ tx_getd:
    BEQ :+
    RTS
 :  INC c_dok
+   LDA tx_one                           ; one byte column (H4j): no stepper.
+   BEQ @steps                           ;  d = n0 / den0 = dL exactly; the
+   LDA tx_dl                            ;  right strip's at x + 3 = xh is
+   STA tx_d                             ;  2B dH / 2B = dH (dL when B = 0,
+   STA tx_dr                            ;  den 0), and past xh d itself
+   LDA tx_dl+1
+   STA tx_d+1
+   STA tx_dr+1
+   LDA mf_x
+   CLC
+   ADC #3
+   BCS @one1
+   CMP tx_xh
+   BNE @one1
+   LDA tx_rb
+   BEQ @one1
+   LDA tx_dh
+   STA tx_dr
+   LDA tx_dh+1
+   STA tx_dr+1
+@one1:
+   JMP @rec
+@steps:
    ; the left strip's d: on the seg's odd bytes (x + 5 <= xh) the midpoint
    ; of the exact d either side (the previous byte's, and a look-ahead the
    ; next byte reuses); on its even bytes exact
@@ -4682,6 +4706,19 @@ tx_seg:
    ROR tx_rb
    BRA @abb
 @abok:
+   ; one byte column (step H4j): its d need no stepper -- tx_getd takes
+   ; dL, and dH (or dL) for the right strip, the values it would make
+   STZ tx_one
+   LDA mf_x
+   CLC
+   ADC #4
+   BCS @one
+   CMP mf_hi
+   BCC @den
+@one:
+   INC tx_one
+   JMP @tail
+@den:
    ; den0 = A * (xh - xl); n0 = dL * den0
    LDA tx_ra
    STA m_a
@@ -4759,6 +4796,7 @@ tx_seg:
    ROL tx_dn+1
    ROL tx_dn+2
    ROL tx_dn+3
+@tail:
 .ifndef SERVER
    JMP pe_init                          ; the plane extents, empty
 .else
