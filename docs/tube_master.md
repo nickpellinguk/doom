@@ -696,7 +696,12 @@ two counts still go through `fs_get`.
 `TUBE_SLOW`: the server 2,166K -> 2,104K cycles a frame (-2.9%; 701 ms at
 3MHz, 541 at 4MHz) for 132 B of code and 24 B of workspace. The lists
 are the same (`test_tube_server`, `test_tube_fuzz`, `test_tube_link`
-with its 1K ring).
+with its 1K ring). On jsbeeb, the real link at `test_tube_link`'s 37
+poses (the host's frame with nothing drawn: the server's pace) goes
+774K -> 763K cycles a frame (-1.5%): there the server often waits for
+the host's bytes anyway. (`tools/tube_waits.py`'s walk is no measure of
+a change like this: its moves follow the frame times, so a different
+pace walks it to different views.)
 
 ## 4a. Does the second processor's half fit? — not as it stands
 
