@@ -583,6 +583,27 @@ What is left of the pass: pairing and emitting (`fs_pairs` 104K,
 `fs_change` 83K, `fs_sweep` 64K), and the textured rows' maths (`fs_key`
 92K, `pl_row` and its multiplies ~150K).
 
+## H4i. The slow views again. — MEASURED
+
+After H4g and H4h (`tools/tube_slow.py prof 0 server`, which now charges
+each multiply and divide to its caller, and labels only true code labels,
+not equates or an unrolled loop's scoped locals). `TUBE_SLOW`, the
+server, 2,318K cycles a frame (773 ms at 3MHz):
+
+| Job | Cycles | Share |
+|---|---|---|
+| Walls: texture set-up (`at` 234K, `tx_seg` 138K, `tx_dat`, `tx_getd`, `tv_v0`, ...) | 657K | 28% |
+| Frame-end pass: runs and spans (`fs_pairs`, `fs_runs`, `fs_singles`, `fs_change`, `fs_span`, `fs_sweep`) | 566K | 24% |
+| Floors / ceilings: row maths (`pl_rowc`, `fs_key`, `pl_row`) | 294K | 13% |
+| Walls: edge steppers (`st_init8` 109K, `st_init` 80K) | 236K | 10% |
+| Reading requests (`fs_get`, `fs_frame`) | 192K | 8% |
+| The column walk (`adv`, `band`, `mf_fill`, ...) | 172K | 7% |
+| Marks and WALL records | 145K | 6% |
+
+A fresh `scan 500 1`: the slower side's median 295 ms (was 309), 90%
+584 (634), 99% 783 (900), worst 934 (1,106); all 20 slowest still
+server-bound, 19 of them `TUBE_SLOW`'s.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,

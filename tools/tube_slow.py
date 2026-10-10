@@ -142,6 +142,28 @@ def scan(n, seed):
               f"req {r['req']} B list {r['list']} B")
 
 
+ARITH = {'mul16', 'm16_a1z', 'm16_done', 'dq_core', 'divq16', 'div32', 'dv8f', 'd8_fast',
+         'd8_byte', 'dv_slow', 'dv_w16', 'dv_slj', 'mul8x32', 'm8_run', 'm8_lp', 'm8_nx', 'm8_p1',
+         'm8_p2', 'm8_m1', 'm8_m2', 'pl_prod', 'mul8lo'}
+OWNER_JOBS = {
+    'walls: texture set-up (u, v, step)': (
+        'tx_seg', 'at', 'ld_dress', 'set_cur', 'tx_getd', 'tcol', 'tv_v0', 'tv_divm', 'tvstep',
+        'tv_fine', 'trun', 'tr_lines', 'tr_screen', 'sh_lim', 'l16t', 'pl_seg', 'wall_run', 'tx_dat',
+        'tx_ent'),
+    'walls: edge steppers': ('st_init', 'st_init8', 'st_q', 'st_peek', 'st_body'),
+    'the column walk': ('mf_fill', 'col', 'adv', 'next_col', 'band', 'mf_range', 'mf_snap',
+                        'hz_run', 'prun', 'mf_planes'),
+    'floors / ceilings: row maths': ('pl_row', 'pl_rowc', 'pl_zrow', 'pl_hq', 'pl_dh', 'pl_dhn',
+                                     'fs_key'),
+    'frame-end pass: runs and spans': (
+        'fs_end', 'fs_sweep', 'fs_change', 'fs_spans', 'fs_runs', 'fs_pairs', 'fs_singles',
+        'fs_span', 'fs_ghead', 'fs_gclose', 'fs_fills'),
+    'reading requests': ('fs_get', 'fs_frame'),
+    'marks and WALL records': ('fs_mark', 'fs_trim', 'fs_wall', 'fs_wclose', 'fs_planes', 'fs_pid',
+                               'fs_drop1'),
+    'the Tube (sending, IRQ)': ('fs_poll', 'fs_irq'),
+}
+
 SERVER_JOBS = {
     'reading requests': ('fs_get', 'fs_frame'),
     'marks and WALL records': ('fs_mark', 'fs_trim', 'fs_wall', 'fs_wclose', 'fs_planes', 'fs_pid',
@@ -177,8 +199,26 @@ def server_jobs(c, L):
     return out
 
 
+def server_labels():
+    """The server link's true labels (not its equates: SCREEN0 and the like
+    sit among the code) as (name, address)."""
+    import tube_server
+    out = []
+    for line in open(os.path.join(tube_server.OUT, 'fserve.dbg')):
+        if not line.startswith('sym'):
+            continue
+        f = dict(x.split('=', 1) for x in line.split('\t')[1].strip().split(','))
+        if f.get('type') == 'lab' and 'val' in f:
+            out.append((f['name'].strip('"'), int(f['val'], 16)))
+    return out
+
+
 def labeller(pairs, lo=0, hi=0x10000):
-    ks = sorted((a, n) for n, a in pairs if lo <= a < hi and not n.startswith(('@', 'LOCAL', '__')))
+    pairs = list(pairs)
+    seen = collections.Counter(n for n, _ in pairs)  # (a name defined more
+    ks = sorted((a, n) for n, a in pairs             #  than once is a scoped
+                if lo <= a < hi and seen[n] == 1     #  local of an unrolled
+                and not n.startswith(('@', 'LOCAL', '__')))   # loop: its routine)
     addrs = [a for a, _ in ks]
 
     def lab(pc):
@@ -197,7 +237,7 @@ def prof(k, sides=('engine', 'draw', 'server')):
     hl = MP.code_labels('build/engine_m.dbg')    # code labels only (equates
     hlab = labeller([(n, a) for a, n, _, _ in hl])     #  sit among them)
     hfile = {n: f for _, n, f, _ in hl}
-    slab = labeller(rig.S.L.items(), 0x0C00, 0x7200)
+    slab = labeller(server_labels(), 0x0C00, 0x7200)
     parts = {'engine': collections.Counter(), 'draw': collections.Counter(),
              'server': collections.Counter()}
     st = {'h': None, 'hc': 0, 's': None, 'sc': 0, 'part': 'engine'}
@@ -208,10 +248,22 @@ def prof(k, sides=('engine', 'draw', 'server')):
             parts[st['part']][st['h']] += c - st['hc']
         st['h'], st['hc'] = hlab(mpu.pc), c
 
+    owners = collections.Counter()                  # arithmetic charged to
+    stack = []                                      #  its nearest caller
+
     def stick(mpu):
         c = mpu.processorCycles
         if st['s'] is not None:
             parts['server'][st['s']] += c - st['sc']
+            own = st['s']
+            if own in ARITH:
+                own = next((f for f in reversed(stack) if f not in ARITH), own)
+            owners[own] += c - st['sc']
+        op = rig.S.mem[mpu.pc]
+        if op == 0x20:                              # JSR: its target's frame
+            stack.append(slab(rig.S.mem[mpu.pc + 1] | rig.S.mem[mpu.pc + 2] << 8))
+        elif op == 0x60 and stack:                  # RTS
+            stack.pop()
         st['s'], st['sc'] = slab(mpu.pc), c
     tot = collections.Counter()
     hd = rig.hd
@@ -233,9 +285,20 @@ def prof(k, sides=('engine', 'draw', 'server')):
         c = parts[x]
         t = sum(c.values()) or 1
         print(f'== {x}: mean {tot[x] // n:,} cycles ({tot[x] / n / hz * 1000:.0f} ms) over {n} slow poses')
-        if x == 'server':                        # by job first
-            for job, v in server_jobs(c, rig.S.L).most_common():
-                print(f'  {v // n:9,d} {v / t * 100:5.1f}%  [{job}]')
+        if x == 'server':                        # by job, arithmetic to its caller
+            job = {nm: j for j, nms in OWNER_JOBS.items() for nm in nms}
+            byj, loose = collections.Counter(), collections.Counter()
+            for nm, v in owners.items():
+                byj[job.get(nm, 'other')] += v
+                if nm not in job:
+                    loose[nm] += v
+            for j, v in byj.most_common():
+                print(f'  {v // n:9,d} {v / t * 100:5.1f}%  [{j}]')
+            print('  (other: ' + ', '.join(f'{nm} {v // n:,}' for nm, v in loose.most_common(8)) + ')')
+            print('  -- by routine, arithmetic charged to its caller:')
+            for nm, v in owners.most_common(20):
+                print(f'  {v // n:9,d} {v / t * 100:5.1f}%  {nm}')
+            print('  -- by routine, exclusive:')
         if x == 'engine':                        # by source file first
             byf = collections.Counter()
             for name, v in c.items():
