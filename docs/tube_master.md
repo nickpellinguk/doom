@@ -549,6 +549,40 @@ a byte): one inline 8x8 quarter-square multiply for |D| k, `div32`'s
 byte for byte. `TUBE_SLOW`: 2,558K -> 2,521K (-1.4%; 840 ms at 3MHz, 630
 at 4MHz). The thin-wall work so far: 2,663K -> 2,521K, -5.3%.
 
+## H4h. The frame-end pass on the slow views. — MEASURED, ONE CUT
+
+Profiled from `fs_end` to its return on `TUBE_SLOW`, it was 1,068K cycles,
+42% of the server's slow frame (more than H4f's by-name 28%: the row
+maths it calls run inside it). A frame: 128 plane marks, 620 line runs
+on 129 lines, 21 planes; out 338 spans (155 far) and 27 FILLs.
+
+| Part | Cycles | Share |
+|---|---|---|
+| Row maths: `fs_key` (620 calls) and its misses into `pl_rowc` / `pl_row`, `mul8x32`, `pl_hq`, `pl_dh` | ~420K | 40% |
+| Pairing lines and emitting spans: `fs_pairs`, `fs_singles`, `fs_span`, `mul8lo`, group heads | ~365K | 34% |
+| Line runs from column marks: `fs_sweep`, `fs_change`, `fs_runs` | ~250K | 23% |
+
+Of the row maths, 127 computations a frame (1,150 cycles each, 147K)
+were FAR rows: the server made a far row's U and V only so the list
+could join neighbouring far cells on equal row maths, though a far span
+carries its tone alone. Now (model and server):
+- `tube_dl`: a far cell's key is its tone; far cells of one tone join
+  and pair whatever their plane, and a far record has no U, V or steps;
+- `pl_row` returns at the far decision on the server too (as the
+  Master-only build always has);
+- `fs_key` keys a far row by its tone alone (no row maths, no flat).
+
+The frames are the same (every far cell still its tone: `test_tube_dl`),
+the lists a little shorter (far pair spans 129 -> 77 a frame on the
+slow views). `TUBE_SLOW`: the server 2,521K -> 2,318K (-8.1%; 773 ms at
+3MHz, 581 at 4MHz; the pass 1,068K -> 865K). The Master-only build is
+unchanged.
+
+What is left of the pass: pairing and emitting (`fs_pairs` 104K,
+`fs_singles` 99K, `fs_span` 46K), the line runs (`fs_runs` 100K,
+`fs_change` 83K, `fs_sweep` 64K), and the textured rows' maths (`fs_key`
+92K, `pl_row` and its multiplies ~150K).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,

@@ -121,17 +121,19 @@ class DLRef(P.PlaneRef):
                     k += 1
                     continue
                 (uc, du, vc, dv), pic, far, _ = c
+                # a far cell is its tone alone (H4h): neighbours of that
+                # tone join whatever their plane, and carry no row maths
+                key = lambda c: ('far', self.far[c[1]]) if c[2] else c[:3]
                 k1 = k
                 while k1 + 1 < 64 and (n := pcell(y, k1 + 1)) is not None \
-                        and n[:3] == c[:3]:
+                        and key(n) == key(c):
                     k1 += 1
-                rec = dict(kind='SPAN', y=y, k0=k, k1=k1,
-                           u0=(uc + (k - 32) * du) & 0xFF, v0=(vc + (k - 32) * dv) & 0xFF,
-                           du=du, dv=dv)
                 if far:
-                    rec['far'] = self.far[pic]
+                    rec = dict(kind='SPAN', y=y, k0=k, k1=k1, far=self.far[pic])
                 else:
-                    rec['flat'] = pic
+                    rec = dict(kind='SPAN', y=y, k0=k, k1=k1, flat=pic,
+                               u0=(uc + (k - 32) * du) & 0xFF, v0=(vc + (k - 32) * dv) & 0xFF,
+                               du=du, dv=dv)
                 dl.append(rec)
                 k = k1 + 1
         # a line pair's two lines share their row maths (plane_ref: one

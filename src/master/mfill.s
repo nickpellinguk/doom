@@ -4841,11 +4841,9 @@ pl_row:
    LDA #0
    ROL A
    STA pc_lv,Y
-.ifndef SERVER                          ; (SERVER: the list joins neighbouring
-   BEQ :+                               ;  far cells on their row maths too)
-   RTS                                  ; a far row: its U, V are never read
-:
-.endif
+   BEQ :+                               ; a far row: its U, V are never read
+   RTS                                  ;  (SERVER too since H4h: the list
+:                                       ;  joins far cells on their tone)
    STX pl_j
    LDA zr_ep,X
    CMP mf_ep

@@ -1463,11 +1463,14 @@ fs_key:
    LDA pc_lv,X
    BEQ :+
    LDX fs_kfl                           ; far: the flat's one byte, and the
-   LDA far_tone,X                       ;  flat's bit 7 says far (a tone
-   STA fs_kfb                           ;  may be $00)
-   LDA fs_kfl
-   ORA #$80
-   STA fs_kfl
+   LDA far_tone,X                       ;  key that tone alone (H4h: no row
+   STA fs_kfb                           ;  maths, no flat; bit 7 of the flat
+   LDA #$80                             ;  says far, a tone may be $00), so
+   STA fs_kfl                           ;  far runs of one tone join
+   STZ fs_kuc
+   STZ fs_kdu
+   STZ fs_kvc
+   STZ fs_kdv
 :  PLY
    LDA mf_ep
    STA fs_kc_ep,Y
