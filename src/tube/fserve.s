@@ -60,15 +60,17 @@ fs_rw = zp_pm_p                         ;  write (fs_irq) pointers
 fs_sp = zp_anim_p                       ; the list going out: next byte, end
 fs_se = zp_anim_w
 RN = 16                                 ; runs a line (fs_rn; 9 seen)
+PN = 16                                 ; plane marks a column (9 seen)
+SN = 8                                  ; solid marks a column (5 seen)
 .ifndef RING
 RING = $0800                            ; fs_ring's size (page-aligned at a
 .endif                                  ;  multiple of it; -D for the gates)
 fs_ringsz = RING                        ; (for tube_server's py65 feed)
-LISTSZ = $1D00                          ; each list buffer's size: records
+LISTSZ = $1A00                          ; each list buffer's size: records
 .ifndef LISTCAP                         ;  stop past LISTCAP (fs_drop), so a
 LISTCAP = LISTSZ - $100                 ;  record, a header and the $00 fit
 .endif                                  ;  (-D for the gates)
-NPLANE = 64                             ; planes a frame (15 seen)
+NPLANE = 48                             ; planes a frame (29 seen)
 PTR = RASTER_ZP_X1                      ; (scratch pointer: mfill's screen one)
 fs_cp = pa_dx                           ; a mark list: its column's block,
 fs_cq = pa_dy                           ;  and + 4 (the angle module's zero
@@ -94,14 +96,15 @@ fs_op = zp_prod_l                       ; the list write pointer
 .endmacro
 
 .segment "FSIV"                         ; page-aligned
-fs_ivp:  .res $1000                     ; per byte column k: 16 plane marks
-fs_ivf:  .res $1000                     ;  / solid marks (y0, y1, code, -)
-                                        ;  at + k * 64, sorted by y0
+fs_ivp:  .res 64 * 4 * PN               ; per byte column k: PN plane marks
+fs_ivf:  .res 64 * 4 * SN               ;  at + k * 64 / SN solid marks at
+                                        ;  + k * 32 (y0, y1, code, -),
+                                        ;  sorted by y0
 fs_rn:   .res $2200                     ; per line y: 16 runs (k0, k1, code,
                                         ;  -) at + y * 64, in k order
 .segment "FSLA"
 fs_lista: .res LISTSZ                   ; the lists: one being built, the
-.segment "FSLB"                         ;  other going out (seen to ~5.7K)
+.segment "FSLB"                         ;  other going out (5.7K seen)
 fs_listb: .res LISTSZ
 .segment "FSRING"                       ; RING-aligned
 fs_ring: .res RING                      ; the host's request bytes
@@ -173,6 +176,7 @@ fs_kc_fb: .res NPLANE
 fs_ob:   .res 2                         ; the list being built's buffer
 fs_drop: .res 1                         ; marks / runs / planes / records
                                         ;  dropped (full)
+fs_cap:  .res 1                         ; fs_mark: its list's size (PN / SN)
 fs_lim:  .res 1                         ; the list being built's cap: page
 fs_ma:   .res 1                         ; mul8lo operands
 fs_mb:   .res 1
@@ -679,33 +683,51 @@ fs_mark:
    LSR A
    LSR A
    TAX                                  ; k
+   BIT fs_c
+   BMI @pl
+   ASL A                                ; solid: (k & 7) * 32 into page
+   ASL A                                ;  k >> 3 of fs_ivf, its count at
+   ASL A                                ;  fs_cnt + 64 + k, SN a column
    ASL A
    ASL A
-   ASL A
-   ASL A
-   ASL A
-   ASL A
-   STA fs_cp                            ; (k & 3) * 64
-   CLC
-   ADC #4
-   STA fs_cq
+   STA fs_cp
    TXA
    LSR A
    LSR A
+   LSR A
    CLC
-   BIT fs_c
-   BMI :+
-   ADC #>fs_ivf - >fs_ivp               ; (C = 0) solid: its list, its count
-   PHA
+   ADC #>fs_ivf
+   STA fs_cp+1
    TXA
    ORA #64
    TAX
-   PLA
-:  ADC #>fs_ivp
+   LDA #SN
+   BRA @cap
+@pl:
+   ASL A                                ; plane: (k & 3) * 64 into page
+   ASL A                                ;  k >> 2 of fs_ivp, PN a column
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   STA fs_cp
+   TXA
+   LSR A
+   LSR A
+   CLC
+   ADC #>fs_ivp
    STA fs_cp+1
+   LDA #PN
+@cap:
+   STA fs_cap
+   LDA fs_cp
+   CLC
+   ADC #4
+   STA fs_cq
+   LDA fs_cp+1
    STA fs_cq+1
    LDA fs_cnt,X
-   CMP #16
+   CMP fs_cap
    BCC :+
    DROP                          ; (full: the mark is dropped)
    RTS
@@ -821,9 +843,19 @@ fs_trim:
    BNE @rts
    LDA #64
    STA fs_tl
-   CLC                                  ; the solid list's page
-   LDA PTR+1
-   ADC #>fs_ivf - >fs_ivp
+   LDA fs_tk                            ; the solid list: (k & 7) * 32
+   ASL A                                ;  into page k >> 3 of fs_ivf
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   STA PTR
+   LDA fs_tk
+   LSR A
+   LSR A
+   LSR A
+   CLC
+   ADC #>fs_ivf
    STA PTR+1
    BRA @list
 @rts:
@@ -867,8 +899,15 @@ fs_trim:
    LDA fs_tk
    ORA fs_tl
    TAX
+   LDA fs_tl                            ; (the list's size: PN plane, SN
+   BEQ @pn                              ;  solid)
    LDA fs_cnt,X
-   CMP #16
+   CMP #SN
+   BRA @full
+@pn:
+   LDA fs_cnt,X
+   CMP #PN
+@full:
    BCC :+
    DROP                                 ; (full: only the part before kept)
    BRA @cut
@@ -1747,9 +1786,9 @@ fs_fills:
    ASL A
    ASL A
    ASL A
-   ASL A
-   STA fs_cp
+   STA fs_cp                            ; (k & 7) * 32 into page k >> 3
    TXA
+   LSR A
    LSR A
    LSR A
    CLC
@@ -1828,3 +1867,6 @@ fs_kvc:  .res 1
 fs_kdv:  .res 1
 fs_kfl:  .res 1
 fs_kfb:  .res 1
+
+.segment "FSEND"                        ; (fserve.cfg: the code area's last)
+fs_imgend:                              ; the file's end (tube_server.image)

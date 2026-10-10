@@ -252,14 +252,15 @@ handler, so it cannot nest.
 
 The server serves frame N as its requests come in, then waits for list
 N - 1 to finish going out before it swaps its two list buffers (A at
-`$B400`, B at `$E000`, 7.25K each). The host can be up to two frames of
+`$C800`, B at `$E200`, 6.5K each). The host can be up to two frames of
 requests ahead (frame N + 2 while the server is on N + 1), and one frame's
 requests reach 6.5K, which is why the ring needs its flow control.
 Frame -1's list is a single `$00`, so the first frame shown is empty.
 
 **The boot.** `!BOOT` (`mboot.s`) first does `*LOAD SERVER`; the image
-loads to the second processor at `$0C00`-`$71FF`. Then it claims the
-Tube (`$C0+$3D` at `&0406`) and executes the image (type 4) at
+loads to the second processor at `$0C00` up to its code's end
+(`fs_imgend`, below `$8000`). Then it claims the Tube (`$C0+$3D` at
+`&0406`) and executes the image (type 4) at
 `fs_main`. Type 4 leaves the host in the MOS's Tube loop, so `fs_main`
 sends `*GOIO 1903` back by register 2, as OSCLI, to return the host to
 `!BOOT`'s `l_cont`. The server then:
@@ -279,21 +280,22 @@ it clears flags Q, J, M and V, sets I, and jumps to the driver.
 | `$0000`-`$00FF` | Zero page |
 | `$0200`-`$07FF` | Fill workspace |
 | `$0A00`-`$0BFF` | Span pool (`SPAN_POOL`) |
-| `$0C00`-`$71FF` | The file: tables and code |
-| `$7200`-`$B3FF` | Marks (16 a column) and line runs (16 a line) |
-| `$B400`-`$D0FF` | List buffer A |
-| `$D100`-`$D7FF` | Server and fill workspace |
-| `$D800`-`$DFFF` | Request ring |
-| `$E000`-`$FCFF` | List buffer B (over the client OS, which the server has replaced) |
+| `$0C00`-`$7FFF` | The file: tables and code (to `fs_imgend`; the rest free for code) |
+| `$8000`-`$B9FF` | Marks (16 plane, 8 solid a column) and line runs (16 a line) |
+| `$BA00`-`$BFFF` | Server and fill workspace |
+| `$C000`-`$C7FF` | Request ring |
+| `$C800`-`$E1FF` | List buffer A |
+| `$E200`-`$FBFF` | List buffer B (over the client OS, which the server has replaced) |
+| `$FC00`-`$FEF7` | Free |
 | `$FFFE` | IRQ vector |
 
 **The list's cap.** The first disc had 5.5K list buffers, and a list in
 the start room ran to 5.7K. It overran into the server's workspace, and
 the host drew the garbled list, writing through the panel and into the
 paged texture bank. Random poses put lists up to 5.5K in the model, and
-the engine's own a little higher. The buffers are now 7.25K, and each
+the engine's own a little higher. The buffers were made 7.25K (6.5K since H4l), and each
 emitter (`fs_wall`, `fs_span`, the FILLs) drops its record once the list
-passes `LISTCAP` (7K). The list stays whole, with its `$00`, and
+passes `LISTCAP` (7K; 6.25K since H4l). The list stays whole, with its `$00`, and
 `fs_drop` counts the records lost (saturating at 255). The server's mark,
 run and plane tables drop the same way.
 
@@ -621,6 +623,40 @@ moved into the image's first area (below ANDY at $2000), and
 A fresh `scan 500 1` (before H4j): the slower side's median 295 ms (was 309), 90%
 584 (634), 99% 783 (900), worst 934 (1,106); all 20 slowest still
 server-bound, 19 of them `TUBE_SLOW`'s.
+
+## H4l. Memory. — RECLAIMED
+
+The server's free memory had gone from 9.5K (H3) to 2.9K (the span pool aside). The speed work
+was not what took it: from H3 to H4k the code grew 949 B, the thin-wall
+and frame-end cuts (H4g-H4k) 446 B of it for 497K cycles a frame on
+`TUBE_SLOW` (H4h's 12 B saved 203K; `st_init8`'s 190 B, 37K, the least).
+The rest went to buffers sized for safety after the list overrun: list
+buffers 2 x 5.5K -> 2 x 7.25K, line runs 8 -> 16 a line (+4.25K), less
+the ring's 8K -> 2K.
+
+Their peaks over 1,528 poses (the 528 and 1,000 random), none dropped:
+
+| Table | Size | Peak | Now |
+|---|---|---|---|
+| Line runs a line (`RN`) | 16 | 9 | 16 (a line's 64 B stride is shifts) |
+| Plane marks a column (`PN`) | 16 | 9 | 16 |
+| Solid marks a column (`SN`) | 16 | 5 | 8: `fs_ivf` 4K -> 2K, a column's 32 B at (k & 7) * 32 in page k >> 3 |
+| List buffers | 7.25K | 5.3K (the engine's 5.7K, above) | 6.5K, `LISTCAP` 6.25K |
+| Planes a frame (`NPLANE`) | 64 | 29 | 48 |
+| Request ring | 2K | - | 2K (below) |
+
+The server's cycles and frames are the same. The ring is not a table
+to trim by its peak: it is the slack between the two sides
+(`tools/tube_waits.py 3`, 30 s on jsbeeb). At 1K the host waits to send
+(68 ms a frame) and the server then waits for the host to take its list
+(50 ms): 80 frames, 374 ms a frame. At 2K, 85 frames, 352 ms; at 4K
+the same 85. It stays 2K.
+
+The layout is redone so the space is in large pieces: the file's code
+area runs to `$7FFF` (free from `fs_imgend`, 4.8K in one piece) and
+`$FC00`-`$FEF7` (760 B) is free BSS. The file stays its size:
+`tube_server.image` ends it at `fs_imgend` (an empty last segment,
+`FSEND`). Free in all (the span pool aside): 2.9K -> 6.6K.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

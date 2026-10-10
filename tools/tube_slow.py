@@ -237,7 +237,7 @@ def prof(k, sides=('engine', 'draw', 'server')):
     hl = MP.code_labels('build/engine_m.dbg')    # code labels only (equates
     hlab = labeller([(n, a) for a, n, _, _ in hl])     #  sit among them)
     hfile = {n: f for _, n, f, _ in hl}
-    slab = labeller(server_labels(), 0x0C00, 0x7200)
+    slab = labeller(server_labels(), 0x0C00, 0x8000)
     parts = {'engine': collections.Counter(), 'draw': collections.Counter(),
              'server': collections.Counter()}
     st = {'h': None, 'hc': 0, 's': None, 'sc': 0, 'part': 'engine'}

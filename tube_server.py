@@ -22,8 +22,9 @@ OUT = os.path.join(ROOT, 'build', 'tube', 'srv')
 DEFS = ['-D', 'ENGINE=1', '-D', 'C02=1', '-D', 'BANKED=1', '-D', 'MASTER=1', '-D', 'SERVER=1']
 UNITS = ('src/master/mfill.s', 'src/tube/fserve.s')
 LOADS = ((0x0C00, 0x1400), (0x2000, 0x1000), (0x3000, 0x1000),
-         (0x4000, 0x3200))                      # fserve.cfg's file areas
-IMAGE = (0x0C00, 0x7200)                        # the second processor's file
+         (0x4000, 0x4000))                      # fserve.cfg's file areas
+IMAGE = 0x0C00                                  # the second processor's file:
+                                                #  from here to fs_imgend
 TRAMP = 0xFF00                                  # JSR fs_frame; (stop): above the link
 
 
@@ -88,7 +89,7 @@ class Server:
 
     def image(self):
         """The second processor's file: (load address, bytes), and fs_main."""
-        a, b = IMAGE
+        a, b = IMAGE, self.L['fs_imgend']
         return a, bytes(self.mem[a:b]), self.L['fs_main']
 
     def serve(self, req, limit=20_000_000, drop=False, trace=None):
