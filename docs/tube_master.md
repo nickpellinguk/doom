@@ -724,6 +724,32 @@ per-run arrays become one). Less than the 60-100K hoped: most of the
 pass's cost is the line runs themselves and the spans' bytes, not the
 key traffic.
 
+## H4p. The wall set-up's divides. — MEASURED, LEFT
+
+On `TUBE_SLOW` the server's divides cost 198K cycles a frame (9.5%), by
+caller:
+
+| Caller | Calls | Cycles | Each | Kind |
+|---|---|---|---|---|
+| `at` (d at a wall's end strips) | 129 | 78K | 606 | 32 / 16-bit, quotient 16-bit (`divq16`) |
+| `tx_getd`: the left strip's exact d (`tx_dat`) | 69 | 44K | 630 | the same |
+| `tx_getd`: the right strip's d at a seg's first byte | 29 | 18K | 635 | the same |
+| `sh_lim` (the shared-v limit, once a seg) | 46 | 18K | 380 | 8-bit divisor, quotient 16-bit |
+| The edge steppers (`st_q`, `st_init8`, `st_init`) | 256 | 39K | 135-168 | 8-bit divisor and quotient (already the short path) |
+
+The 16-step divide (`dq_core`, unrolled) is near its floor: about 35
+cycles a step. Carrying the quotient bit in C instead of `INC` saves
+about 3 cycles a subtracting step, some 3K a frame. Only 24 of the 227
+16-bit divides have a quotient under 256, so a short form rarely
+applies. A reciprocal estimate with correction costs two multiplies
+(~480) against ~560. `sh_lim`'s one divide a seg could be a multiply
+per run (t_sl * M < 384 w) but there are more runs than segs.
+
+So the divides stay. Fewer of them means a different spec: wider
+interpolation of the left strip's d between exact samples (now every
+other byte), or the first byte's right strip from the look-ahead, each
+some 15-30K and each a change to the frames (`tex_ref`).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
