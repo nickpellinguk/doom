@@ -541,8 +541,13 @@ gets them too, master_textured_spec.md section 8):
 `TUBE_SLOW`: the server 2,663K -> 2,558K cycles a frame (-3.9%; 888 ->
 853 ms at 3MHz, 640 ms at 4MHz). The one-column wall above: 14.6K ->
 11.5K. What is left of it is mostly exact set-up every wall needs (`at`,
-the weights, T / B with their steps, `band`); a byte-sized `st_init8`
-(its inputs are all u8) would save about 150 cycles a call, ~1.5-2%.
+the weights, T / B with their steps, `band`).
+
+Then a byte-sized `st_init8` (the clip spans' edge steppers: every input
+a byte): one inline 8x8 quarter-square multiply for |D| k, `div32`'s
+8-bit-divisor path, and no step at a seg's last column; the same stepper,
+byte for byte. `TUBE_SLOW`: 2,558K -> 2,521K (-1.4%; 840 ms at 3MHz, 630
+at 4MHz). The thin-wall work so far: 2,663K -> 2,521K, -5.3%.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

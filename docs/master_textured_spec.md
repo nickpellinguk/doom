@@ -1853,7 +1853,11 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   byte column (`c_last`) its span-edge steppers skip their step divide
   (`si_ns`) and `next_col` leaves without stepping. The T / B steppers
   keep theirs: `tr_lines` peeks T and B one column on. Byte-exact; the
-  regression's frames 27.58M -> 27.36M (-0.78%).
+  regression's frames 27.58M -> 27.36M (-0.78%). Then `st_init8` (the
+  clip spans' edges: every input a byte) has its own byte-sized path to
+  the same stepper -- one inline quarter-square 8x8 (`QMUL`, moved up
+  the file) for |D| k, `div32`'s 8-bit-divisor path, `st_init`'s step
+  tail (`st_q`) only off a seg's last column: 27.36M -> 27.19M (-0.62%).
 
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a

@@ -203,6 +203,39 @@ mus_ring_m: .res $100                   ;  MUS_RING (src/master/mmusic.s)
 .assert mus_ring_m = MUS_RING, error, "MUS_RING is HZR's page"
 .endif
 
+; QMUL A0, B0: A (hi), mq_l (lo) = A0 * B0, one quarter-square 8 x 8
+; inline (step 7k: mf_mul8 without the call or the staging)
+.macro QMUL A0, B0
+.local pos, big, done
+   LDA A0
+   SEC
+   SBC B0
+   BCS pos
+   EOR #$FF
+   ADC #1                               ; (C = 0 from the SBC)
+pos:
+   TAY                                  ; Y = |a - b|
+   LDA A0
+   CLC
+   ADC B0
+   TAX                                  ; X = (a + b) & $FF
+   BCS big
+   SEC
+   LDA SQR_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR_HI,X
+   SBC SQR_HI,Y
+   BRA done
+big:                                    ; a + b >= 256 (C = 1)
+   LDA SQR2_LO,X
+   SBC SQR_LO,Y
+   STA mq_l
+   LDA SQR2_HI,X
+   SBC SQR_HI,Y
+done:
+.endmacro
+
 .segment "MFILLBSS"
 zw_dl:   .res 1                         ; step 7t: zw_dh's fraction byte
 zw_ddl:  .res 1                         ;  and zw_ddh's
@@ -256,8 +289,6 @@ si_x:    .res 1
 si_y0:   .res 2
 si_d:    .res 2
 si_neg:  .res 1
-si_ns:   .res 1                         ; st_init: no step (a span edge set up
-                                        ;  at the seg's last byte column)
 c_last:  .res 1                         ; this byte column is the seg's last
 si_w:    .res 2
 si_k:    .res 2
@@ -1006,43 +1037,103 @@ nc_no_n:
 ; (ST_T .. ST_NB: defined with st_f, above)
 
 ; st_init8: a span edge -- y0 = si_a0, D = si_a1 - si_a0, W = si_w (den),
-; k = x - si_xlo (u8 values; the clipper's floor interpolation)
+; k = x - si_xlo (u8 values; the clipper's floor interpolation). Step
+; H4g: its own byte-sized path to the same stepper st_init would make
+; (y0 < 256, |D| k < 2^16: one quarter-square 8x8, div32's 8-bit divisor
+; path), and set up at the seg's last byte column (c_last) no step: Q and
+; R are only for next_col, which leaves there without stepping.
 st_init8:
    STX si_x
-   LDA si_a0
-   STA si_y0
-   STZ si_y0+1
+   LDA si_w
+   STA st_f+6,X
+   STZ st_f+7,X
+   BNE @var
+   LDA si_a0                            ; W = 0: constant y0 (st_init's)
+   STA st_f+0,X
+   STZ st_f+1,X
+   STZ st_f+2,X
+   STZ st_f+3,X
+   STZ st_f+4,X
+   STZ st_f+5,X
+   STZ st_f+8,X
+   STZ st_f+9,X
+   STZ st_f+10,X
+   STZ st_f+11,X
+   RTS
+@var:
    STZ si_neg
+   STZ si_d+1
    LDA si_a1
    SEC
    SBC si_a0
    BCS @pos
+   EOR #$FF                             ; |D| (C = 0 from the SBC)
+   ADC #1
    DEC si_neg
-   LDA si_a0
-   SEC
-   SBC si_a1
 @pos:
    STA si_d
-   STZ si_d+1
    SEC
    LDA mf_x
    SBC si_xlo
-   STA si_k
-   STZ si_k+1
+   STA si_k                             ; k (u8)
+   QMUL si_d, si_k                      ; P = |D| k (16 bits; X, Y used)
+   STA m_p+1
+   LDA mq_l
+   STA m_p
+   STZ m_p+2
+   STZ m_p+3
+   LDA si_neg
+   BEQ :+
+   LDA si_w                             ; negative: the ceiling, P + W - 1
+   DEC A                                ;  (< 2^16: no carry past byte 1)
+   CLC
+   ADC m_p
+   STA m_p
+   BCC :+
+   INC m_p+1
+:  LDA si_w
+   STA m_b
+   STZ m_b+1
+   JSR div32                            ; q (16), r (< W)
    LDX si_x
-   LDA c_last                           ; set up at the seg's last column:
-   STA si_ns                            ;  never stepped (next_col leaves)
-   BRA st_body
+   SEC                                  ; rb = r - W (+ 2^16)
+   LDA m_r
+   SBC si_w
+   STA st_f+4,X
+   LDA m_r+1
+   SBC #0
+   STA st_f+5,X
+   LDA si_neg                           ; y = y0 +/- q (y0 < 256)
+   BNE @yn
+   CLC
+   LDA si_a0
+   ADC m_p
+   STA st_f+0,X
+   LDA #0
+   ADC m_p+1
+   STA st_f+1,X
+   BRA @qr
+@yn:
+   SEC
+   LDA si_a0
+   SBC m_p
+   STA st_f+0,X
+   LDA #0
+   SBC m_p+1
+   STA st_f+1,X
+@qr:
+   LDA c_last                           ; never stepped: no Q, R
+   BEQ :+
+   RTS
+:  STZ si_w+1                           ; st_init's step from Q, R = 4|D| / W
+   JMP st_q                             ;  (si_d, si_neg, si_x set)
 
 ; st_init: si_y0, si_d (|D|), si_neg, si_w, si_k  -> stepper X. A stepper
 ; holds y itself: y = y0 + q (y0 - q when negative), the biased remainder
 ; rb = r - W + 2^16 (r + R >= W is then the carry of rb + R), and steps by
 ; rb += R, y += Qs (+/-Q); on the carry rb -= W, y += Qs1 (Qs +/- 1).
 ; A constant (W = 0) is y0 with rb = R = 0: its step never moves it.
-; (si_ns: st_init8's last-column edges skip the step, Q and R.)
 st_init:
-   STZ si_ns
-st_body:
 
    STX si_x
    LDA si_w
@@ -1127,10 +1218,8 @@ st_body:
    SBC m_p+1
    STA st_f+1,X
 @qr:
-   LDA si_ns
-   BEQ :+
-   RTS
-:  LDA si_d                             ; Q, R = 4|D| / W
+st_q:                                   ; (st_init8's step joins here)
+   LDA si_d                             ; Q, R = 4|D| / W
    ASL A
    STA m_p
    LDA si_d+1
@@ -3347,38 +3436,6 @@ tr_ddh:                                 ; (step 7t: 16 bits, 4 pair steps'
    ROL zw_ddh
    RTS
 
-; QMUL A0, B0: A (hi), mq_l (lo) = A0 * B0, one quarter-square 8 x 8
-; inline (step 7k: mf_mul8 without the call or the staging)
-.macro QMUL A0, B0
-.local pos, big, done
-   LDA A0
-   SEC
-   SBC B0
-   BCS pos
-   EOR #$FF
-   ADC #1                               ; (C = 0 from the SBC)
-pos:
-   TAY                                  ; Y = |a - b|
-   LDA A0
-   CLC
-   ADC B0
-   TAX                                  ; X = (a + b) & $FF
-   BCS big
-   SEC
-   LDA SQR_LO,X
-   SBC SQR_LO,Y
-   STA mq_l
-   LDA SQR_HI,X
-   SBC SQR_HI,Y
-   BRA done
-big:                                    ; a + b >= 256 (C = 1)
-   LDA SQR2_LO,X
-   SBC SQR_LO,Y
-   STA mq_l
-   LDA SQR2_HI,X
-   SBC SQR_HI,Y
-done:
-.endmacro
 
 ; ---- tvstep: the run's v. In: m_b (B - T, tv_divm), q_t (s16 T), the
 ; part t_part's K and Vtop (its record), r_ys (biased). Out: t_step = the PAIR step (2 * K / (B - T), 0 if
