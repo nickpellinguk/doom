@@ -139,17 +139,11 @@ fs_n:    .res 1
 fs_gh:   .res 2                         ; a SPAN group's header
 fs_gn:   .res 1                         ;  and its count
 ; a line's plane runs, even line at re_* + 0.., odd at re_* + RO..: k0,
-; k1, the row's U V at column 32 and steps (4.4), flat (| $80: far), far
-; tone
+; k1, and its key (fs_key's id: the pair's first plane with that key)
 RO = 16                                 ; (a line's runs: at most RN)
 re_k0:   .res 2 * RO
 re_k1:   .res 2 * RO
-re_uc:   .res 2 * RO
-re_du:   .res 2 * RO
-re_vc:   .res 2 * RO
-re_dv:   .res 2 * RO
-re_fl:   .res 2 * RO
-re_fb:   .res 2 * RO
+re_id:   .res 2 * RO                    ; (its key: fs_key's plane, H4o)
 fs_ne:   .res 1                         ; runs on the even / odd line
 fs_no:   .res 1
 fs_sel:  .res 1                         ; fs_singles: even ($00) / odd ($80)
@@ -179,6 +173,11 @@ fs_kc_vc: .res NPLANE
 fs_kc_dv: .res NPLANE
 fs_kc_fl: .res NPLANE
 fs_kc_fb: .res NPLANE
+fs_kc_r: .res NPLANE                       ;  and the pair's first plane with
+fs_rl:   .res NPLANE                       ;  that key; those planes, the pair's
+fs_rln:  .res 1                            ;  keys (fs_rln of them)
+fs_kpl:  .res 1                            ; fs_key: the plane made
+fs_kr:   .res 1                            ; fs_runs: a run's key
 fs_ob:   .res 2                         ; the list being built's buffer
 fs_drop: .res 1                         ; marks / runs / planes / records
                                         ;  dropped (full)
@@ -1384,6 +1383,7 @@ fs_spans:
    STZ pl_p
 @pair:
    JSR fs_poll
+   STZ fs_rln                           ; (the pair's keys: none yet)
    LDA pl_p
    ASL A
    STA fs_y
@@ -1476,6 +1476,7 @@ fs_runs:
    INY
    LDA (fs_lp),Y                        ; its code: the key
    JSR fs_key
+   STA fs_kr
    PLY
    LDA (fs_lp),Y
    STA fs_k                             ; k0
@@ -1487,23 +1488,8 @@ fs_runs:
    INC A                                ;  the same key: one run
    CMP fs_k
    BNE @new
-   LDA fs_kuc
-   CMP re_uc-1,X
-   BNE @new
-   LDA fs_kdu
-   CMP re_du-1,X
-   BNE @new
-   LDA fs_kvc
-   CMP re_vc-1,X
-   BNE @new
-   LDA fs_kdv
-   CMP re_dv-1,X
-   BNE @new
-   LDA fs_kfl
-   CMP re_fl-1,X
-   BNE @new
-   LDA fs_kfb
-   CMP re_fb-1,X
+   LDA fs_kr
+   CMP re_id-1,X
    BNE @new
    INY                                  ; extend it to k1
    LDA (fs_lp),Y
@@ -1517,18 +1503,8 @@ fs_runs:
    LDA (fs_lp),Y
    STA re_k1,X
    DEY
-   LDA fs_kuc
-   STA re_uc,X
-   LDA fs_kdu
-   STA re_du,X
-   LDA fs_kvc
-   STA re_vc,X
-   LDA fs_kdv
-   STA re_dv,X
-   LDA fs_kfl
-   STA re_fl,X
-   LDA fs_kfb
-   STA re_fb,X
+   LDA fs_kr
+   STA re_id,X
    INX
 @nx:
    INY
@@ -1541,11 +1517,12 @@ fs_runs:
 @rts:
    RTS
 
-; fs_key: A = a plane code -> fs_kuc .. fs_kfb, its key on pair pl_p: the
-; row maths, flat (| $80: far) and far tone (X, Y kept). Cached per plane
-; for the pair.
+; fs_key: A = a plane code -> A = its key on pair pl_p (the row maths,
+; flat (| $80: far) and far tone) as the first of the pair's planes with
+; that key: equal keys, one id (X, Y kept). Cached per plane for the
+; pair; a key is made once (fs_kuc .. fs_kfb, into fs_kc_*) and compared
+; whole with the pair's keys so far (fs_rl) only then (H4o).
 fs_key:
-   PHX
    PHY
    AND #$7F
    TAY
@@ -1555,23 +1532,12 @@ fs_key:
    LDA fs_kc_p,Y
    CMP pl_p
    BNE @make
-   LDA fs_kc_uc,Y
-   STA fs_kuc
-   LDA fs_kc_du,Y
-   STA fs_kdu
-   LDA fs_kc_vc,Y
-   STA fs_kvc
-   LDA fs_kc_dv,Y
-   STA fs_kdv
-   LDA fs_kc_fl,Y
-   STA fs_kfl
-   LDA fs_kc_fb,Y
-   STA fs_kfb
+   LDA fs_kc_r,Y
    PLY
-   PLX
    RTS
 @make:
-   PHY
+   PHX
+   STY fs_kpl
    LDA fs_pd,Y
    STA pl_d
    LDA fs_pf,Y
@@ -1598,7 +1564,7 @@ fs_key:
    STZ fs_kdu
    STZ fs_kvc
    STZ fs_kdv
-:  PLY
+:  LDY fs_kpl
    LDA mf_ep
    STA fs_kc_ep,Y
    LDA pl_p
@@ -1615,8 +1581,43 @@ fs_key:
    STA fs_kc_fl,Y
    LDA fs_kfb
    STA fs_kc_fb,Y
-   PLY
+   LDX #0                               ; the pair's keys so far: an equal
+@s:                                     ;  one is this key's id
+   CPX fs_rln
+   BEQ @add
+   LDY fs_rl,X
+   LDA fs_kuc
+   CMP fs_kc_uc,Y
+   BNE @sn
+   LDA fs_kdu
+   CMP fs_kc_du,Y
+   BNE @sn
+   LDA fs_kvc
+   CMP fs_kc_vc,Y
+   BNE @sn
+   LDA fs_kdv
+   CMP fs_kc_dv,Y
+   BNE @sn
+   LDA fs_kfl
+   CMP fs_kc_fl,Y
+   BNE @sn
+   LDA fs_kfb
+   CMP fs_kc_fb,Y
+   BNE @sn
+   TYA
+   BRA @set
+@sn:
+   INX
+   BRA @s
+@add:                                   ; a new key: this plane is its id
+   LDA fs_kpl
+   STA fs_rl,X
+   INC fs_rln
+@set:
+   LDY fs_kpl
+   STA fs_kc_r,Y
    PLX
+   PLY
    RTS
 
 ; fs_pairs: the overlaps of the even runs (0 .. fs_ne) and the odd ones
@@ -1646,32 +1647,9 @@ fs_pairs:
 :  STA fs_t+1
    CMP fs_t
    BCC @on                              ; b < a: no overlap
-   LDA re_du,X                          ; the same steps
-   CMP re_du,Y
+   LDA re_id,X                          ; the same key (steps, flat and U,
+   CMP re_id,Y                          ;  V, or far tone): the same id
    BNE @on
-   LDA re_dv,X
-   CMP re_dv,Y
-   BNE @on
-   LDA re_fl,X                          ; far (bit 7) or not alike
-   EOR re_fl,Y
-   BMI @on
-   LDA re_fl,X
-   BPL @tx
-   LDA re_fb,X                          ; far: the same tone (U, V unread)
-   CMP re_fb,Y
-   BNE @on
-   BRA @match
-@tx:
-   LDA re_fl,X                          ; else the flat and U, V
-   CMP re_fl,Y
-   BNE @on
-   LDA re_uc,X
-   CMP re_uc,Y
-   BNE @on
-   LDA re_vc,X
-   CMP re_vc,Y
-   BNE @on
-@match:
    PHY
    TYA
    LDY fs_np
@@ -1751,7 +1729,7 @@ fs_singles:
    RTS
 
 ; fs_span: run X (re_* + X) cut to columns A .. fs_t+1: the span's bytes
-; (k0 k1 flat u0 v0 du dv, or k0 k1 $FF tone)
+; (k0 k1 flat u0 v0 du dv, or k0 k1 $FF tone). Y used
 fs_span:
    STA fs_k
    LDA fs_op+1                          ; the list full: the span dropped
@@ -1764,35 +1742,35 @@ fs_span:
    PUTO
    LDA fs_t+1
    PUTO
-   LDA re_fl,X
+   LDY re_id,X                          ; its key (fs_kc_*: Y kept by the
+   LDA fs_kc_fl,Y                       ;  callers)
    BPL @tex
    LDA #$FF
    PUTO
-   LDA re_fb,X
+   LDA fs_kc_fb,Y
    PUTO
    RTS
 @tex:
-   LDA re_fl,X
    PUTO
    SEC                                  ; u0 = Uc + (k0 - 32) * dU (mod 2^8)
    LDA fs_k
    SBC #32
    STA fs_ma
-   LDA re_du,X
+   LDA fs_kc_du,Y
    STA fs_mb
    JSR mul8lo
    CLC
-   ADC re_uc,X
+   ADC fs_kc_uc,Y
    PUTO
-   LDA re_dv,X                          ; v0 = Vc + (k0 - 32) * dV
+   LDA fs_kc_dv,Y                       ; v0 = Vc + (k0 - 32) * dV
    STA fs_mb
    JSR mul8lo
    CLC
-   ADC re_vc,X
+   ADC fs_kc_vc,Y
    PUTO
-   LDA re_du,X
+   LDA fs_kc_du,Y
    PUTO
-   LDA re_dv,X
+   LDA fs_kc_dv,Y
    PUTO
    RTS
 

@@ -703,6 +703,27 @@ the host's bytes anyway. (`tools/tube_waits.py`'s walk is no measure of
 a change like this: its moves follow the frame times, so a different
 pace walks it to different views.)
 
+## H4o. One key id per run. — DONE
+
+The frame-end pass carried each line run's key, the six bytes that
+decide joining (row U, V and steps, flat, far tone), through every step:
+`fs_key` copied them out of its per-plane cache (620 calls a frame on
+`TUBE_SLOW`), `fs_runs` compared all six with the last run's and stored
+six per run, `fs_pairs` compared them across the line pair, `fs_span`
+read them back. Now a key on a pair has one id: the first of the pair's
+planes found with that key. `fs_key` makes a plane's key once a pair (as
+before) and only then compares it whole with the pair's keys so far
+(`fs_rl`), so planes whose rounded row maths, flat and tone agree still
+share one id and join, the model's rule. Joining and pairing compare one
+byte; a run holds k0, k1 and its id; `fs_span` reads the key from the
+cache by the id.
+
+`TUBE_SLOW`: the server 2,104K -> 2,074K cycles a frame (-1.4%; 691 ms
+at 3MHz, 537 at 4MHz), and smaller: code -70 B, workspace -61 B (the six
+per-run arrays become one). Less than the 60-100K hoped: most of the
+pass's cost is the line runs themselves and the spans' bytes, not the
+key traffic.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
