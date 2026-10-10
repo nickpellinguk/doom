@@ -400,8 +400,9 @@ What it says:
   cycles a frame, as it does over the regression poses (386K; see H4e).
   Beyond about 3MHz, it alone sets the frame rate.
 
-So the next steps, in order of payoff: the host drawer (both speeds; the
-only lever at 4MHz), then the fill (at 3MHz). Letting the server start
+So the next steps, in order of payoff on this walk: the host drawer
+(both speeds; the only lever at 4MHz), then the fill (at 3MHz). (H4f: on
+the slowest views the order reverses; the server bounds them at both.) Letting the server start
 the next frame before the host has drained the last list would need a
 third list buffer; it gains nothing while the host is the slower side.
 
@@ -463,6 +464,59 @@ reloads) and the status poll on every list byte are the larger levers.
 `test_tube_hreq.py` reported the drawer at 221K until this: it timed
 `hd_frame` from the engine's cycle count, which `_run` had reset. It now
 reads 386K over its 35 poses, the host's frame 550K with the engine.
+
+## H4f. The slow views. — MEASURED
+
+Means over the regression poses, and a walk from the spawn, hide the
+frames that set how the game feels. `tools/tube_slow.py` times both sides
+of each pose on py65: the host (the TUBE engine with its sending, then
+`hd_frame` drawing the list) at 2MHz, the fill server at 3MHz. A frame
+takes as long as the slower side.
+
+`scan 500 1` (the regression's poses and 500 random standable ones, 528
+in all): the slower side's time has a median of 309 ms, 90% of poses
+within 634 ms, 99% within 900 ms, and a worst of 1,106 ms. The worst 20
+are `poses.TUBE_SLOW`, most in the south of the map (y below -4,400, the
+big outdoor area): about 90 wall segs and 4.2K of requests a frame. The
+yardstick for speed work is now `tools/tube_slow.py slow` on them:
+
+| On `TUBE_SLOW` | Cycles a frame | ms |
+|---|---|---|
+| Host: engine and sending | 642K | 321 |
+| Host: drawing | 410K | 205 |
+| Host: total | 1,052K | 526 |
+| Second processor | 2,663K | **888 at 3MHz, 666 at 4MHz** |
+
+**On the slow views the second processor is the bottleneck at both
+speeds.** That reverses H4d's walk, where the host bounds the frame at
+4MHz: there the views are lighter. The drawer stays near 400K whatever
+the view; the second processor and the host's engine grow with it.
+
+Second processor, by job (`prof 0 server`):
+
+| Job | Cycles | Share |
+|---|---|---|
+| The fill, without its arithmetic (`st_init`, `pl_row`, `at`, `adv`, `next_col`, `tx_seg`, `trun`, ...) | 928K | 35% |
+| The frame-end pass (`fs_pairs`, `fs_singles`, `fs_runs`, `fs_key`, `fs_change`, `fs_sweep`, `fs_span`) | 735K | 28% |
+| The fill's arithmetic (`mul16`, `dq_core`, `m8_m2`, `dv8f`, `m16_a1z`, `div32`) | 652K | 25% |
+| Reading requests (`fs_get`, `fs_frame`) | 192K | 7% |
+| Marks and WALL records | 145K | 5% |
+
+Host engine, by source (`prof 0 engine`): the request emission
+(`rq_fill`, `mf_snap` in `mfill.s`) 179K, 28%; the BSP, projection and
+clipping the rest (`project.s` 81K, `seg_emit.s` 65K, `fusedw.s` 52K,
+`dcl.s` 48K, `view.s` 43K, `seg_xform.s` 39K, `bca.s` 38K).
+
+The requests are 44% clip spans (184 a frame at 10 bytes). They are each
+seg's own columns of the pool before and after its update; a seg's
+"after" is the next one's "before" only 138 times in 1,789, so there is
+no repeat to drop. Keeping the pool on the server instead would move the
+clip updates onto the side that is already slower.
+
+So, for the slow frames: the server's frame-end pass (28%) and the fill's
+set-up and arithmetic (60%) first, then the host's request emission and
+engine (which bound the frame once the server is faster). The drawer is
+not a slow-frame lever.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 
