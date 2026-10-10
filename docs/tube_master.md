@@ -658,6 +658,25 @@ area runs to `$7FFF` (free from `fs_imgend`, 4.8K in one piece) and
 `tube_server.image` ends it at `fs_imgend` (an empty last segment,
 `FSEND`). Free in all (the span pool aside): 2.9K -> 6.6K.
 
+## H4m. `at`'s second call. — MEASURED, NOT DONE
+
+`at` (a wall's d at its first and last strip centres) on `TUBE_SLOW`: 129
+calls a frame, 235K cycles: its three `mul16` 93K, `divq16` 78K (607 a
+call, always 16 steps), its own copies, sum and checks 63K.
+
+- *The second call's products from the first's* (a - wa * dx, b + wb *
+  dx): no gain. Each product's multiplier is already a byte (sx2 - xc
+  and xc - sx1 are under 256 in all but 0.3 calls a frame), so `mul16`
+  does two quarter-square 8x8s, the same as wa * dx would.
+- *The normalising loop*: 128 of the 129 calls need no shift at all.
+- *An 8-step divide when the quotient is under 256*: 25 of `divq16`'s
+  227 calls a frame.
+- *Unrolling the copies and the sum*: 2,166K -> 2,161K (-0.26%) for
+  33 B. Not kept.
+
+What does cost is the divides across the walls: 304 `div32` and 227
+`divq16` calls a frame.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
