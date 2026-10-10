@@ -1863,6 +1863,13 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   n0 / den0 = dL exactly, its right strip's (at x + 3 = xh) 2B dH / 2B =
   dH, dL when B = 0 (den 0) or past xh -- the stepper's own values.
   27.19M -> 27.09M (-0.36%).
+  Then flat edges (`st_flat`): an edge with D = 0 -- the view's own top
+  and bottom on untouched spans, narrow walls whose ends round to one
+  line, and the clip edges they leave -- gets its stepper without the
+  multiply and two divides: y = y0, rb = 0 - W, Qs = R = 0, Qs1 = 1, the
+  values the divides give. 71% of span edges and 56% of wall T / B lines
+  on the Tube's slow views (60% / 35% at random poses, so not a matter
+  of cardinal view angles). 27.09M -> 26.67M (-1.57%).
 
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a

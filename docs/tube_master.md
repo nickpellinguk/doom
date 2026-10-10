@@ -605,6 +605,19 @@ per-byte d stepper and `tx_getd`'s divides: its d are the stepper's own
 values, dL and dH (or dL), known without it. `TUBE_SLOW`: 2,318K ->
 2,269K (-2.1%; 756 ms at 3MHz, 570 at 4MHz).
 
+Then (H4k) flat edges: a stepper whose edge has D = 0 is written
+directly (`st_flat`: y = y0, rb = -W, Qs = R = 0, Qs1 = 1, what the
+divides give). On `TUBE_SLOW` 188 of 266 span-edge set-ups and 83 of 148
+wall T / B set-ups a frame are flat. Not a sampling artefact of cardinal
+angles: at 150 random-angle poses 60% of span edges and 35% of wall
+lines are flat too; the flat wide walls a cardinal view makes are only
+6-7% in both. Most are the view's own top and bottom (lines 48, 183) on
+spans no wall has trimmed, narrow walls whose ends round to one line,
+and the clip edges those leave behind. To make room the server's `MB6T`
+moved into the image's first area (below ANDY at $2000), and
+`tube_server` copies only its used bytes (its image is padded to $700).
+`TUBE_SLOW`: 2,269K -> 2,166K (-4.5%; 722 ms at 3MHz, 550 at 4MHz).
+
 A fresh `scan 500 1` (before H4j): the slower side's median 295 ms (was 309), 90%
 584 (634), 99% 783 (900), worst 934 (1,106); all 20 slowest still
 server-bound, 19 of them `TUBE_SLOW`'s.

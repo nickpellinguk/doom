@@ -1072,8 +1072,14 @@ st_init8:
    ADC #1
    DEC si_neg
 @pos:
-   STA si_d
-   SEC
+   STA si_d                             ; (Z: |D| = 0, a flat edge)
+   BNE :+
+   LDA si_a0                            ; flat (H4k): st_flat, y0 = a0 and
+   STA si_y0                            ;  W's high byte 0 (st_init may have
+   STZ si_y0+1                          ;  left it set)
+   STZ si_w+1
+   JMP st_flat
+:  SEC
    LDA mf_x
    SBC si_xlo
    STA si_k                             ; k (u8)
@@ -1129,13 +1135,37 @@ st_init8:
 :  STZ si_w+1                           ; st_init's step from Q, R = 4|D| / W
    JMP st_q                             ;  (si_d, si_neg, si_x set)
 
+; st_flat: stepper X for a flat edge (D = 0, W > 0; step H4k) -- what the
+; divides would make: q = r = 0 so y = y0 and rb = 0 - W; Q = R = 0, so
+; Qs = 0 and Qs1 = 1. Flat edges are most of them: the view's own top and
+; bottom (48, 183) and narrow walls whose ends round to one line.
+st_flat:
+   LDA si_y0
+   STA st_f+0,X
+   LDA si_y0+1
+   STA st_f+1,X
+   SEC
+   LDA #0
+   SBC si_w
+   STA st_f+4,X
+   LDA #0
+   SBC si_w+1
+   STA st_f+5,X
+   LDA #1
+   STA st_f+2,X
+   STZ st_f+3,X
+   STZ st_f+8,X
+   STZ st_f+9,X
+   STZ st_f+10,X
+   STZ st_f+11,X
+   RTS
+
 ; st_init: si_y0, si_d (|D|), si_neg, si_w, si_k  -> stepper X. A stepper
 ; holds y itself: y = y0 + q (y0 - q when negative), the biased remainder
 ; rb = r - W + 2^16 (r + R >= W is then the carry of rb + R), and steps by
 ; rb += R, y += Qs (+/-Q); on the carry rb -= W, y += Qs1 (Qs +/- 1).
 ; A constant (W = 0) is y0 with rb = R = 0: its step never moves it.
 st_init:
-
    STX si_x
    LDA si_w
    STA st_f+6,X
@@ -1157,7 +1187,11 @@ st_init:
    STZ st_f+11,X
    RTS
 @var:
-   LDA si_d                             ; q, r = |D| * k / W
+   LDA si_d                             ; a flat edge (H4k): no divides
+   ORA si_d+1
+   BNE :+
+   JMP st_flat
+:  LDA si_d                             ; q, r = |D| * k / W
    STA m_a
    LDA si_d+1
    STA m_a+1

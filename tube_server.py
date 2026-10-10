@@ -64,8 +64,9 @@ class Server:
         im = R.W.images(R.T.A.man, L=L.__getitem__, server=True)
         a = L['man_slot_d']
         mem[a:a + len(im['andy'])] = im['andy']
-        a = im['b6t_base']
-        mem[a:a + len(im['b6t'])] = im['b6t']
+        a = im['b6t_base']                     # (only its used bytes: the
+        n = L['mb6_mcy'] + 2 - a                # image is padded to $700, and
+        mem[a:a + n] = im['b6t'][:n]            #  MB6T sits below ANDY, H4k)
         a = L['mb6_rc']
         mem[a:a + len(im['b6r'])] = im['b6r']
         a = im['ix_base']
