@@ -22,6 +22,7 @@ The fill's routines are also summed by job. Figures are means per frame.
 
     python3 tools/master_profile.py              # 14 on-map poses
     python3 tools/master_profile.py 1056 -3616 32
+    python3 tools/master_profile.py --slow       # poses.TUBE_SLOW
 """
 import bisect
 import os
@@ -239,6 +240,8 @@ def main():
     asmbuild.build('engine')
     if len(sys.argv) == 4:
         poses = [tuple(float(a) if '.' in a else int(a) for a in sys.argv[1:])]
+    elif sys.argv[1:] == ['--slow']:
+        poses = list(C.TUBE_SLOW)                # the Tube's slowest views (H4f)
     else:
         poses = [p for p in C.POSITIONS if p not in OFFMAP]
     P = Profiler(code_labels(os.path.join(ROOT, 'build', 'engine_m.dbg')))
