@@ -45,6 +45,17 @@ arithmetic chosen so the 6502 can reproduce it exactly:
             d when that byte computed one (it had wall rows):
                 dr = d + ((d - d_prev) >> 1)
             else it is exact; past xh it is the left strip's d.
+            Step 7w: a wall LINEAR enough takes d linearly instead, no
+            division per strip. The projective map's largest gap from the
+            line between (xl, dL) and (xh, dH) is about |dH - dL| * |B - A|
+            / (2 (A + B)), and d moves 2 |dH - dL| / (xh - xl) a strip, so
+            a wall with (xh - xl) * |B - A| <= 2 * (A + B) is never more
+            than half a strip's move off (its texture shifts by under a
+            pixel): most walls in big rooms -- distant, narrow, facing.
+            Close oblique walls stay projective. Then, slope 8.8:
+                S  = (|dH - dL| << 8) // (xh - xl)
+                d  = dL +- ((S * (xc - xl) + 128) >> 8)   (the sign of dH - dL)
+            at x + 1 and x + 3 (past xh the left strip's d, as above).
   bytes     the unit is the BYTE COLUMN (fill_ref): every write is a whole
             byte, a 4x2 fat pixel. A wall byte is two independent strips,
             left texel | (right texel >> 1) (Mode 2: one shift; texels are
@@ -99,6 +110,7 @@ import master_walls as MW
 import master_assets as M
 
 ROOT = Fm.ROOT
+AFFINE = True                               # step 7w (False: every wall projective)
 
 
 def shared_limit(w, m):
@@ -197,6 +209,13 @@ class TexRef(Fm.FillRef):
         self.dbg[si] = dict(slot=si, l16=L16, d1=d1, d2=d2, wa=wa, wb=wb, xl=xl, xh=xh,
                             dl=dL, dh=dH, A=A, B=B)   # (the 6502 debug view)
         d_prev = None                       # (x, d) of the last byte with d
+        # step 7w: a wall whose d is near linear between its ends takes it
+        # linearly (see the docstring)
+        aff = AFFINE and xh > xl and (xh - xl) * abs(B - A) <= 2 * (A + B)
+        if aff:
+            dd = dH - dL
+            S = (abs(dd) << 8) // (xh - xl)
+            sg = -1 if dd < 0 else 1
         s_lim = shared_limit(sx2 - sx1, max(abs(ft2 - ft1), abs(fb2 - fb1)))
         for x in xs:
             o = self._span_at(before, x)
@@ -220,18 +239,24 @@ class TexRef(Fm.FillRef):
             # and denominator step by constants, one division per byte).
             # Only a byte with wall rows computes it (the 6502's lazy d).
             def dat(xc):
+                if aff:
+                    return dL + sg * ((S * (xc - xl) + 128) >> 8)
                 dj, dk = xh - xc, xc - xl
                 D = A * dj + B * dk
                 return (dL * A * dj + dH * B * dk) // D if D else dL
             d = dr = 0                          # (no wall rows: d unused)
             if any(max(y0, Bz, T) <= min(y1, Bz + Fm.LINES - 1, B_)
                    for y0, y1, _ in bands):
-                if ((x - xs[0]) >> 2) & 1 and x + 5 <= xh:
+                if aff:
+                    d = dat(x + 1)
+                elif ((x - xs[0]) >> 2) & 1 and x + 5 <= xh:
                     d = (dat(x - 3) + dat(x + 5)) >> 1  # an odd byte
                 else:
                     d = dat(x + 1)
                 if x + 3 > xh:
                     dr = d
+                elif aff:
+                    dr = dat(x + 3)
                 elif d_prev is not None and d_prev[0] == x - 4:
                     dr = d + ((d - d_prev[1]) >> 1)
                 else:

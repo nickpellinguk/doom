@@ -750,6 +750,30 @@ interpolation of the left strip's d between exact samples (now every
 other byte), or the first byte's right strip from the look-ahead, each
 some 15-30K and each a change to the frames (`tex_ref`).
 
+## H4q. Linear d on near-linear walls (spec step 7w). — DONE
+
+H4p left the divides: exact cuts were not worth it. The spec's per-strip
+d is projective so that close oblique walls are right, but the slow
+views are big rooms: distant, narrow, mostly facing walls whose d is
+nearly linear between their ends. Step 7w (`tex_ref`; spec section 8)
+takes such a wall's d linearly: the test is (xh - xl) * |B - A| <= 2 (A
++ B) -- the projective map then strays under half a strip's move from
+the line -- and d = dL +- ((S (xc - xl) + 128) >> 8) with S = (|dH -
+dL| << 8) // (xh - xl) once a wall. 52 of 74 walls a frame qualify on
+`TUBE_SLOW`; per-strip divides in the model 176 -> 37 a frame. Frames
+change: 5% of wall cells over the slow and regression poses, nearly all
+by one texture column (at panel edges on facing walls, on distant
+geometry).
+
+On the 6502 (`mfill.s`, both builds) a linear wall skips the per-byte d
+stepper's set-up (three `mul16`) for two byte-divisor divides, and each
+byte's d is one 8x32 multiply (`mul8x32`) and adds, not a divide; the
+stepper's constants are zeroed so `next_col` leaves the slope (kept in
+`tx_n`) alone. `TUBE_SLOW`: the server 2,074K -> 2,017K cycles a frame
+(-2.7%; 672 ms at 3MHz, 531 at 4MHz). The Master-only regression 26.67M
+-> 26.33M (-1.26%, rebaselined). Code +408 B (bank 6 has 765 B left in
+the Master-only build).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,

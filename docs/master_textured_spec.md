@@ -1870,6 +1870,19 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   values the divides give. 71% of span edges and 56% of wall T / B lines
   on the Tube's slow views (60% / 35% at random poses, so not a matter
   of cardinal view angles). 27.09M -> 26.67M (-1.57%).
+  Then step 7w (a spec change, `tex_ref`): a wall whose d is near
+  linear takes it linearly. Its projective map strays at most about
+  |dH - dL| |B - A| / (2 (A + B)) from the line through its ends, while
+  d moves 2 |dH - dL| / (xh - xl) a strip, so a wall with (xh - xl) *
+  |B - A| <= 2 (A + B) is never half a strip's move off. It takes S =
+  (|dH - dL| << 8) // (xh - xl) once (two byte-divisor divides) and d =
+  dL +- ((S (xc - xl) + 128) >> 8) at x + 1 and x + 3 (one 8x32
+  multiply a byte), with no per-byte stepper set-up (three `mul16`) and
+  no per-strip divides. Most walls in big rooms qualify (52 of 74 a
+  frame on the Tube's slow views); close oblique walls stay projective.
+  The frames change: 5% of wall cells over the slow and regression
+  poses, 87% of those by one texture column, the rest mostly by two or
+  three. 26.67M -> 26.33M (-1.26%).
 
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a

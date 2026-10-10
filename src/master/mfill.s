@@ -291,6 +291,7 @@ si_d:    .res 2
 si_neg:  .res 1
 c_last:  .res 1                         ; this byte column is the seg's last
 tx_one:  .res 1                         ; the seg has one byte column (H4j)
+tx_aff:  .res 1                         ; step 7w: its d linear (tx_s, tx_sg)
 si_w:    .res 2
 si_k:    .res 2
 si_xlo:  .res 1
@@ -345,6 +346,8 @@ tx_n:    .res 4                         ; left strip's numerator / denominator,
 tx_den:  .res 2                         ;  stepped by constants
 tx_dn:   .res 4
 tx_dden: .res 2
+tx_s = tx_n                             ; step 7w (a linear seg: no tx_n ..):
+tx_sg = tx_n+3                          ;  the slope 8.8 (3), sign ($FF: -)
 tx_d:    .res 2                         ; the left strip's d (x + 1)
 c_dok:   .res 1                         ; d computed for this byte
 c_t:     .res 2                         ; unclamped T, B at x (s16, biased)
@@ -2076,6 +2079,71 @@ tx_getd:
 @one1:
    JMP @rec
 @steps:
+   LDA tx_aff
+   BNE :+
+   JMP @proj
+:  ; step 7w: d = dL +- ((S * (x + 1 - xl) + 128) >> 8), and at x + 3
+   LDA tx_s
+   STA pl_e
+   LDA tx_s+1
+   STA pl_e+1
+   LDA tx_s+2
+   STA pl_e+2
+   STZ pl_e+3
+   LDA mf_x
+   SEC
+   SBC tx_xl
+   INC A
+   JSR mul8x32                          ; pl_q = S * (x + 1 - xl)
+   CLC
+   LDA pl_q
+   ADC #128
+   STA pl_q
+   BCC :+
+   INC pl_q+1
+   BNE :+
+   INC pl_q+2
+:  JSR tx_lin
+   LDA m_p
+   STA tx_d
+   STA tx_dr
+   LDA m_p+1
+   STA tx_d+1
+   STA tx_dr+1
+   LDA mf_x                             ; past xh: the left strip's d
+   CLC
+   ADC #3
+   BCS @lrec
+   CMP tx_xh
+   BEQ :+
+   BCS @lrec
+:  LDA tx_s                             ; + 2 S: at x + 3
+   ASL A
+   STA t_tmp
+   LDA tx_s+1
+   ROL A
+   STA t_tmp+1
+   LDA tx_s+2
+   ROL A
+   STA t_tmp+2
+   CLC
+   LDA pl_q
+   ADC t_tmp
+   STA pl_q
+   LDA pl_q+1
+   ADC t_tmp+1
+   STA pl_q+1
+   LDA pl_q+2
+   ADC t_tmp+2
+   STA pl_q+2
+   JSR tx_lin
+   LDA m_p
+   STA tx_dr
+   LDA m_p+1
+   STA tx_dr+1
+@lrec:
+   JMP @rec
+@proj:
    ; the left strip's d: on the seg's odd bytes (x + 5 <= xh) the midpoint
    ; of the exact d either side (the previous byte's, and a look-ahead the
    ; next byte reuses); on its even bytes exact
@@ -2255,6 +2323,28 @@ tx_getd:
    LDX t_i
    JMP set_cur
 @rts:
+   RTS
+
+; tx_lin: step 7w, m_p = dL +- pl_q bytes 1-2 (by tx_sg)
+tx_lin:
+   LDA tx_sg
+   BMI @neg
+   CLC
+   LDA tx_dl
+   ADC pl_q+1
+   STA m_p
+   LDA tx_dl+1
+   ADC pl_q+2
+   STA m_p+1
+   RTS
+@neg:
+   SEC
+   LDA tx_dl
+   SBC pl_q+1
+   STA m_p
+   LDA tx_dl+1
+   SBC pl_q+2
+   STA m_p+1
    RTS
 
 ; tx_dat: A = k (-1, 0, 1) -> m_p = the exact d at the left strip centre
@@ -4753,6 +4843,84 @@ tx_seg:
    INC tx_one
    JMP @tail
 @den:
+   ; step 7w: (xh - xl) * |B - A| <= 2 (A + B): d linear (tx_aff)
+   STZ tx_aff
+   SEC
+   LDA tx_rb
+   SBC tx_ra
+   BCS :+
+   EOR #$FF
+   ADC #1                               ; (C = 0: -(B - A))
+:  STA m_a
+   STZ m_a+1
+   SEC
+   LDA tx_xh
+   SBC tx_xl
+   STA m_b
+   STZ m_b+1
+   JSR mul16                            ; (< 2^16)
+   CLC                                  ; 2 (A + B)
+   LDA tx_ra
+   ADC tx_rb
+   STA t_tmp
+   LDA #0
+   ROL A
+   ASL t_tmp
+   ROL A
+   STA t_tmp+1
+   LDA t_tmp
+   CMP m_p
+   LDA t_tmp+1
+   SBC m_p+1
+   BCS @lin
+   JMP @proj
+@lin:
+   INC tx_aff                           ; S = (|dH - dL| << 8) // (xh - xl)
+   STZ tx_dn                            ; (next_col's n += dn, den += dden
+   STZ tx_dn+1                          ;  then keep S, in tx_n)
+   STZ tx_dn+2
+   STZ tx_dn+3
+   STZ tx_dden
+   STZ tx_dden+1
+   STZ tx_sg
+   SEC
+   LDA tx_dh
+   SBC tx_dl
+   STA m_p
+   LDA tx_dh+1
+   SBC tx_dl+1
+   STA m_p+1
+   BCS :+
+   DEC tx_sg                            ; dH < dL: |dH - dL|
+   SEC
+   LDA #0
+   SBC m_p
+   STA m_p
+   LDA #0
+   SBC m_p+1
+   STA m_p+1
+:  STZ m_p+2
+   STZ m_p+3
+   SEC
+   LDA tx_xh
+   SBC tx_xl
+   STA m_b
+   STZ m_b+1
+   JSR div32                            ; its whole part, then (r << 8) // w
+   LDA m_p
+   STA tx_s+1
+   LDA m_p+1
+   STA tx_s+2
+   STZ m_p
+   LDA m_r
+   STA m_p+1
+   STZ m_p+2
+   STZ m_p+3
+   JSR div32
+   LDA m_p
+   STA tx_s
+   JMP @tail
+@proj:
    ; den0 = A * (xh - xl); n0 = dL * den0
    LDA tx_ra
    STA m_a
