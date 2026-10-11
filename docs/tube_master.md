@@ -859,6 +859,20 @@ the indexed loads and stores themselves. (The profiler now files the
 7w / 7x routines under the walls' set-up, `st_flat` under the steppers,
 `fs_need` / `fs_used` under reading requests.)
 
+## H4v. Linear d by next_col's adds. — DONE
+
+`tx_at8` (one 8x32 multiply) made each byte's d on a linear wall (7w,
+7x): 61K on `TUBE_SLOW`. But S (x + 1 - xl) + 128 starts at 128 on the
+seg's first byte column (x + 1 = xl) and grows by 4 S a byte, and
+`next_col` already steps `tx_n` by `tx_dn` every byte column (the
+projective walls' numerator). So a linear seg sets tx_n = 128, tx_dn =
+4 S, dden = 0 (`tx_lstep`) and `tx_getd` reads d from tx_n: no
+multiply a byte; the right strip adds 2 S. The slope and sign move to
+their own 4 bytes. And `tx_7x` makes dH only for a one-column seg, the
+one place it is read. The same values (frames unchanged).
+`TUBE_SLOW`: the server 1,724K -> 1,693K cycles a frame (-1.8%; 564 ms
+at 3MHz), code +40 B.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,

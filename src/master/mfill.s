@@ -292,6 +292,8 @@ si_neg:  .res 1
 c_last:  .res 1                         ; this byte column is the seg's last
 tx_one:  .res 1                         ; the seg has one byte column (H4j)
 tx_aff:  .res 1                         ; step 7w: its d linear (tx_s, tx_sg)
+tx_s:    .res 3                         ;  the slope 8.8, sign ($FF: -); then
+tx_sg:   .res 1                         ;  next_col steps tx_n by 4 S (H4v)
 si_w:    .res 2
 si_k:    .res 2
 si_xlo:  .res 1
@@ -346,8 +348,6 @@ tx_n:    .res 4                         ; left strip's numerator / denominator,
 tx_den:  .res 2                         ;  stepped by constants
 tx_dn:   .res 4
 tx_dden: .res 2
-tx_s = tx_n                             ; step 7w (a linear seg: no tx_n ..):
-tx_sg = tx_n+3                          ;  the slope 8.8 (3), sign ($FF: -)
 tx_d:    .res 2                         ; the left strip's d (x + 1)
 c_dok:   .res 1                         ; d computed for this byte
 c_t:     .res 2                         ; unclamped T, B at x (s16, biased)
@@ -2083,11 +2083,13 @@ tx_getd:
    BNE :+
    JMP @proj
 :  ; step 7w: d = dL +- ((S * (x + 1 - xl) + 128) >> 8), and at x + 3
-   LDA mf_x
-   SEC
-   SBC tx_xl
-   INC A
-   JSR tx_at8                           ; (pl_q: S * (x + 1 - xl) + 128)
+   LDA tx_n                             ; next_col's S (x + 1 - xl) + 128
+   STA pl_q                             ;  (tx_lstep; H4v: no multiply)
+   LDA tx_n+1
+   STA pl_q+1
+   LDA tx_n+2
+   STA pl_q+2
+   JSR tx_lin
    LDA m_p
    STA tx_d
    STA tx_dr
@@ -2313,7 +2315,7 @@ tx_getd:
 ; width: 0 < wf = sx2 - sx1 < 256, sx1 <= xl, wf * |wb - wa| <= 2 (wa +
 ; wb). Then tx_s, tx_sg are its slope (|d2 - d1| << 8) // wf and its sign,
 ; tx_dl = d1 +- ((S (xl - sx1) + 128) >> 8), tx_dh = dL +- ((S (xh - xl)
-; + 128) >> 8)
+; + 128) >> 8), the latter only for a one-column seg (tx_seg @lx)
 tx_7x:
    SEC
    LDA zp_seg_sx2_l
@@ -2401,15 +2403,7 @@ tx_7x:
    STA tx_dl
    LDA m_p+1
    STA tx_dl+1
-   SEC
-   LDA tx_xh
-   SBC tx_xl
-   JSR tx_at8
-   LDA m_p
-   STA tx_dh
-   LDA m_p+1
-   STA tx_dh+1
-   SEC
+   SEC                                  ; (tx_dh: a one-column seg's, @lx)
    RTS
 @no:
    CLC
@@ -2433,6 +2427,35 @@ tx_slope:
    JSR div32
    LDA m_p
    STA tx_s
+   RTS
+
+; tx_lstep: a linear seg's d stepper -- tx_n = S (x + 1 - xl) + 128 at
+; its first byte column (x + 1 = xl: 128), next_col adding tx_dn = 4 S a
+; byte (den unused: dden 0)
+tx_lstep:
+   LDA #128
+   STA tx_n
+   STZ tx_n+1
+   STZ tx_n+2
+   STZ tx_n+3
+   STZ tx_dden
+   STZ tx_dden+1
+   LDA tx_s
+   ASL A
+   STA tx_dn
+   LDA tx_s+1
+   ROL A
+   STA tx_dn+1
+   LDA tx_s+2
+   ROL A
+   STA tx_dn+2
+   LDA #0
+   ROL A
+   STA tx_dn+3
+   ASL tx_dn
+   ROL tx_dn+1
+   ROL tx_dn+2
+   ROL tx_dn+3
    RTS
 
 ; tx_at8: A = k -> m_p = dL +- ((S k + 128) >> 8) (steps 7w, 7x), pl_q
@@ -5012,12 +5035,6 @@ tx_seg:
    JMP @proj
 @lin:
    INC tx_aff                           ; S = (|dH - dL| << 8) // (xh - xl)
-   STZ tx_dn                            ; (next_col's n += dn, den += dden
-   STZ tx_dn+1                          ;  then keep S, in tx_n)
-   STZ tx_dn+2
-   STZ tx_dn+3
-   STZ tx_dden
-   STZ tx_dden+1
    STZ tx_sg
    SEC
    LDA tx_dh
@@ -5041,6 +5058,7 @@ tx_seg:
    STA m_b
    STZ m_b+1
    JSR tx_slope
+   JSR tx_lstep
    JMP @tail
 @lx:                                    ; step 7x: tx_dl, tx_dh, tx_s, tx_sg
    STZ tx_one                           ;  made (tx_7x)
@@ -5051,18 +5069,21 @@ tx_seg:
    BCS :+
    CMP mf_hi
    BCC @lmany
-:  LDA #1                               ; one byte column: tx_getd's own
-   STA tx_rb                            ;  path, dH at xh (B not 0)
+:  SEC                                  ; one byte column: tx_getd's own
+   LDA tx_xh                            ;  path, dH at xh (B not 0)
+   SBC tx_xl
+   JSR tx_at8
+   LDA m_p
+   STA tx_dh
+   LDA m_p+1
+   STA tx_dh+1
+   LDA #1
+   STA tx_rb
    INC tx_one
    JMP @tail
 @lmany:
-   INC tx_aff                           ; the 7w path (next_col keeps tx_s)
-   STZ tx_dn
-   STZ tx_dn+1
-   STZ tx_dn+2
-   STZ tx_dn+3
-   STZ tx_dden
-   STZ tx_dden+1
+   INC tx_aff                           ; the 7w path
+   JSR tx_lstep
    JMP @tail
 @proj:
    ; den0 = A * (xh - xl); n0 = dL * den0

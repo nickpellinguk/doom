@@ -1891,6 +1891,10 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   shared with 7w). Against exact d, 7w and 7x together move 8.4% of
   wall cells over the Tube's slow and the regression poses, 84% by one
   texture column. 26.33M -> 25.71M (-2.35%). Bank 6 keeps 460 B free.
+  Then a linear seg's per-byte d comes from `next_col`'s own stepper:
+  tx_n = 128 at its first byte column, tx_dn = 4 S (`tx_lstep`), no
+  multiply a byte; dH is made only for a one-column seg. The same
+  values. 25.71M -> 25.41M (-1.18%), +40 B.
 
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a
