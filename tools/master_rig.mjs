@@ -247,11 +247,14 @@ async function engineMode() {
     const panel = new Uint8Array(fs.readFileSync(A.panel_bin));
     out.panel_bad = A.panel.map((a) => {
         const m = s.readMemory(a, panel.length, { shadow: true });
+        fs.writeFileSync(path.join(outdir, "panel_got.bin"), Buffer.from(m));
         let bad = 0;
         for (let i = 0; i < panel.length; i++) if (m[i] !== panel[i]) bad++;
         return bad;
     });
-    if (out.panel_bad.some((b) => b)) fails.push(`control panel differs: ${out.panel_bad} bytes`);
+    // (the Tube build's panel shows the game's numbers, H8: test_master_disc
+    //  holds panel_got.bin to master_panel.panel_with instead)
+    if (!A.panel_live && out.panel_bad.some((b) => b)) fails.push(`control panel differs: ${out.panel_bad} bytes`);
     // the raster split (step 6c): over 50 fields, line 135 (the view's
     // last) keeps its Mode 2 colours out to the same pixel -- an early
     // switch would decode its right end as Mode 1 -- and line 136 (the

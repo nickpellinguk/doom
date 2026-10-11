@@ -47,7 +47,8 @@ json.dump({'flip_sched': symmap.sym('flip_sched'),
            'tube_mhz': MHZ if TUBE else 0,
            # H6: the Tube build's objects are ON -- their bitmap must be
            # filled at boot (the py65 rigs seed it themselves)
-           'obj_anyb': symmap.sym('OBJ_ANYB') if TUBE else None}, open(addrs, 'w'))
+           'obj_anyb': symmap.sym('OBJ_ANYB') if TUBE else None,
+           'panel_live': TUBE}, open(addrs, 'w'))
 r = subprocess.run(['node', 'tools/master_rig.mjs', 'engine',
                     os.path.join(out, 'doom_tube.ssd' if TUBE else 'doom_master.ssd'), addrs,
                     os.path.join(out, 'tube' if TUBE else 'engine')], capture_output=True, text=True)
@@ -57,6 +58,20 @@ print('\n'.join(lines))
 if r.returncode or not any('MASTERDISC: PASS' in l for l in lines):
     print(r.stderr[-2000:])
     sys.exit(1)
+
+# the Tube build's panel is live (H8): it must be the panel showing SOME
+# health and armour (the rig's walk may take a pickup) -- glyphs, cells
+# and the rest of the panel byte for byte master_panel.panel_with's
+if TUBE:
+    import master_panel as MP
+    pg = open(os.path.join(out, 'tube', 'panel_got.bin'), 'rb').read()
+    shown = next(((h, a) for h in range(201) for a in range(201)
+                  if MP.panel_with((50, h, a)) == pg), None)
+    print(f'panel: ' + (f'ammo 50, health {shown[0]}, armour {shown[1]}' if shown
+                        else 'NOT a panel_with panel'))
+    if shown is None:
+        print('MASTERDISC: FAIL (panel)')
+        sys.exit(1)
 
 # the music on the machine: every byte the SN76489 received, tick by tick,
 # against master_music.Player (whose ring never runs dry here: the frames
