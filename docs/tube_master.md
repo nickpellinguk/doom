@@ -999,6 +999,44 @@ table for the span loops was tried there and dropped: no LDY abs,Y.) The
 Master-only build is unchanged. (Both builds write `build/engine_m.map`;
 it is the last one built.)
 
+## H6. Pickup sprites (display only). — PLANNED
+
+The map's static objects (`e1m1.fp_objects`: stimpack, medikit, potion,
+armour bonus, green and blue armour, floor lamps, barrels; 50, sorted
+by subsector) already have an engine path: `objects.s` projects each at
+the START of its home subsector (before that subsector's segs mark
+anything, so nearer geometry is down and its own floor is not), stages
+(depth, centre x, top y, bottom y, kind) and then draws wireframe-era
+outline art and tightens the clip spans behind it. On the Master and
+the Tube host the objects are switched off (`ok_clear`).
+
+A sprite here is drawn like a floor: ONE TEXEL A BYTE COLUMN, read once
+a line pair, the even line the byte and the odd line its FLIP (the
+cross-hatch); a transparent texel is skipped, so there is no masking.
+
+1. *Projection spec* (`sprite_ref.py`): `obj_project`'s maths in Python
+   (the vertex pipeline's rotation, the reciprocal, `project_x`,
+   `project_y`, the per-kind growth and width ratio), gated against the
+   6502's staged values at the regression and random poses.
+2. *Art*: DOOM1.WAD's sprites (STIMA0, MEDIA0, BON1A0, BON2A0, ARM1A0,
+   ARM2A0, COLUA0, BAR1A0) resampled to texel bytes (two Mode 2 pixels;
+   the flats' quantiser) with a transparent code, column-major.
+3. *Model*: a SPRITE display-list record (a byte column: lines, sprite,
+   texel column, v and its step), drawn after everything else, farthest
+   first. Each sprite is clipped to the clip spans open when its
+   subsector starts -- read only: a sprite with transparent bytes must
+   not close the columns behind it. Pictures before any 6502.
+4. *Host engine*: a sprite request at `obj_project` (kind, the staged
+   rectangle, depth, and the live spans over its columns) in place of
+   the outline art and the tighten.
+5. *Second processor*: SPRITE records from the requests.
+6. *Host drawer*: the sprite column loop (byte, FLIP, skip).
+
+Then the panel numbers: each field on a 4-pixel boundary, its digits
+pre-built with the panel's cross-hatch (by (x + y) parity: for a
+byte-aligned cell only the line's parity matters), copied straight into
+the one shared panel copy (&5800-&5DFF).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
