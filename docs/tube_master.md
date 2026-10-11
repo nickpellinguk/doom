@@ -1018,6 +1018,14 @@ cross-hatch); a transparent texel is skipped, so there is no masking.
    (the vertex pipeline's rotation, the reciprocal, `project_x`,
    `project_y`, the per-kind growth and width ratio), gated against the
    6502's staged values at the regression and random poses.
+   **Done**: `test_sprite_proj.py` (SPRITEPROJ, in the regression)
+   matches all 1,010 staged objects over 185 poses -- subsector, depth,
+   centre x, top and bottom y, kind. Three things the walls' Python path
+   does not show: the centre x is `project_x_c` on raw s16 counts,
+   `128 + rns(counts*m9, S+5)` with no shrink (`fp_project_x` shrinks
+   8.8 inputs and is a pixel out near); y adds `Y_BIAS`; and a far
+   object's staged depth low byte is the far reciprocal's scratch,
+   `vy_l >> 4` (same order, `depth_key`).
 2. *Art*: DOOM1.WAD's sprites (STIMA0, MEDIA0, BON1A0, BON2A0, ARM1A0,
    ARM2A0, COLUA0, BAR1A0) resampled to texel bytes (two Mode 2 pixels;
    the flats' quantiser) with a transparent code, column-major.
