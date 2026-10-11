@@ -70,10 +70,10 @@ def depth_key(vy):
     return vy if vy < 0x1000 else (vy & 0xFF00) | ((vy & 0xFF) >> 4)
 
 
-class SpriteRef(Fm.FillRef):
-    """FillRef's walk, with the objects of each subsector staged at its
-    start: self.staged = [(ss, (vy, cx, yt, yb, kind), spans)], spans
-    the clip pool's open spans then."""
+class Staging:
+    """A render mixin: the objects of each subsector staged at its start,
+    self.staged = [(ss, (vy, cx, yt, yb, kind), spans)], spans the clip
+    pool's open spans then (endpoint_spans 8-tuples, biased lines)."""
 
     def render(self, px, py, ab):
         dw = self.dw
@@ -102,6 +102,101 @@ class SpriteRef(Fm.FillRef):
             return super().render(px, py, ab)
         finally:
             dw._anim_ss_hook, dw.packed_render_bsp = orig, orig_bsp
+
+
+class SpriteRef(Staging, Fm.FillRef):
+    """FillRef's walk with the objects staged (the projection gate's)."""
+
+
+# ---------------------------------------------------------------------------
+# Step 3: the SPRITE records. Per staged object (farthest first; equal
+# depths in staging order):
+#
+#   H     yb - yt, grown per kind (GROW, 256ths: pickups +15%, objects.s
+#         obj_gtab) with the base anchored: yt = yb - H'. H <= 0: nothing.
+#   dvl   (h << 8) // (H + 1): the texel step a LINE, 8.8 (h the art's
+#         height; H + 1 keeps the last pair's row inside the art when yt
+#         is odd, so no row is ever clamped).
+#         The one divide: a byte column is 4 sx units and sx units are
+#         line units (the projection's aspect), so the step a BYTE is
+#         du = 4 * dvl and a line PAIR 2 * dvl.
+#   u     at byte column k (sampled at x = 4k, the fill's byte sample):
+#         (w << 7) + (4k - cx) * dvl, 8.8 -- the art's centre at cx. The
+#         column is u >> 8, drawn while 0 <= u < w << 8.
+#   lines at column k: [yt, yb) inside the span open at x = 4k when the
+#         object's subsector began (read only: no tighten), and inside
+#         the view. A line's row is its PAIR's, counted from yt's pair:
+#         v(y) = ((y & ~1) - (yt & ~1)) * dvl, row v >> 8 (in [0, h)).
+#
+#   SPRITE k, y0, y1 (screen lines), kind, col, v0 (v at y0's pair),
+#          step (dvl, the WALL record's form: a pair adds 2 * step);
+#          line y reads row
+#          (v0 + ((y & ~1) - (y0 & ~1)) * step) >> 8 of column col.
+#          The byte as is on an even line, FLIP on an odd; TRANS skipped.
+# ---------------------------------------------------------------------------
+GROW = [0, 0, 38, 38, 38, 38, 38]
+
+
+def records(staged, top, bot, bias, lines):
+    """The frame's SPRITE records from the staged objects, drawing order."""
+    import sprite_art as A
+    order = sorted(range(len(staged)), key=lambda i: (-staged[i][1][0], i))
+    out = []
+    for i in order:
+        _, (vy, cx, yt, yb, kind), spans = staged[i]
+        H = yb - yt
+        if H <= 0:
+            continue
+        H += (H * GROW[kind] + 128) >> 8
+        yt = yb - H
+        w, h = A.size(kind)
+        dvl = (h << 8) // (H + 1)
+        for k in range(64):
+            x = 4 * k
+            u = (w << 7) + (x - cx) * dvl
+            if not 0 <= u < w << 8:
+                continue
+            o = Fm.FillRef._span_at(spans, x)
+            if o is None:
+                continue
+            y0 = max(yt, top(o, x), bias)
+            y1 = min(yb - 1, bot(o, x), bias + lines - 1)
+            if y0 > y1:
+                continue
+            v0 = ((y0 & ~1) - (yt & ~1)) * dvl
+            out.append(dict(kind='SPRITE', k=k, y0=y0 - bias, y1=y1 - bias,
+                            spr=kind, col=u >> 8, v0=v0, step=dvl))
+    return out
+
+
+def draw_records(fb, recs):
+    """SPRITE records onto a 10K buffer (bytearray), in order."""
+    import sprite_art as A
+    import master_assets as M
+    art = {}
+    for r in recs:
+        if r['spr'] not in art:
+            art[r['spr']] = A.texels(r['spr'])
+        col = art[r['spr']][r['col']]
+        for y in range(r['y0'], r['y1'] + 1):
+            # the pair's row, from the record's first pair (biased lines
+            # are even-offset: Y_BIAS 48, so parity is the screen's)
+            v = r['v0'] + ((y & ~1) - (r['y0'] & ~1)) * r['step']
+            b = col[v >> 8]
+            if b != A.TRANS:
+                fb[(y >> 3) * 512 + r['k'] * 8 + (y & 7)] = M.FLIP[b] if y & 1 else b
+    return fb
+
+
+class SpriteDL(Staging, __import__('tube_dl').DLRef):
+    """The Tube frame with sprites: DLRef's frame and list, the SPRITE
+    records appended (drawn last) and drawn over the frame."""
+
+    def render(self, px, py, ab):
+        fb = super().render(px, py, ab)
+        self.sprites = records(self.staged, self.top, self.bot, self.bias, Fm.LINES)
+        self.dl = self.dl + self.sprites
+        return bytes(draw_records(bytearray(fb), self.sprites))
 
 
 if __name__ == '__main__':

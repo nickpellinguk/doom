@@ -39,6 +39,12 @@ byte. Records (lines y 0..135, byte columns k 0..63):
                           pair span and the rest of each line its own
   FILL  k, y0, y1: one byte column of one byte (sky, an unseen plane's
         shade, a sky-to-sky upper), FLIPped on odd lines if flip
+  SPRITE k, y0, y1: one byte column of a billboard (H6, sprite_ref:
+        SpriteDL), drawn after everything else, farthest first
+        spr, col          the kind and its art column (sprite_art)
+        v0, step          v (8.8) at y0's pair, step a line: line y's row
+                          is (v0 + ((y & ~1) - (y0 & ~1)) * step) >> 8
+        byte              the texel, FLIPped on odd y; TRANS skipped
 
 Encoded sizes (for step 2's bandwidth estimate; the format is not final):
 WALL 11 B (+3 when the right strip has its own row), SPAN 8 B (far 5 B),
@@ -236,6 +242,8 @@ def draw(dl, tex, tparams, flats):
                     put(y, k, M.FLIP[b] if y & 1 else b)
                 if 'far' not in r:
                     u, v = (u + r['du']) & 0xFF, (v + r['dv']) & 0xFF
+        elif r['kind'] == 'SPRITE':                  # H6: sprite_ref is its spec
+            __import__('sprite_ref').draw_records(fb, [r])
         else:
             for y in range(r['y0'], r['y1'] + 1):
                 put(y, r['k'], M.FLIP[r['byte']] if r['flip'] and y & 1 else r['byte'])

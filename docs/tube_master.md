@@ -1044,6 +1044,20 @@ cross-hatch); a transparent texel is skipped, so there is no masking.
    first. Each sprite is clipped to the clip spans open when its
    subsector starts -- read only: a sprite with transparent bytes must
    not close the columns behind it. Pictures before any 6502.
+   **Done** (`sprite_ref.SpriteDL`, gate `test_sprite_dl.py`): one
+   SPRITE record a byte column -- k, y0, y1, kind, art column, v0 and
+   step, the WALL record's v form. The set-up is ONE divide a sprite:
+   `dvl = (h << 8) // (H + 1)` (h the art's height, H the projected
+   height after the pickups' +15% growth, base anchored) is the texel
+   step a line, and since sx units are line units a byte column's step
+   is `4 * dvl` -- so the art column at byte k is
+   `u = (w << 7) + (4k - cx) * dvl`, drawn while `0 <= u < w << 8`.
+   Rows count from yt's line pair, `v = ((y & ~1) - (yt & ~1)) * dvl`;
+   the `+ 1` keeps the last pair inside the art when yt is odd, so no
+   row is ever clamped. Lines are [yt, yb) inside the span open at
+   x = 4k when the subsector began. The previews
+   (`build/master/sprite_near.png`) show all seven kinds clipped
+   correctly behind steps and walls.
 4. *Host engine*: a sprite request at `obj_project` (kind, the staged
    rectangle, depth, and the live spans over its columns) in place of
    the outline art and the tighten.
