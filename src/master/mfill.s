@@ -109,6 +109,7 @@ HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 .exportzp zw_ddh
 .endif
 .ifdef TUBE
+.import sfx_tick
 .export rq_frame, rq_fill, rq_end, rq_objs
 .import obj_sd_l, obj_sd_h, obj_scx_l, obj_scx_h, obj_syt_l, obj_syt_h
 .import obj_syb_l, obj_syb_h, obj_sasp
@@ -1752,6 +1753,15 @@ split_irq:
    STA $FE67
    JSR MUS_TICK                         ; the music's 50 Hz tick (step 7ac,
                                         ;  main $0300: X Y kept)
+.ifdef TUBE
+   LDA $FE34                            ; H9: the sound effects, after the
+   PHA                                  ;  music (main RAM: the drawer may
+   AND #$FB                             ;  have shadow paged in -- X off for
+   STA $FE34                            ;  the call)
+   JSR sfx_tick
+   PLA
+   STA $FE34
+.endif
 @ack:
    LDA #$40
    STA $FE6D                            ; T1's flag down

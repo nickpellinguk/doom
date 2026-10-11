@@ -175,9 +175,12 @@ async function engineMode() {
     const music = { ticks: 0, pokes: [] };
     let musTick = null;
     if (A.mus_init !== undefined) {
+        music.sfx = [];                     // (H9: the effects asked for, by tick)
         cpu.debugInstruction.add((addr) => {
             if (addr === A.mus_init) musTick = -1;
             else if (addr === A.mus_tick && musTick !== null) music.ticks = ++musTick + 1;
+            else if (A.sfx_start && addr === A.sfx_start && musTick !== null)
+                music.sfx.push([musTick, cpu.a]);
             return false;
         });
         const chip = s._soundChip;

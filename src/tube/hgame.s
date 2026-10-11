@@ -16,6 +16,12 @@
 ;   panel    health and armour into pn_val (pn_update draws them)
 ; ============================================================================
 gm_ss   = pn_c                          ; (scratch: pn_update runs later)
+GM_NMV  = 6 * 3                         ; the movers' ANIM_WS bytes (3 each)
+ANIM_WS = $0D6B                         ; (anim.s: per mover pos lo, hi, state)
+SFX_PICKUP = 0                          ; (master_sfx.py)
+SFX_PAIN   = 1
+SFX_GRIND  = 2
+SFX_THUD   = 3
 gm_i    = pn_i
 
 gm_tick:
@@ -24,6 +30,12 @@ gm_tick:
    BNE @go
    LDX #GONE_LEN - 1
 :  STZ OBJ_GONE,X
+   DEX
+   BPL :-
+   LDX #GM_NMV - 1                      ; the movers as they are (no sound)
+:  LDA ANIM_WS+2,X
+   AND #$40
+   STA gm_mst,X
    DEX
    BPL :-
    INC gm_ready
@@ -77,6 +89,8 @@ gm_tick:
    LDY gm_t
    ORA OBJ_GONE,Y
    STA OBJ_GONE,Y
+   LDA #SFX_PICKUP                      ; H9: the bloop
+   JSR sfx_start
 @nx:
    LDX gm_i
    INX
@@ -120,8 +134,29 @@ gm_tick:
    BEQ @clk
    LDA #5
    JSR gm_hurt
-   BRA @clk
+   LDA #SFX_PAIN                        ; H9: the grunt
+   JSR sfx_start
+   JMP @clk
 @panel:
+   LDX #0                               ; H9: a mover setting off grinds,
+@mv:                                    ;  one arriving thuds
+   LDA ANIM_WS+2,X
+   AND #$40
+   CMP gm_mst,X
+   BEQ @mvn
+   STA gm_mst,X
+   TAY                                  ; (Z: arrived -- STA sets no flags)
+   BEQ :+
+   LDA #SFX_GRIND
+   BRA :++
+:  LDA #SFX_THUD
+:  JSR sfx_start
+@mvn:
+   INX
+   INX
+   INX
+   CPX #GM_NMV
+   BCC @mv
    LDA gm_health                        ; the panel's values (pn_update)
    STA pn_val+2
    STZ pn_val+3
@@ -245,6 +280,7 @@ gm_atype:  .byte 0
 gm_clock:  .byte 0
 gm_t:      .byte 0
 gm_s:      .byte 0
-gm_c9:     .byte 0                      ; (the clock's 9th bit: gm_hurt
+gm_c9:     .byte 0
+gm_mst:    .res GM_NMV                  ; the movers' moving bits (stride 3)                      ; (the clock's 9th bit: gm_hurt
                                         ;  takes gm_t)
 .include "hgame_tab.s"

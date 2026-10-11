@@ -52,6 +52,8 @@ def damaging():
 
 class Game:
     def __init__(self):
+        self.sounds = []                    # H9: master_sfx requests, in order
+        self.mst = None                     # the movers' moving bits, last frame
         self.health, self.armor, self.atype = 100, 0, 0
         self.clock = 0
         self.gone = set()
@@ -62,18 +64,31 @@ class Game:
         """The panel's fields: ammo, health, armour."""
         return (AMMO, self.health, self.armor)
 
-    def tick(self, rx, ry, ss, fields):
+    def tick(self, rx, ry, ss, fields, movers=(0,) * 6):
         """One frame: the player at raws (rx, ry) in subsector ss, fields
-        (50 Hz) since the last frame."""
+        (50 Hz) since the last frame, the movers' state bytes (anim.s
+        ANIM_WS +2: bit 6 set while moving). self.sounds: the effects asked
+        for this frame (master_sfx), in order."""
+        import master_sfx as X
+        self.sounds = []
+        if self.mst is None:                # (the first frame: as they are)
+            self.mst = [m & 0x40 for m in movers]
         for i, x, y, t in self.table:
             if i not in self.gone and abs(rx - x) < TOUCH and abs(ry - y) < TOUCH:
                 if self.give(t):
                     self.gone.add(i)
+                    self.sounds.append(X.PICKUP)
         self.clock += fields
         while self.clock >= PERIOD:
             self.clock -= PERIOD
             if ss in self.dmg and self.health > 0:
                 self.damage(self.dmg[ss])
+                self.sounds.append(X.PAIN)
+        for k, m in enumerate(movers):      # a mover sets off / arrives
+            mv = m & 0x40
+            if mv != self.mst[k]:
+                self.sounds.append(X.GRIND if mv else X.THUD)
+                self.mst[k] = mv
 
     def give(self, t):
         if t in (STIM, MEDI):

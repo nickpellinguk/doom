@@ -48,7 +48,8 @@ json.dump({'flip_sched': symmap.sym('flip_sched'),
            # H6: the Tube build's objects are ON -- their bitmap must be
            # filled at boot (the py65 rigs seed it themselves)
            'obj_anyb': symmap.sym('OBJ_ANYB') if TUBE else None,
-           'panel_live': TUBE}, open(addrs, 'w'))
+           'panel_live': TUBE,
+           'sfx_start': symmap.sym('sfx_start') if TUBE else None}, open(addrs, 'w'))
 r = subprocess.run(['node', 'tools/master_rig.mjs', 'engine',
                     os.path.join(out, 'doom_tube.ssd' if TUBE else 'doom_master.ssd'), addrs,
                     os.path.join(out, 'tube' if TUBE else 'engine')], capture_output=True, text=True)
@@ -88,13 +89,21 @@ bad = []
 if got.get(-1) != [0x9F, 0xBF, 0xDF, 0xFF]:
     bad.append(f'MUS_INIT sent {got.get(-1)}')
 n = mus['ticks'] - 1                    # the last tick may be cut short
+import master_sfx
+fx = master_sfx.Sfx()                   # (H9: the Tube build's effects --
+asks = {}                               #  each asked for between ticks t and
+for t, e in mus.get('sfx', []):         #  t + 1, so heard from t + 1)
+    asks.setdefault(t, []).append(e)
 for t in range(n):
     p.refill()
-    want = p.tick()
+    for e in asks.get(t - 1, []):
+        fx.request(e)
+    want = p.tick() + fx.tick(p)
     if got.get(t, []) != want:
         bad.append(f'tick {t}: chip got {got.get(t, [])} model {want}')
         break
-print(f'music: {n} ticks ({n / 50:.1f} s), {sum(len(got.get(t, [])) for t in range(n))} chip bytes, '
+print(f'music: {n} ticks ({n / 50:.1f} s), {len(mus.get("sfx", []))} effects, '
+      f'{sum(len(got.get(t, [])) for t in range(n))} chip bytes, '
       + ('as master_music.Player' if not bad else 'DIFFER: ' + '; '.join(bad)))
 if n < 500 or bad:
     print('MASTERDISC: FAIL (music)')

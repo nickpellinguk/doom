@@ -101,6 +101,7 @@ def _build_locked(dflags, key, objdir, _marker, defs, _stamp):
     srcs = list(_SOURCES)
     if any(d.split('=')[0] == 'TUBE' for d in filter(None, defs.split(','))):
         srcs.append('src/tube/hdraw.s')     # the Tube Master host drawer
+        srcs.append('src/tube/hsfx.s')      # H9: the sound effects
     for src in srcs:
         name = os.path.basename(src).replace('.s', '')
         obj = os.path.join(objdir, f'{name}_m.o')

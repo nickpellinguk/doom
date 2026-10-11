@@ -7,7 +7,9 @@ walks past the map's pickups (inside and just outside the touch box) and
 through nukage and dry subsectors, from starting states that reach every
 rule (health under and over 100, every armour type, nearly no armour).
 After every frame gm_tick's state -- health, armour, its type, the field
-clock, the GONE objects and the panel's values -- must be game_ref.Game's.
+clock, the GONE objects and the panel's values -- must be game_ref.Game's,
+and so must the sound effects it asks for (H9: sfx_start's calls, in
+order), the movers setting off and arriving at random.
 
 Then the engine: a frame rendered with objects GONE must stage (and so
 request) exactly the rest -- the same objects as sprite_ref.Staging with
@@ -34,6 +36,9 @@ def main():
     S = {n: sym(n) for n in ('gm_tick', 'gm_health', 'gm_armor', 'gm_atype', 'gm_clock',
                              'gm_ready', 'OBJ_GONE', 'ANIM_FIELDS', 'pn_val', 'zp_br_pxraw_l')}
     rnd = random.Random(11)
+    asked = []                                  # H9: sfx_start's A, in order
+    r.sc.pc_hooks = {sym('sfx_start'): lambda mpu: asked.append(mpu.a)}
+    WS = 0x0D6B                                 # anim.s ANIM_WS (state at +2)
     table = G.pickups()
     nuke = sorted(G.damaging())
     dry = [s for s in range(len(dw.fp_ssectors)) if s not in G.damaging()]
@@ -57,7 +62,11 @@ def main():
         m[S['gm_clock']] = 0
         for i in range(7):
             m[S['OBJ_GONE'] + i] = rnd.randint(0, 255)   # (the first frame clears it)
+        mv = [rnd.choice([0x00, 0x40, 0x80, 0xC0]) | rnd.randrange(64) for _ in range(6)]
         for _ in range(60):
+            for k in range(6):                      # movers setting off, arriving
+                if rnd.random() < 0.1:
+                    mv[k] = (mv[k] + 0x40) & 0xC0 | rnd.randrange(64)
             if rnd.random() < 0.6:
                 _, x, y, _ = rnd.choice(table)
                 rx, ry = x + rnd.randint(-40, 40), y + rnd.randint(-40, 40)
@@ -65,7 +74,10 @@ def main():
                 rx, ry = rnd.randint(-3000, 3000), rnd.randint(-3000, 3000)
             ss = rnd.choice(nuke) if rnd.random() < 0.4 else rnd.choice(dry)
             fields = rnd.choice([1, 2, 3, 5, 8, 20, 46, 47, 100])
-            g.tick(rx, ry, ss, fields)
+            g.tick(rx, ry, ss, fields, mv)
+            for k in range(6):
+                m[WS + 3 * k + 2] = mv[k]
+            asked.clear()
             m[0xFE30] = 6
             p = S['zp_br_pxraw_l']
             for k, v in enumerate((rx & 0xFF, rx >> 8 & 0xFF, ry & 0xFF, ry >> 8 & 0xFF)):
@@ -73,14 +85,15 @@ def main():
             m[S['ANIM_FIELDS']] = fields
             mpu.a = ss
             r.sc._run(S['gm_tick'])
-            want = (g.health, g.armor, g.atype, g.clock, g.gone, (g.health, g.armor))
-            got = state()
+            want = (g.health, g.armor, g.atype, g.clock, g.gone, (g.health, g.armor), g.sounds)
+            got = state() + (list(asked),)
             frames += 1
             if got != want:
                 bad += 1
                 if bad <= 5:
                     print(f'  scenario {sc} ({rx}, {ry}) ss {ss} +{fields}: 6502 {got[:4]} '
-                          f'gone {sorted(got[4])} / model {want[:4]} gone {sorted(want[4])}')
+                          f'gone {sorted(got[4])} sounds {got[6]} / model {want[:4]} '
+                          f'gone {sorted(want[4])} sounds {want[6]}')
     print(f'  rules: {frames} frames, {bad} differ')
 
     # the engine skips GONE objects: staged slots against Staging's

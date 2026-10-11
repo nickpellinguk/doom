@@ -1167,6 +1167,39 @@ in and out of the touch box, through nukage and dry subsectors, from
 starting states that reach every rule) and holds the engine's staging
 with 20 objects gone to Staging's.
 
+## H9. Sound effects. — done (Tube build)
+
+`master_sfx.py` is the spec. Four DOOM sounds made on the SN76489 (no
+samples): PICKUP (DSITEMUP's bloop: a rising tone, C5 to E6, fading),
+PAIN (DSPLPAIN: a white-noise bark over a falling tone), GRIND (a door
+or lift setting off: a low noise rumble over a buzzing 125 Hz tone,
+wobbling, then fading; 0.72 s) and THUD (a mover arriving: a short low
+knock). `gm_tick` asks for them: PICKUP when a pickup is taken, PAIN on a
+nukage hit, GRIND / THUD when a mover's state (anim.s ANIM_WS, bit 6:
+moving) changes from waiting to moving / moving to waiting.
+
+An effect is one frame a 50 Hz tick (tone period, its attenuation, the
+noise control, its attenuation) on two channels: SOUND 3's tone (the
+music's bass voice) and the noise (its rare percussion). The split IRQ
+calls `sfx_tick` right after `MUS_TICK`, with ACCCON's X cleared for the
+call (the effects live in main RAM, $5005-$520A, segment SFX, and the
+drawer may have shadow paged in): each tick the frame is written OVER
+the music's writes of that tick (the tone's period and attenuation every
+tick, the noise control only when it changes -- writing it resets the
+noise -- and its attenuation). At the end both channels are silenced and
+the resident player's `ch_att` for them is spoiled ($FF), so the music
+writes its own levels on its next tick and its next note restores the
+tone's pitch. The resident player is untouched. A request
+(`sfx_start`, the main loop) is taken by the next tick if its priority
+is at least the playing effect's (PAIN 3, PICKUP 2, GRIND / THUD 1).
+
+Gates: `test_sfx.py` (SFX: the resident player and the effects on py65,
+6,000 ticks with 417 random requests, every tick's chip bytes
+`Player` then `Sfx`), `test_game.py` (the requests gm_tick makes, in
+order, with movers setting off and arriving at random), and the Tube
+disc gate (the rig records each `sfx_start` and its tick; the music
+check replays them through `Sfx` -- the boot walk's potion bloops).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
