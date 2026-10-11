@@ -44,7 +44,10 @@ json.dump({'flip_sched': symmap.sym('flip_sched'),
            'panel': [abi.MPANEL],                  # the one, shared panel
            'bufs': [abi.MSCREEN0, abi.MSCREEN1],
            'panel_bin': os.path.join(out, 'panel.bin'),
-           'tube_mhz': MHZ if TUBE else 0}, open(addrs, 'w'))
+           'tube_mhz': MHZ if TUBE else 0,
+           # H6: the Tube build's objects are ON -- their bitmap must be
+           # filled at boot (the py65 rigs seed it themselves)
+           'obj_anyb': symmap.sym('OBJ_ANYB') if TUBE else None}, open(addrs, 'w'))
 r = subprocess.run(['node', 'tools/master_rig.mjs', 'engine',
                     os.path.join(out, 'doom_tube.ssd' if TUBE else 'doom_master.ssd'), addrs,
                     os.path.join(out, 'tube' if TUBE else 'engine')], capture_output=True, text=True)

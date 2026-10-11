@@ -197,6 +197,11 @@ async function engineMode() {
         return { ang: m[0], px: m[3] | (m[4] << 8), py: m[6] | (m[7] << 8) };
     };
     out.flips_after_boot = flips;
+    if (A.obj_anyb) {                        // (H6) the Tube build's objects
+        const bits = s.readMemory(A.obj_anyb, 25);
+        out.obj_anyb_set = bits.reduce((n, b) => n + (b ? 1 : 0), 0);
+        if (!out.obj_anyb_set) fails.push("objects off: OBJ_ANYB empty after boot");
+    }
     if (flips < 3) fails.push(`engine not flipping (${flips} flips after boot)`);
     const f0 = flips, s0 = st();
     await s.runFrames(400);                  // step 3's filler is slow: measure

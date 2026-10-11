@@ -1605,8 +1605,14 @@ ok_clear:
    STA ok_state
    BNE ok_off                              ; (always)
 ok_prev:  .byte 0
+.ifdef TUBE
+ok_state: .byte 0                          ; TUBE MASTER: objects ON (H6's
+                                           ; sprites): anim_init's
+                                           ; obj_anyb_fill copies OBJ_BITS
+.else
 ok_state: .byte 1                          ; 1 = objects OFF (the default,
                                            ; Eben 2026-09-02); press O for ON
+.endif
 
 ; --- obj_grow: the per-kind projected-height growth (JSR'd from the
 ;     prologue at obj_hok; H in obj_h, yb in obj_yb_l/h) ---------------
