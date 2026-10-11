@@ -873,6 +873,26 @@ one place it is read. The same values (frames unchanged).
 `TUBE_SLOW`: the server 1,724K -> 1,693K cycles a frame (-1.8%; 564 ms
 at 3MHz), code +40 B.
 
+## H4w. The floor and ceiling row maths. — ONE CUT, THE MATHS ITSELF LEFT
+
+On `TUBE_SLOW`, 305K cycles a frame: `fs_key` (620 calls, 295 making a
+key) and, under it, the row maths (`pl_rowc` / `pl_row`: 293 rows a
+frame, ~540 cycles each -- two 8x32 multiplies, D * ZC[j] and D * ZS[j],
+the products' bits taken, U and V summed and rounded to 4.4). Every row
+is a different (plane D, line pair): `pl_rowc`'s one-D-a-pair cache hits
+2 times in 295, and nearly all of them are textured (far rows return
+early). So the multiplies are the spec's own work.
+
+Exact cut: `fs_key` wrote a new key into six scratch bytes, copied them
+into its cache and compared from them; it now writes `pc_*` straight
+into the plane's cache entry and compares entry with entry. 1,693K ->
+1,679K cycles a frame (-0.8%; 560 ms at 3MHz), code -30 B, workspace
+-5 B.
+
+Fewer rows means a spec change, e.g. one row's maths shared by the two
+line pairs of a 4-line band beyond some depth (each half the 293 there),
+or the far tone from a nearer depth.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,

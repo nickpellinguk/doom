@@ -177,7 +177,8 @@ fs_kc_fb: .res NPLANE
 fs_kc_r: .res NPLANE                       ;  and the pair's first plane with
 fs_rl:   .res NPLANE                       ;  that key; those planes, the pair's
 fs_rln:  .res 1                            ;  keys (fs_rln of them)
-fs_kpl:  .res 1                            ; fs_key: the plane made
+fs_kpl:  .res 1                            ; fs_key: the plane made, a search
+fs_ki:   .res 1                            ;  cursor
 fs_kr:   .res 1                            ; fs_runs: a run's key and k1
 fs_k1:   .res 1
 fs_ob:   .res 2                         ; the list being built's buffer
@@ -1529,7 +1530,7 @@ fs_runs:
 ; fs_key: A = a plane code -> A = its key on pair pl_p (the row maths,
 ; flat (| $80: far) and far tone) as the first of the pair's planes with
 ; that key: equal keys, one id (X, Y kept). Cached per plane for the
-; pair; a key is made once (fs_kuc .. fs_kfb, into fs_kc_*) and compared
+; pair; a key is made once (into fs_kc_*) and compared
 ; whole with the pair's keys so far (fs_rl) only then (H4o).
 fs_key:
    PHY
@@ -1549,81 +1550,75 @@ fs_key:
    STY fs_kpl
    LDA fs_pd,Y
    STA pl_d
-   LDA fs_pf,Y
-   STA fs_kfl
    JSR pl_rowc                          ; pc_*[pl_p] for D pl_d
    LDX pl_p
-   LDA pc_uc,X
-   STA fs_kuc
-   LDA pc_du,X
-   STA fs_kdu
-   LDA pc_vc,X
-   STA fs_kvc
-   LDA pc_dv,X
-   STA fs_kdv
-   STZ fs_kfb
-   LDA pc_lv,X
-   BEQ :+
-   LDX fs_kfl                           ; far: the flat's one byte, and the
-   LDA far_tone,X                       ;  key that tone alone (H4h: no row
-   STA fs_kfb                           ;  maths, no flat; bit 7 of the flat
-   LDA #$80                             ;  says far, a tone may be $00), so
-   STA fs_kfl                           ;  far runs of one tone join
-   STZ fs_kuc
-   STZ fs_kdu
-   STZ fs_kvc
-   STZ fs_kdv
-:  LDY fs_kpl
-   LDA mf_ep
+   LDY fs_kpl                           ; the key straight into the cache
+   LDA mf_ep                            ;  (H4w)
    STA fs_kc_ep,Y
-   LDA pl_p
+   TXA
    STA fs_kc_p,Y
-   LDA fs_kuc
+   LDA pc_lv,X
+   BNE @far
+   LDA pc_uc,X
    STA fs_kc_uc,Y
-   LDA fs_kdu
+   LDA pc_du,X
    STA fs_kc_du,Y
-   LDA fs_kvc
+   LDA pc_vc,X
    STA fs_kc_vc,Y
-   LDA fs_kdv
+   LDA pc_dv,X
    STA fs_kc_dv,Y
-   LDA fs_kfl
+   LDA fs_pf,Y
    STA fs_kc_fl,Y
-   LDA fs_kfb
+   LDA #0
    STA fs_kc_fb,Y
-   LDX #0                               ; the pair's keys so far: an equal
-@s:                                     ;  one is this key's id
+   BRA @srch
+@far:                                   ; far: the flat's one byte, and the
+   LDX fs_pf,Y                          ;  key that tone alone (H4h: no row
+   LDA far_tone,X                       ;  maths, no flat; bit 7 of the flat
+   STA fs_kc_fb,Y                       ;  says far, a tone may be $00), so
+   LDA #$80                             ;  far runs of one tone join
+   STA fs_kc_fl,Y
+   LDA #0
+   STA fs_kc_uc,Y
+   STA fs_kc_du,Y
+   STA fs_kc_vc,Y
+   STA fs_kc_dv,Y
+@srch:                                  ; the pair's keys so far: an equal
+   STZ fs_ki                            ;  one is this key's id
+@s:
+   LDX fs_ki
    CPX fs_rln
    BEQ @add
-   LDY fs_rl,X
-   LDA fs_kuc
-   CMP fs_kc_uc,Y
+   LDA fs_rl,X
+   TAX                                  ; X: that key's plane
+   LDA fs_kc_uc,Y
+   CMP fs_kc_uc,X
    BNE @sn
-   LDA fs_kdu
-   CMP fs_kc_du,Y
+   LDA fs_kc_du,Y
+   CMP fs_kc_du,X
    BNE @sn
-   LDA fs_kvc
-   CMP fs_kc_vc,Y
+   LDA fs_kc_vc,Y
+   CMP fs_kc_vc,X
    BNE @sn
-   LDA fs_kdv
-   CMP fs_kc_dv,Y
+   LDA fs_kc_dv,Y
+   CMP fs_kc_dv,X
    BNE @sn
-   LDA fs_kfl
-   CMP fs_kc_fl,Y
+   LDA fs_kc_fl,Y
+   CMP fs_kc_fl,X
    BNE @sn
-   LDA fs_kfb
-   CMP fs_kc_fb,Y
+   LDA fs_kc_fb,Y
+   CMP fs_kc_fb,X
    BNE @sn
-   TYA
+   TXA
    BRA @set
 @sn:
-   INX
+   INC fs_ki
    BRA @s
 @add:                                   ; a new key: this plane is its id
-   LDA fs_kpl
+   TYA
    STA fs_rl,X
    INC fs_rln
 @set:
-   LDY fs_kpl
    STA fs_kc_r,Y
    PLX
    PLY
@@ -1946,12 +1941,6 @@ fs_fills:
 :  RTS
 
 .segment "FSBSS"
-fs_kuc:  .res 1                         ; fs_key's result
-fs_kdu:  .res 1
-fs_kvc:  .res 1
-fs_kdv:  .res 1
-fs_kfl:  .res 1
-fs_kfb:  .res 1
 
 .segment "FSEND"                        ; (fserve.cfg: the code area's last)
 fs_imgend:                              ; the file's end (tube_server.image)
