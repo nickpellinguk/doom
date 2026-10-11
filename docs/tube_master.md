@@ -954,6 +954,28 @@ ends; `tube_req`, `fs_frame`). Every path from `mf_snap` reaches
 +3K (the snapshot's first byte a span through `fs_get`); the 4MHz worst
 frame 586 -> 581 ms.
 
+## H5a. The host drawer. — TWO SMALL CUTS, THE LOOPS NEAR THEIR FLOOR
+
+`hd_frame` on `TUBE_SLOW`, 400K cycles a frame (200 ms at 2MHz). A
+frame's list: 176 textured pair spans (1,781 bytes), 77 far pair spans
+(822), 33 single-line spans, 121 wall byte columns (1,261 lines), 27
+FILLs (1,750 lines). The textured pair loop (`fp_lp`) is ~71 cycles a
+byte, 127K: the texel's index ((v & $F0) | u >> 4), its read, the odd
+line's FLIP, two stores, u and v stepped, Y on 7. Its steps are
+irreducible without a 256-byte Y table (HAZEL has 122 bytes left) or a
+change to the spans' arithmetic (`tube_dl.draw`, the spec).
+
+Exact cuts, the frames the same (`test_tube_host`, `test_tube_hreq`):
+- a span group's line kind (even, odd, pair) is fixed, so each span
+  patches its flat page and steps into that loop only (not all three)
+  and jumps straight to it, and `sp_run` patches only the group's flat
+  and far loops' ends (two, from `spe_tab`, set at the group's start;
+  not six);
+- a wall byte column patches its two texture columns and its step into
+  its mode's loops only (shared or own row), not both modes'.
+
+`TUBE_SLOW`: the drawer 400K -> 392K cycles a frame (-2.0%).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,

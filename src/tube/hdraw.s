@@ -159,40 +159,50 @@ wcol:   GETB                            ; y0
         GETB                            ; cl | own
         sta own
         and #$7F
-        jsr colad
+        jsr colad                       ; (H5a: only the column's mode's
+        bit own                         ;  loops, shared or own row)
+        bmi :+
         sta wl1+1
-        sta wl2+1
         sta wl3+1
-        sta wl4+1
         stx wl1+2
-        stx wl2+2
         stx wl3+2
+        bra :++
+:       sta wl2+1
+        sta wl4+1
+        stx wl2+2
         stx wl4+2
-        GETB                            ; cr
+:       GETB                            ; cr
         jsr colad
+        bit own
+        bmi :+
         sta wr1+1
-        sta wr2+1
         sta wr3+1
-        sta wr4+1
         stx wr1+2
-        stx wr2+2
         stx wr3+2
+        bra :++
+:       sta wr2+1
+        sta wr4+1
+        stx wr2+2
         stx wr4+2
-        GETB
+:       GETB
         sta v
         GETB
         sta v+1
         GETB
         asl a                           ; the step, doubled, into the pair
-        sta vst                         ;  loops
-        sta ws1l+1
-        sta wo1l+1
+        sta vst                         ;  loop
+        tax
         GETB
         rol a
         sta vst+1
-        sta ws1h+1
-        sta wo1h+1
         bit own
+        bmi :+
+        stx ws1l+1
+        sta ws1h+1
+        bra :++
+:       stx wo1l+1
+        sta wo1h+1
+:       bit own
         bpl :+
         GETB                            ; dh0
         sta dha+1
@@ -498,6 +508,20 @@ span:   and #$3F
 .endif
         sta spg
         stz scr
+        ldx #0                          ; (H5a) the group's line kind: which
+        bit pair                        ;  loops sp_run ends (flat, far)
+        bvc :+
+        ldx #4
+:       bpl :+
+        ldx #8
+:       lda spe_tab,x
+        sta spe_f+1
+        lda spe_tab+1,x
+        sta spe_f+2
+        lda spe_tab+2,x
+        sta spe_r+1
+        lda spe_tab+3,x
+        sta spe_r+2
 sp_each:
         GETB                            ; k0
         sta kk
@@ -505,36 +529,59 @@ sp_each:
         sta k1
         GETB                            ; flat, or $FF: far
         cmp #$FF
-        beq sp_far
-        tax
+        bne :+
+        jmp sp_far
+:       tax
         lda fl_bank,x
         sta $FE30
-        lda fl_page,x
-        sta fe_tx+2
-        sta fo_tx+2
-        sta fp_tx+2
+        ldy fl_page,x
         GETB
         sta su
         GETB
         sta v
+        bit pair                        ; (H5a) only the group's loop: its
+        bmi sp_fp                       ;  flat page, steps and entry
+        bvs sp_fo
+        sty fe_tx+2
         GETB
         sta fe_du+1
-        sta fo_du+1
-        sta fp_du+1
         GETB
         sta fe_dv+1
+        lda #<fe_lp
+        ldx #>fe_lp
+        bra sp_go
+sp_fo:  sty fo_tx+2
+        GETB
+        sta fo_du+1
+        GETB
         sta fo_dv+1
+        lda #<fo_lp
+        ldx #>fo_lp
+        bra sp_go
+sp_fp:  sty fp_tx+2
+        GETB
+        sta fp_du+1
+        GETB
         sta fp_dv+1
-        lda #<flat_run
-        ldx #>flat_run
+        lda #<fp_lp
+        ldx #>fp_lp
         bra sp_go
 sp_far: GETB                            ; the far tone: even, odd bytes
         sta cur
         tax
         lda flip,x
         sta odb
-        lda #<far_run
-        ldx #>far_run
+        bit pair
+        bmi :++
+        bvs :+
+        lda #<re_go
+        ldx #>re_go
+        bra sp_go
+:       lda #<ro_go
+        ldx #>ro_go
+        bra sp_go
+:       lda #<rp_lp
+        ldx #>rp_lp
 sp_go:  sta sp_jmp+1
         stx sp_jmp+2
         lda kk                          ; byte columns 0-31, then 32-63:
@@ -566,13 +613,9 @@ sp_run: and #31
         asl a
         clc
         adc slo
-        adc #8                          ; Y past the last byte (mod 256)
-        sta fe_end+1
-        sta fo_end+1
-        sta fp_end+1
-        sta re_end+1
-        sta ro_end+1
-        sta rp_end+1
+        adc #8                          ; Y past the last byte (mod 256):
+spe_f:  sta $FFFF                       ;  the group's flat and far loops'
+spe_r:  sta $FFFF                       ;  ends (patched at its start)
         lda kk
         lsr a
         lsr a
@@ -591,10 +634,6 @@ sp_run: and #31
         tay
 sp_jmp: jmp $FFFF                       ; (patched: flat_run / far_run)
 
-flat_run:
-        bit pair
-        bmi fp_lp
-        bvs fo_lp
 fe_lp:  lda v                           ; an even line
         and #$F0
         ldx su
@@ -668,11 +707,7 @@ fp_end: cpy #$FF
         bne fp_lp
         rts
 
-far_run:
-        bit pair
-        bmi rp_lp
-        bvs ro_go
-        lda cur
+re_go:  lda cur
 re_lp:  sta (scr),y                     ; even line
         tax
         tya
@@ -706,6 +741,8 @@ rp_lp:  lda cur                         ; line pair
 rp_end: cpy #$FF
         bne rp_lp
         rts
+; the end slots sp_run patches, by line kind: even, odd, pair (flat, far)
+spe_tab: .word fe_end+1, re_end+1, fo_end+1, ro_end+1, fp_end+1, rp_end+1
 
 .ifdef MASTER
 ; the tables, seeded by symbol (tube_host.master_tables)
