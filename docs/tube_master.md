@@ -106,8 +106,9 @@ is in `src/master/mfill.s` under `.ifdef TUBE`:
   flags, the subsector (`zp_node_ch_l`), lo / hi, the six line ends from
   the VX1 / VX2 blocks (the y ends less the engine's Y_BIAS of 48), the
   reciprocal terms, `mf_xt` when exactly one end is clipped, the
-  snapshot, then the live pool spans over [lo, hi) and `$FF` (H4y: sent
-  in one walk, not counted first);
+  snapshot, then the live pool spans over [lo, hi), each list ended by
+  `$FF` (H4y, H4z: the head and the snapshot sent by `mf_snap` as the seg
+  starts, the live spans by `rq_fill`);
 - `rq_end` (HAZEL): `$00`.
 
 Each byte goes out through register 3 polled (`BIT $FEE4 / BVC / STA
@@ -940,6 +941,18 @@ and `fs_frame` together). 613K -> 599K (-2.2%); the server unchanged.
 Request building is now ~135K of the engine's 599K: copying the
 snapshot (`mf_snap`, 22K) and sending it (19K), the live spans (18K),
 the line ends (28K), the header (12K), the slot (10K).
+
+Then (H4z) the request's head and its snapshot go out as the seg
+starts: `mf_snap` (TUBE) walks the pool to the seg's first span over
+[lo, hi), sends the head (`rq_head`) and then the spans straight from
+the pool (`rq_after`, the same sender as the live spans), no copy into
+`sn_*`; `rq_fill`, after the update, sends the live spans. So the
+snapshot ends with `$FF` too (its count is not known until the walk
+ends; `tube_req`, `fs_frame`). Every path from `mf_snap` reaches
+`FILLSEG`, and nothing between them changes a head field
+(`test_tube_hreq` holds the bytes). 599K -> 591K (-1.3%); the server
++3K (the snapshot's first byte a span through `fs_get`); the 4MHz worst
+frame 586 -> 581 ms.
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

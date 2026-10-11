@@ -531,6 +531,37 @@ mf_range:
 ; ============================================================================
 ; mf_snap: copy the live spans that overlap [lo, hi) (the list is x-sorted)
 ; ============================================================================
+.ifdef TUBE
+; (TUBE, H4z) the request goes out now: at the seg's first span over [lo,
+; hi) its head (rq_head) and then the spans themselves, straight from the
+; pool, ended by $FF (rq_after); sn_n is only "a request" (non-zero) for
+; rq_fill, which sends the live spans after the seg's update
+mf_snap:
+   STZ sn_n
+   JSR mf_range
+   BCS @rts
+   LDX zp_head
+@lp:
+   CPX #0
+   BEQ @rts
+   LDA POOL_XSTART,X
+   CMP mf_hi
+   BCS @rts                             ; starts at/after hi: none overlap
+   LDA mf_lo
+   CMP POOL_XEND,X
+   BCC @go                              ; the first over [lo, hi)
+   LDA POOL_NEXT,X
+   TAX
+   BRA @lp
+@go:
+   INC sn_n
+   PHX
+   JSR rq_head
+   PLX
+   JMP rq_after
+@rts:
+   RTS
+.else
 mf_snap:
    STZ sn_n
    JSR mf_range
@@ -575,6 +606,7 @@ mf_snap:
    STY sn_n
 @rts:
    RTS
+.endif
 
 .ifndef SERVER
 ; hdr_slot: tx_slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo /
@@ -6479,6 +6511,12 @@ rq_fill:
 @rts:
    RTS
 @go:
+   LDX zp_head                          ; after: the live spans over [lo,
+   JMP rq_after                         ;  hi), then $FF (H4y: not counted)
+
+; rq_head: $01 and a request's head (H4z: mf_snap sends it, at the seg's
+; first span over [lo, hi), and then the snapshot)
+rq_head:
    LDA #$01
    PUTB
    JSR hdr_slot                         ; tx_slot
@@ -6546,35 +6584,11 @@ rq_fill:
    LDA mf_xt+1
    PUTB
 @spans:
-   LDA sn_n                             ; before: the snapshot
-   PUTB
-   LDX #0
-@sn:
-   LDA sn_xs,X
-   PUTB
-   LDA sn_xe,X
-   PUTB
-   LDA sn_xlo,X
-   PUTB
-   LDA sn_den,X
-   PUTB
-   LDA sn_tl,X
-   PUTB
-   LDA sn_bl,X
-   PUTB
-   LDA sn_tr,X
-   PUTB
-   LDA sn_br,X
-   PUTB
-   LDA sn_bxlo,X
-   PUTB
-   LDA sn_bden,X
-   PUTB
-   INX
-   CPX sn_n
-   BNE @sn
-   LDX zp_head                          ; after: the live spans over [lo,
-   BRA @lv                              ;  hi), then $FF (H4y: not counted)
+   RTS
+
+; rq_after: the live spans from pool slot X over [lo, hi), then $FF
+rq_after:
+   BRA @lv
 @out:
    LDA #$FF
    PUTB

@@ -37,12 +37,14 @@ Bytes, one frame:
             t (u16, 0..256) when exactly one end is clipped:
             the near-plane crossing from the clipped end, as
             the engine leaves it in mf_xt                       2 B
-            nb, nb spans; the na spans, $FF: the pool's spans
-            over [lo, hi) before and after the seg's update (the
-            after ones ended, not counted: the host sends them in
-            one walk, H4y; no span starts at 255); a span is the
-            pool's own fields, XSTART XEND TXLO TDEN TL BL TR BR
-            BXLO BDEN (u8: line ends as start + delta)       1 + 10 B each
+            the spans, $FF; the spans, $FF: the pool's spans over
+            [lo, hi) before and after the seg's update, each list
+            ended, not counted (no span starts at 255; the host
+            sends each in one walk, H4y, and the head and the
+            first list straight from the pool as the seg starts,
+            H4z); a span is the pool's own fields, XSTART XEND TXLO
+            TDEN TL BL TR BR BXLO BDEN (u8: line ends as start +
+            delta)                                     10 B each, + 1
   end       $00
 """
 import struct
@@ -111,13 +113,11 @@ def encode(frame):
         out += bytes(r['m'])
         if r['c1'] != r['c2']:
             out += struct.pack('<H', r['t'])
-        out.append(len(r['before']))            # before: counted; after:
-        for s in r['before']:                   #  ended by $FF (no span starts
-            out += _span_bytes(s)               #  at 255: xs < hi <= 255)
-        for s in r['after']:
-            assert s[0] != 0xFF
-            out += _span_bytes(s)
-        out.append(0xFF)
+        for spans in (r['before'], r['after']):  # each ended by $FF (no
+            for s in spans:                     #  span starts at 255: xs <
+                assert s[0] != 0xFF             #  hi <= 255)
+                out += _span_bytes(s)
+            out.append(0xFF)
     return bytes(out + b'\0')
 
 
@@ -144,20 +144,15 @@ def decode(b):
             t, = struct.unpack_from('<H', b, p)
             p += 2
         spans = []
-        for after in (False, True):
-            k, p = (255, p) if after else (b[p], p + 1)
+        for _ in range(2):
             lst = []
-            for _ in range(k):
-                if after and b[p] == 0xFF:
-                    break
+            while b[p] != 0xFF:
                 xs, xe, tx0, tden, tl, bl, tr, br, bx0, bden = b[p:p + 10]
                 s = Span((xs, xe, tx0, (tx0 + tden) & 0xFF, tl, bl, tr, br))
                 s.bxlo, s.bxhi = bx0, (bx0 + bden) & 0xFF
                 lst.append(s)
                 p += 10
-            if after:
-                assert b[p] == 0xFF, 'after: no $FF end'
-                p += 1
+            p += 1
             spans.append(lst)
         frame['reqs'].append(dict(si=si, ss=ss, dz=(s8(dc), s8(df)), lo=lo, hi=hi, line=line,
                                   solid=bool(solid),

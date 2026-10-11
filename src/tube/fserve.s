@@ -593,16 +593,14 @@ fs_frame:
    GETB
    STA mf_xt+1
 @sn:
-   GETB                                 ; before: the snapshot
-   STA sn_n
-   LDX #0
-   CPX sn_n
-   BEQ @pool
-@snl:
-   LDA #10                              ; (a span: a block)
-   JSR fs_need
-   GETY
+   LDX #0                               ; before: the snapshot, ended by $FF
+@snl:                                   ;  (H4z)
+   GETB
+   CMP #$FF
+   BEQ @sne
    STA sn_xs,X
+   LDA #9                               ; (the rest of the span: a block)
+   JSR fs_need
    GETY
    STA sn_xe,X
    GETY
@@ -623,8 +621,9 @@ fs_frame:
    STA sn_bden,X
    JSR fs_used
    INX
-   CPX sn_n
-   BNE @snl
+   BRA @snl
+@sne:
+   STX sn_n
 @pool:
    STZ zp_head                          ; after: the live spans, as the pool
    LDX #0                               ;  (slots 1.., linked in order),
