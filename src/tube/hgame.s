@@ -139,19 +139,41 @@ gm_tick:
    JMP @clk
 @panel:
    LDX #0                               ; H9: a mover setting off grinds,
-@mv:                                    ;  one arriving thuds
-   LDA ANIM_WS+2,X
+   STZ gm_m                             ;  one arriving thuds -- if heard:
+@mv:                                    ;  its centre within -1024 <= d < 1024
+   LDA ANIM_WS+2,X                      ;  of the player on both axes
    AND #$40
    CMP gm_mst,X
    BEQ @mvn
    STA gm_mst,X
-   TAY                                  ; (Z: arrived -- STA sets no flags)
+   STA gm_s                             ; (moving now?)
+   LDY gm_m
+   SEC
+   LDA zp_br_pxraw_l
+   SBC gm_mxl,Y
+   LDA zp_br_pxraw_h
+   SBC gm_mxh,Y
+   CLC                                  ; hi in -4..3
+   ADC #4
+   CMP #8
+   BCS @mvn
+   SEC
+   LDA zp_br_pyraw_l
+   SBC gm_myl,Y
+   LDA zp_br_pyraw_h
+   SBC gm_myh,Y
+   CLC
+   ADC #4
+   CMP #8
+   BCS @mvn
+   LDA gm_s
    BEQ :+
    LDA #SFX_GRIND
    BRA :++
 :  LDA #SFX_THUD
 :  JSR sfx_start
 @mvn:
+   INC gm_m
    INX
    INX
    INX
@@ -281,6 +303,7 @@ gm_clock:  .byte 0
 gm_t:      .byte 0
 gm_s:      .byte 0
 gm_c9:     .byte 0
+gm_m:      .byte 0                      ; (the mover loop's index)
 gm_mst:    .res GM_NMV                  ; the movers' moving bits (stride 3)                      ; (the clock's 9th bit: gm_hurt
                                         ;  takes gm_t)
 .include "hgame_tab.s"

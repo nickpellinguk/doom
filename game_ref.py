@@ -30,6 +30,26 @@ NUKAGE = {7: 5}                         # sector special -> damage
 STIM, MEDI, POTION, HELMET, GREEN, BLUE = range(6)
 TYPES = {2011: STIM, 2012: MEDI, 2014: POTION, 2015: HELMET, 2018: GREEN, 2019: BLUE}
 AMMO = 50                               # (no ammo pickups or firing yet)
+HEAR = 1024                             # H9: a mover is heard when its sector's
+                                        #  centre is -HEAR <= d < HEAR on both
+                                        #  axes (DOOM clips sounds at 1200)
+
+
+def mover_centres():
+    """[(raw x, raw y)] per mover (anim.s order: sorted ANIM_SECTORS): its
+    sector's bounding-box centre."""
+    import e1m1 as dw
+    out = []
+    for sec in sorted(dw.ANIM_SECTORS):
+        xs, ys = [], []
+        for ld in dw.linedefs:
+            if any(sd != 0xFFFF and dw.sidedefs[sd][5] == sec for sd in (ld[5], ld[6])):
+                for v in (ld[0], ld[1]):
+                    xs.append(dw.vertexes[v][0])
+                    ys.append(dw.vertexes[v][1])
+        out.append(((min(xs) + max(xs)) // 2 - dw.MAP_CENTER_X,
+                    (min(ys) + max(ys)) // 2 - dw.MAP_CENTER_Y))
+    return out
 
 
 def pickups():
@@ -59,6 +79,7 @@ class Game:
         self.gone = set()
         self.table = pickups()
         self.dmg = damaging()
+        self.mc = mover_centres()
 
     def values(self):
         """The panel's fields: ammo, health, armour."""
@@ -87,7 +108,9 @@ class Game:
         for k, m in enumerate(movers):      # a mover sets off / arrives
             mv = m & 0x40
             if mv != self.mst[k]:
-                self.sounds.append(X.GRIND if mv else X.THUD)
+                cx, cy = self.mc[k]
+                if -HEAR <= rx - cx < HEAR and -HEAR <= ry - cy < HEAR:
+                    self.sounds.append(X.GRIND if mv else X.THUD)
                 self.mst[k] = mv
 
     def give(self, t):
@@ -140,6 +163,11 @@ def tab_source():
                     ('gm_pyl', lambda e: e[2] & 0xFF), ('gm_pyh', lambda e: e[2] >> 8 & 0xFF)):
         L.append(f'{name}:  .byte ' + ', '.join(str(f(e)) for e in t))
     L.append('gm_nuke: .byte ' + ', '.join(f'${b:02X}' for b in bits))
+    mc = mover_centres()
+    assert len(mc) == 6 and HEAR == 1024, 'gm_tick: six movers, heard by hi byte'
+    for name, f in (('gm_mxl', lambda c: c[0] & 0xFF), ('gm_mxh', lambda c: c[0] >> 8 & 0xFF),
+                    ('gm_myl', lambda c: c[1] & 0xFF), ('gm_myh', lambda c: c[1] >> 8 & 0xFF)):
+        L.append(f'{name}: .byte ' + ', '.join(str(f(c)) for c in mc))
     return '\n'.join(L) + '\n'
 
 
