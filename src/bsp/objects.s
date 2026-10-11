@@ -81,6 +81,9 @@ obj_syt_h:   .res 6
 obj_syb_l:   .res 6
 obj_syb_h:   .res 6
 obj_sasp:    .res 6
+.ifdef TUBE
+OBJ_GONE:    .res 7                     ; H8: picked up, by object (gm_tick)
+.endif
 OBJ_ANYB:    .res 25                    ; [25] per-ss billboard bitmap, boot-filled by
                                         ;  baked $1158, which sat INSIDE obj_sasp
                                         ;  slot 1 — every armed stamp wrote asp=$01
@@ -90,6 +93,9 @@ OBJ_ANYB:    .res 25                    ; [25] per-ss billboard bitmap, boot-fil
 obj_cur     = obj_t                     ; probe x cursor: columns covered so far
 SEG_CODE
 .ifdef TUBE
+.export OBJ_GONE
+GONE_LEN = 7
+.assert LAY_N_OBJ <= GONE_LEN * 8, error, "OBJ_GONE holds every object"
 .export obj_sd_l, obj_sd_h, obj_scx_l, obj_scx_h, obj_syt_l, obj_syt_h
 .export obj_syb_l, obj_syb_h, obj_sasp
 .import rq_objs
@@ -245,6 +251,21 @@ obj_scan:                                  ; this is a real index
    BCS obj_run_end                         ; sorted: past the run -- done
    BCC obj_skip                            ; before the run: skip forward
 obj_hit:
+.ifdef TUBE
+   TXA                                     ; H8: picked up (gm_tick)? skip
+   LSR A
+   LSR A
+   LSR A
+   TAY
+   TXA
+   AND #7
+   STX obj_i
+   TAX
+   LDA obj_bitmask,X
+   LDX obj_i
+   AND OBJ_GONE,Y
+   BNE obj_skip
+.endif
    JSR obj_project
    LDX obj_i                               ; obj_project clobbers X
 obj_skip:

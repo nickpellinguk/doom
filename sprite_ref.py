@@ -78,8 +78,10 @@ class Staging:
     def render(self, px, py, ab):
         dw = self.dw
         by_ss = {}
-        for o in dw.fp_objects:
-            by_ss.setdefault(o['ss'], []).append(o)
+        gone = getattr(self, 'gone', ())       # H8: picked up (game_ref)
+        for i, o in enumerate(dw.fp_objects):
+            if i not in gone:
+                by_ss.setdefault(o['ss'], []).append(o)
         self.staged = []
         box = {}
         orig = dw._anim_ss_hook

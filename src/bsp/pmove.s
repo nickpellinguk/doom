@@ -601,6 +601,9 @@ SEG_HIGH                                ; descent: CODE (the dispatch macro
 ; verdicts as doom_wireframe.point_on_side / colmap.find_ss).
 ; ============================================================================
 .scope
+.ifdef TUBE
+.export pm_find_ss                      ; (H8: the driver's gm_tick call)
+.endif
 ::pm_find_ss:
    LDA #LAY_ROOT
    STA zp_node_ch_l

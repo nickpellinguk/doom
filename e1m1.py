@@ -1749,7 +1749,10 @@ for _th in list(things) + _ADDED_THINGS:
         # now (obj_ktab), so the byte is just the kind.
         asp=_kind,
         zb=_prescale_height(_fz),
-        zt=_prescale_height(_fz + _h)))
+        zt=_prescale_height(_fz + _h),
+        # H8 (game_ref): the thing's type and its raw position (world
+        # units from the map centre, the movement code's raws)
+        type=_tt, rx=_tx - MAP_CENTER_X, ry=_ty_ - MAP_CENTER_Y))
 fp_objects.sort(key=lambda o: o['ss'])           # 6502 scans a run per ss
 
 packed_rom_main, packed_rom_detail, packed_rom_recip, packed_bbox_table, packed_layout = build_packed(

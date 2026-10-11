@@ -101,7 +101,7 @@ RAWY_MAX = $0490        ;  1168
 .import ok_clear
 .import gun_draw
 .ifdef TUBE
-.import hd_frame, pn_update
+.import hd_frame, pn_update, gm_tick, pm_find_ss
 .endif
 .import split_init
 .import fb_clr0
@@ -414,6 +414,16 @@ frame:
     JSR mv_reval                                    ; DOOM z (rides live lifts;
                                                     ; $90-$93 raws come from
                                                     ; pm_frame — see its ABI)
+.ifdef TUBE
+    ; --- H8: the game's rules (pickups, nukage) at the committed raws ---
+    LDA #BANK_WALK
+    STA $FE30
+    JSR pm_find_ss                                  ; X = the player's subsector
+    TXA
+    LDX #BANK_C
+    STX $FE30
+    JSR gm_tick                                     ; (bank 6; A = subsector)
+.endif
     ; --- sincos + view angle from table[angidx] (bank C) ---
     LDA #BANK_C
     STA $FE30

@@ -48,9 +48,26 @@ def engine_staged():
                                      s16(g('obj_syt_l'), g('obj_syt_h')),
                                      s16(g('obj_syb_l'), g('obj_syb_h')), g('obj_sasp'))))
     r.sc.pc_hooks = {S['obj_draw_slot']: at_draw}
+    if 'TUBE' in os.environ.get('DOOM_ASMDEFS', ''):
+        # (H8: the TUBE link stages a subsector's slots and hands them all
+        #  to rq_objs -- no pass 2, no obj_draw_slot)
+        class _X:
+            pass
 
-    def run(p):
+        def at_rq(mpu):
+            for x in range(m[sym('obj_n')]):
+                fake = _X()
+                fake.x = x
+                at_draw(fake)
+        r.sc.pc_hooks = {sym('rq_objs'): at_rq}
+
+    gone_at = sym('OBJ_GONE') if 'TUBE' in os.environ.get('DOOM_ASMDEFS', '') else None
+
+    def run(p, gone=()):
         got.clear()
+        if gone_at is not None:                 # (H8: the TUBE link's picked-up)
+            for i in range(7):
+                m[gone_at + i] = sum(1 << b for b in range(8) if 8 * i + b in gone)
         a = S['obj_draw_slot']
         save = list.__getitem__(m, a)
         list.__setitem__(m, a, 0x60)                # RTS: stage only

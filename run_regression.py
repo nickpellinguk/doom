@@ -97,6 +97,8 @@ run('sprite_proj', ['test_sprite_proj.py'], lambda o: 'SPRITEPROJ: PASS' in o)
 run('sprite_dl', ['test_sprite_dl.py'], lambda o: 'SPRITEDL: PASS' in o)
 # H7: the panel's big numbers (Tube host, bank 6) against master_panel.panel_with
 run('panel_nums', ['test_panel_nums.py'], lambda o: 'PANELNUMS: PASS' in o)
+# H8: pickups and nukage (Tube host gm_tick) against game_ref
+run('game', ['test_game.py'], lambda o: 'GAME: PASS' in o)
 run('master_music', ['test_master_music.py'], lambda o: 'MASTERMUSIC: PASS' in o)
 # BAKED ADDRESSES: a literal address is a copy of a fact. This ratchets: the
 # count may fall, never rise.
