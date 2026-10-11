@@ -105,7 +105,7 @@ HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 .export pc_uc, pc_du, pc_vc, pc_dv, pc_lv, far_tone, pl_kind, pl_df, pl_dc
 .export pl_ff, pl_fc, tw_ll, tw_rl, tw_sh, l_v, l_step, t_v, t_tid, t_step
 .export zw_dl, zw_ddl, sn_xs, sn_xe, sn_xlo, sn_den, sn_tl, sn_tr, sn_bl, sn_br
-.export sn_bxlo, sn_bden, sn_n, tx_slot, mf_x, r_ys, r_ye
+.export sn_bxlo, sn_bden, sn_n, tx_slot, mf_x, r_ys, r_ye, div32, m_p, m_b
 .exportzp zw_ddh
 .endif
 .ifdef TUBE

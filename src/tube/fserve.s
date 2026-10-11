@@ -44,7 +44,7 @@ ZP_OWNER = 1                            ; (this link's zero page and WORK)
 .import pl_ff, pl_fc, pc_uc, pc_du, pc_vc, pc_dv, pc_lv, far_tone, mf_xt
 .import tw_ll, tw_rl, tw_sh, l_v, l_step, t_v, t_tid, zw_dl, zw_ddl
 .import sn_xs, sn_xe, sn_xlo, sn_den, sn_tl, sn_tr, sn_bl, sn_br, sn_bxlo
-.import sn_bden, sn_n, tx_slot, mf_x, r_ys, r_ye
+.import sn_bden, sn_n, tx_slot, mf_x, r_ys, r_ye, div32, m_p, m_b
 .importzp zw_ddh
 .export fs_mark, fs_wall, fs_planes, fs_frame, fs_poll, fs_main, fs_ring
 .export fs_lista, fs_listb, fs_ob, fs_drop, fs_ringsz
@@ -503,6 +503,11 @@ fs_frame:
    JSR mf_frame                         ; the epoch and the view terms
    STZ fs_pn
    STZ fs_wn
+   STZ fo_n                             ; no sprites (H6), their columns
+   LDA #<fo_buf                         ;  from the buffer's start
+   STA fo_bp
+   LDA #>fo_buf
+   STA fo_bp+1
    LDX #127                             ; no marks, no runs
 :  STZ fs_cnt,X
    DEX
@@ -517,6 +522,10 @@ fs_frame:
    CMP #0                               ; (GETB's flags are the pointer's)
    BNE :+
    JMP fs_end
+:  CMP #$02                             ; H6: a sprite request
+   BNE :+
+   JSR fs_obj
+   JMP @req
 :  LDA #23                              ; ($01) slot | solid | c1 | c2,
    JSR fs_need                          ;  the 23 bytes to the reciprocal
    GETY                                 ;  terms as a block
@@ -624,10 +633,17 @@ fs_frame:
    BRA @snl
 @sne:
    STX sn_n
-@pool:
-   STZ zp_head                          ; after: the live spans, as the pool
-   LDX #0                               ;  (slots 1.., linked in order),
-@pl:                                    ;  ended by $FF (H4y)
+   JSR fs_pool
+   JSR mf_fill
+   JMP @req
+
+; fs_pool: a request's live spans into the pool, as the engine holds them
+; (slots 1.., linked in order; zp_head 1, or 0 for none), ended by $FF
+; (H4y). X = the count.
+fs_pool:
+   STZ zp_head
+   LDX #0
+@pl:
    GETB
    CMP #$FF
    BEQ @pe
@@ -660,13 +676,11 @@ fs_frame:
    BRA @pl
 @pe:
    CPX #0
-   BEQ @fill
+   BEQ :+
    STZ POOL_NEXT,X
    LDA #1
    STA zp_head
-@fill:
-   JSR mf_fill
-   JMP @req
+:  RTS
 
 ; the six line ends' offsets in the VX1 / VX2 blocks: sx1 sx2 ft1 ft2 fb1 fb2
 fs_lof:
@@ -678,6 +692,7 @@ fs_end:
    JSR fs_sweep
    JSR fs_spans
    JSR fs_fills
+   JSR fs_sprites
    LDA #0
    PUTO
    RTS
@@ -1931,6 +1946,8 @@ fs_fills:
    BEQ :+
    JMP @col
 :  RTS
+
+.include "fsprite.s"                    ; H6: the sprites
 
 .segment "FSBSS"
 

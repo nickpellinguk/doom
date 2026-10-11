@@ -22,7 +22,7 @@ OUT = os.path.join(ROOT, 'build', 'tube', 'srv')
 DEFS = ['-D', 'ENGINE=1', '-D', 'C02=1', '-D', 'BANKED=1', '-D', 'MASTER=1', '-D', 'SERVER=1']
 UNITS = ('src/master/mfill.s', 'src/tube/fserve.s')
 LOADS = ((0x0C00, 0x1400), (0x2000, 0x1000), (0x3000, 0x1000),
-         (0x4000, 0x4000))                      # fserve.cfg's file areas
+         (0x4000, 0x3800))                      # fserve.cfg's file areas
 IMAGE = 0x0C00                                  # the second processor's file:
                                                 #  from here to fs_imgend
 TRAMP = 0xFF00                                  # JSR fs_frame; (stop): above the link
