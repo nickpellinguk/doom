@@ -147,6 +147,7 @@ re_id:   .res 2 * RO                    ; (its key: fs_key's plane, H4o)
 fs_ne:   .res 1                         ; runs on the even / odd line
 fs_no:   .res 1
 fs_sel:  .res 1                         ; fs_singles: even ($00) / odd ($80)
+fs_pc:   .res 1                         ; fs_singles: the next pair
 fs_np:   .res 1                         ; pairs: the even and odd runs,
 fs_pi:   .res RO                        ;  columns
 fs_po:   .res RO
@@ -1631,11 +1632,10 @@ fs_pairs:
    BNE :+
 @none:
    RTS
-:  LDX #0
-@e:
-   LDY #RO
-@o:
-   LDA re_k0,X                          ; a = max(k0), b = min(k1)
+:  LDX #0                               ; (H4t: the two lines' runs are in
+   LDY #RO                              ;  column order and apart, so one
+@o:                                     ;  merge finds every overlap, in the
+   LDA re_k0,X                          ;  same order) a = max(k0), b = min(k1)
    CMP re_k0,Y
    BCS :+
    LDA re_k0,Y
@@ -1662,30 +1662,41 @@ fs_pairs:
    STA fs_pb,Y
    INC fs_np
    PLY
-@on:
+@on:                                    ; the run ending first moves on (both
+   LDA re_k1,X                          ;  when they end together)
+   CMP re_k1,Y
+   BCC @nx
+   BEQ @nxy
    INY
+   BRA @cy
+@nxy:
+   INY
+@nx:
+   INX
+   CPX fs_ne
+   BCS @rts
+@cy:
    TYA
    SEC
    SBC #RO
    CMP fs_no
-   BCS :+
+   BCS @rts
    JMP @o
-:  INX
-   CPX fs_ne
-   BCS :+
-   JMP @e
-:  RTS
+@rts:
+   RTS
 
 ; fs_singles: runs X .. Y-1 (re_* + X; fs_pi or fs_po names them in the
-; pairs, by fs_sel): each run's columns outside its pair spans, as spans
+; pairs, by fs_sel): each run's columns outside its pair spans, as spans.
+; A run's pairs are the next ones in the list (fs_pc), in column order
 fs_singles:
    STY fs_n
+   STZ fs_pc
 @r:
    CPX fs_n
    BEQ @rts
    LDA re_k0,X
    STA fs_k                             ; the next column not yet out
-   LDY #0
+   LDY fs_pc
 @p:
    CPY fs_np                            ; its pairs, in column order
    BEQ @tail
@@ -1695,7 +1706,7 @@ fs_singles:
    CMP fs_pi,Y
    BRA :++
 :  CMP fs_po,Y
-:  BNE @pn
+:  BNE @tail                            ; (past its pairs)
    LDA fs_pa,Y                          ; a piece before the pair?
    CMP fs_k
    BEQ :+
@@ -1705,10 +1716,10 @@ fs_singles:
 :  LDA fs_pb,Y
    INC A
    STA fs_k
-@pn:
    INY
    BRA @p
 @tail:
+   STY fs_pc
    LDA re_k1,X                          ; the piece after the last
    CMP fs_k
    BCC @nr

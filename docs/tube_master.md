@@ -819,6 +819,21 @@ keeps `tx_getd`'s own path (`tx_one`, dH at xh). `TUBE_SLOW`: the server
 worst 735 / 613 ms -- at 4MHz the worst pose's server now matches its
 host). Code +305 B.
 
+## H4t. Pairing line runs in one pass. — DONE
+
+`fs_pairs` tried every run of a pair's even line against every run of its
+odd line, and `fs_singles` scanned the whole pair list for each run. Both
+lines' runs are in column order and apart, so the overlaps are one merge
+(two cursors; the run that ends first moves on, both when they end
+together), and they come out in the nested loops' own order (by the even
+run, then the odd: a run X overlapping Y and Y' > Y means no later X
+overlaps Y). So each run's pairs are the next ones in the list, in
+column order, and `fs_singles` keeps a cursor (`fs_pc`). The lists are
+the same. `TUBE_SLOW`: the server 1,853K -> 1,756K cycles a frame
+(-5.3%; 585 ms at 3MHz, worst 712), for 17 B of code and 1 of workspace.
+The slower side's mean is now 587 ms at 3MHz: on some slow poses the
+host is the limit.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
