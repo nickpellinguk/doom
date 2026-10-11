@@ -168,6 +168,8 @@ mb6_pt_rp:    .res $A0                  ;  its z's lo-table page (hi = + 1)
 .segment "MTEXIX"                       ; main RAM: read with ACCCON X clear
 mtex_ix:      .res $420                 ; column index bytes, every texture
 
+.ifndef TUBE                            ; (the Tube host has no fill: its
+                                        ;  HAZEL $C280-$C6DF is free, H5b)
 .segment "MPLANE"                       ; HAZEL $C280: the span snapshot, the
 sn_xs:   .res 32                        ;  run buffer and the per-frame row cache
 sn_xe:   .res 32
@@ -194,6 +196,7 @@ sn_bden:      .res 32                   ;  (POOL_BXLO / BDEN; 2026-10-08 -- read
                                         ;  as the top's, a bottom-only fused
                                         ;  edge was misplaced)
 
+.endif
 .segment "MSQR"                         ; HAZEL $D800 (engine_master.cfg HZQ)
 sqr_quad_m: .res $600                   ; SQR_MIR_LO on the Master (abi.inc)
 

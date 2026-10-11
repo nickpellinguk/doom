@@ -976,6 +976,26 @@ Exact cuts, the frames the same (`test_tube_host`, `test_tube_hreq`):
 
 `TUBE_SLOW`: the drawer 400K -> 392K cycles a frame (-2.0%).
 
+## H5b. HAZEL on the Tube host. — 1.1K FREED
+
+The Tube host shares `engine_master.cfg` and `mfill.s` with the
+Master-only build; `TUBE` assembles the differences. Its HAZEL:
+
+| Area | Bytes | Holds |
+|---|---|---|
+| `$C800`-`$D6FF` (HZM) | 3,840 | the drawer (`hdraw.s`, 2,529: 1,152 of them the texture and flat tables) and the host's side of `mfill.s` (1,235); 76 free |
+| `$D700`-`$D7FF` | 256 | the music ring |
+| `$D800`-`$DDFF` | 1,536 | the quarter squares' mirror (the engine's own clipper and projection use it) |
+| `$DE00`-`$DF9B` | 412 | `mfill.s`'s workspace |
+| `$C280`-`$C6DF` (HZP) | 1,120 | the Master fill's snapshot, plane extents and row cache |
+
+The last was dead on the Tube host: its fill is on the second processor,
+and since H4z its snapshot goes straight from the pool. `MPLANE` is now
+assembled only without `TUBE` (the Tube link has no reference to any of
+it), so 1,120 bytes of HAZEL (BSS, no file) are free there. The
+Master-only build is unchanged. (Both builds write `build/engine_m.map`;
+it is the last one built.)
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
