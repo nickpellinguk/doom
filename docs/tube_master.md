@@ -106,7 +106,8 @@ is in `src/master/mfill.s` under `.ifdef TUBE`:
   flags, the subsector (`zp_node_ch_l`), lo / hi, the six line ends from
   the VX1 / VX2 blocks (the y ends less the engine's Y_BIAS of 48), the
   reciprocal terms, `mf_xt` when exactly one end is clipped, the
-  snapshot, then the live pool spans over [lo, hi) (counted, then sent);
+  snapshot, then the live pool spans over [lo, hi) and `$FF` (H4y: sent
+  in one walk, not counted first);
 - `rq_end` (HAZEL): `$00`.
 
 Each byte goes out through register 3 polled (`BIT $FEE4 / BVC / STA
@@ -930,6 +931,15 @@ cycles a seg, 39K a frame (the Master-only build's `tx_seg` the same).
 quarter-square `QMUL`). `TUBE_SLOW`: the engine 642K -> 613K cycles a
 frame (-4.6%); the 4MHz worst frame 613 -> 594 ms. The Master-only
 regression -0.52% (rebaselined).
+
+Then the request's live spans after the update end with `$FF` instead of
+a count (no span starts at 255: xs < hi <= 255), so `rq_fill` sends them
+in one walk of the pool, not a counting walk and a sending one; the
+server links its pool as they come (`tube_req` encode / decode, `rq_fill`
+and `fs_frame` together). 613K -> 599K (-2.2%); the server unchanged.
+Request building is now ~135K of the engine's 599K: copying the
+snapshot (`mf_snap`, 22K) and sending it (19K), the live spans (18K),
+the line ends (28K), the header (12K), the slot (10K).
 
 ## 4a. Does the second processor's half fit? — not as it stands
 

@@ -6573,27 +6573,11 @@ rq_fill:
    INX
    CPX sn_n
    BNE @sn
-   LDY #0                               ; after: the live spans over [lo, hi)
-   LDX zp_head                          ;  (counted, then sent)
-@cn:
-   CPX #0
-   BEQ @cd
-   LDA POOL_XSTART,X
-   CMP mf_hi
-   BCS @cd
-   LDA mf_lo
-   CMP POOL_XEND,X
-   BCS :+
-   INY
-:  LDA POOL_NEXT,X
-   TAX
-   BRA @cn
-@cd:
-   TYA
-   PUTB
-   LDX zp_head
-   BRA @lv
+   LDX zp_head                          ; after: the live spans over [lo,
+   BRA @lv                              ;  hi), then $FF (H4y: not counted)
 @out:
+   LDA #$FF
+   PUTB
    RTS
 @lv:
    CPX #0

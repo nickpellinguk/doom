@@ -626,21 +626,16 @@ fs_frame:
    CPX sn_n
    BNE @snl
 @pool:
-   GETB                                 ; after: the live spans, as the pool
-   STA fs_n                             ;  (slots 1..n, linked in order)
-   STZ zp_head
-   LDX #0
-   CPX fs_n
-   BNE :+
-   JMP @fill
-:
+   STZ zp_head                          ; after: the live spans, as the pool
+   LDX #0                               ;  (slots 1.., linked in order),
+@pl:                                    ;  ended by $FF (H4y)
+   GETB
+   CMP #$FF
+   BEQ @pe
    INX
-   STX zp_head
-@pl:
-   LDA #10                              ; (a span: a block)
-   JSR fs_need
-   GETY
    STA POOL_XSTART,X
+   LDA #9                               ; (the rest of the span: a block)
+   JSR fs_need
    GETY
    STA POOL_XEND,X
    GETY
@@ -660,18 +655,16 @@ fs_frame:
    GETY
    STA POOL_BDEN,X
    JSR fs_used
-   TXA
-   INC A
-   CPX fs_n
-   BNE :+
-   LDA #0                               ; the last: the list's end
-:  STA POOL_NEXT,X
-   INX
-   CPX fs_n
-   BCC @pl
-   BNE :+
-   JMP @pl
-:
+   TXA                                  ; (linked to the next; the last's
+   INC A                                ;  is 0, below)
+   STA POOL_NEXT,X
+   BRA @pl
+@pe:
+   CPX #0
+   BEQ @fill
+   STZ POOL_NEXT,X
+   LDA #1
+   STA zp_head
 @fill:
    JSR mf_fill
    JMP @req
