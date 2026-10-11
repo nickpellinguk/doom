@@ -2083,27 +2083,11 @@ tx_getd:
    BNE :+
    JMP @proj
 :  ; step 7w: d = dL +- ((S * (x + 1 - xl) + 128) >> 8), and at x + 3
-   LDA tx_s
-   STA pl_e
-   LDA tx_s+1
-   STA pl_e+1
-   LDA tx_s+2
-   STA pl_e+2
-   STZ pl_e+3
    LDA mf_x
    SEC
    SBC tx_xl
    INC A
-   JSR mul8x32                          ; pl_q = S * (x + 1 - xl)
-   CLC
-   LDA pl_q
-   ADC #128
-   STA pl_q
-   BCC :+
-   INC pl_q+1
-   BNE :+
-   INC pl_q+2
-:  JSR tx_lin
+   JSR tx_at8                           ; (pl_q: S * (x + 1 - xl) + 128)
    LDA m_p
    STA tx_d
    STA tx_dr
@@ -2324,6 +2308,155 @@ tx_getd:
    JMP set_cur
 @rts:
    RTS
+
+; tx_7x: step 7x -- C = 1 when the seg is linear across its projected
+; width: 0 < wf = sx2 - sx1 < 256, sx1 <= xl, wf * |wb - wa| <= 2 (wa +
+; wb). Then tx_s, tx_sg are its slope (|d2 - d1| << 8) // wf and its sign,
+; tx_dl = d1 +- ((S (xl - sx1) + 128) >> 8), tx_dh = dL +- ((S (xh - xl)
+; + 128) >> 8)
+tx_7x:
+   SEC
+   LDA zp_seg_sx2_l
+   SBC zp_seg_sx1_l
+   STA m_b
+   LDA zp_seg_sx2_h
+   SBC zp_seg_sx1_h
+   BNE @n0
+   LDA m_b
+   BEQ @n0
+   STZ m_b+1
+   SEC                                  ; sx1 <= xl
+   LDA tx_xl
+   SBC zp_seg_sx1_l
+   LDA #0
+   SBC zp_seg_sx1_h
+   BEQ @go
+@n0:
+   CLC
+   RTS
+@go:
+   SEC                                  ; |wb - wa|
+   LDA tx_wb
+   SBC tx_wa
+   STA m_a
+   LDA tx_wb+1
+   SBC tx_wa+1
+   STA m_a+1
+   BCS :+
+   SEC
+   LDA #0
+   SBC m_a
+   STA m_a
+   LDA #0
+   SBC m_a+1
+   STA m_a+1
+:  JSR mul16                            ; wf |wb - wa| (< 2^24)
+   CLC                                  ; 2 (wa + wb)
+   LDA tx_wa
+   ADC tx_wb
+   STA t_tmp
+   LDA tx_wa+1
+   ADC tx_wb+1
+   STA t_tmp+1
+   LDA #0
+   ROL A
+   STA t_tmp+2
+   ASL t_tmp
+   ROL t_tmp+1
+   ROL t_tmp+2
+   LDA t_tmp
+   CMP m_p
+   LDA t_tmp+1
+   SBC m_p+1
+   LDA t_tmp+2
+   SBC m_p+2
+   BCC @no
+   STZ tx_sg                            ; the slope from the ends (m_b: wf)
+   SEC
+   LDA tx_d2
+   SBC tx_d1
+   STA m_p
+   LDA tx_d2+1
+   SBC tx_d1+1
+   STA m_p+1
+   BCS :+
+   DEC tx_sg
+   SEC
+   LDA #0
+   SBC m_p
+   STA m_p
+   LDA #0
+   SBC m_p+1
+   STA m_p+1
+:  JSR tx_slope
+   LDA tx_d1
+   STA tx_dl
+   LDA tx_d1+1
+   STA tx_dl+1
+   SEC
+   LDA tx_xl
+   SBC zp_seg_sx1_l
+   JSR tx_at8
+   LDA m_p
+   STA tx_dl
+   LDA m_p+1
+   STA tx_dl+1
+   SEC
+   LDA tx_xh
+   SBC tx_xl
+   JSR tx_at8
+   LDA m_p
+   STA tx_dh
+   LDA m_p+1
+   STA tx_dh+1
+   SEC
+   RTS
+@no:
+   CLC
+   RTS
+
+; tx_slope: tx_s = (m_p << 8) // m_b, m_p 16 bits, m_b < 256 (two byte
+; divisor divides: the whole part, then (r << 8) // m_b)
+tx_slope:
+   STZ m_p+2
+   STZ m_p+3
+   JSR div32
+   LDA m_p
+   STA tx_s+1
+   LDA m_p+1
+   STA tx_s+2
+   STZ m_p
+   LDA m_r
+   STA m_p+1
+   STZ m_p+2
+   STZ m_p+3
+   JSR div32
+   LDA m_p
+   STA tx_s
+   RTS
+
+; tx_at8: A = k -> m_p = dL +- ((S k + 128) >> 8) (steps 7w, 7x), pl_q
+; that S k + 128
+tx_at8:
+   PHA
+   LDA tx_s
+   STA pl_e
+   LDA tx_s+1
+   STA pl_e+1
+   LDA tx_s+2
+   STA pl_e+2
+   STZ pl_e+3
+   PLA
+   JSR mul8x32
+   CLC
+   LDA pl_q
+   ADC #128
+   STA pl_q
+   BCC tx_lin
+   INC pl_q+1
+   BNE tx_lin
+   INC pl_q+2
+   ; (falls into tx_lin)
 
 ; tx_lin: step 7w, m_p = dL +- pl_q bytes 1-2 (by tx_sg)
 tx_lin:
@@ -4762,7 +4895,10 @@ tx_seg:
    AND #$FE                             ; last even pixel < hi
    INC A
    STA tx_xh
-   LDA tx_xl
+   JSR tx_7x                            ; step 7x: the seg linear, its line
+   BCC :+                               ;  from its ends (no at)
+   JMP @lx
+:  LDA tx_xl
    JSR at                               ; -> m_p: exact d, at_n: raw weight
    LDA m_p
    STA tx_dl
@@ -4899,26 +5035,34 @@ tx_seg:
    LDA #0
    SBC m_p+1
    STA m_p+1
-:  STZ m_p+2
-   STZ m_p+3
-   SEC
+:  SEC
    LDA tx_xh
    SBC tx_xl
    STA m_b
    STZ m_b+1
-   JSR div32                            ; its whole part, then (r << 8) // w
-   LDA m_p
-   STA tx_s+1
-   LDA m_p+1
-   STA tx_s+2
-   STZ m_p
-   LDA m_r
-   STA m_p+1
-   STZ m_p+2
-   STZ m_p+3
-   JSR div32
-   LDA m_p
-   STA tx_s
+   JSR tx_slope
+   JMP @tail
+@lx:                                    ; step 7x: tx_dl, tx_dh, tx_s, tx_sg
+   STZ tx_one                           ;  made (tx_7x)
+   STZ tx_aff
+   LDA mf_x
+   CLC
+   ADC #4
+   BCS :+
+   CMP mf_hi
+   BCC @lmany
+:  LDA #1                               ; one byte column: tx_getd's own
+   STA tx_rb                            ;  path, dH at xh (B not 0)
+   INC tx_one
+   JMP @tail
+@lmany:
+   INC tx_aff                           ; the 7w path (next_col keeps tx_s)
+   STZ tx_dn
+   STZ tx_dn+1
+   STZ tx_dn+2
+   STZ tx_dn+3
+   STZ tx_dden
+   STZ tx_dden+1
    JMP @tail
 @proj:
    ; den0 = A * (xh - xl); n0 = dL * den0

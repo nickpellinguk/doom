@@ -56,6 +56,16 @@ arithmetic chosen so the 6502 can reproduce it exactly:
                 S  = (|dH - dL| << 8) // (xh - xl)
                 d  = dL +- ((S * (xc - xl) + 128) >> 8)   (the sign of dH - dL)
             at x + 1 and x + 3 (past xh the left strip's d, as above).
+            Step 7x: a seg LINEAR across its whole projected width,
+            0 < wf = sx2 - sx1 < 256, sx1 <= xl and wf * |wb - wa| <= 2 *
+            (wa + wb) (the same half-strip bound, from the end weights),
+            skips at() altogether: its line runs from d1 at sx1 to d2 at
+            sx2,
+                S  = (|d2 - d1| << 8) // wf
+                dL = d1 +- ((S * (xl - sx1) + 128) >> 8)
+                dH = dL +- ((S * (xh - xl) + 128) >> 8)
+            and it is linear (7w) with that S, whatever A and B. Nearly
+            every seg in a big room is.
   bytes     the unit is the BYTE COLUMN (fill_ref): every write is a whole
             byte, a 4x2 fat pixel. A wall byte is two independent strips,
             left texel | (right texel >> 1) (Mode 2: one shift; texels are
@@ -111,6 +121,8 @@ import master_assets as M
 
 ROOT = Fm.ROOT
 AFFINE = True                               # step 7w (False: every wall projective)
+SEGLIN = True                               # step 7x (False: 7w alone)
+STATS = None                                # (a Counter, for tools)
 
 
 def shared_limit(w, m):
@@ -201,18 +213,35 @@ class TexRef(Fm.FillRef):
         # centre inside [lo, hi) (<= sx2); a byte's right strip past it
         # takes its left strip's d
         xl, xh = xs[0] + 1, ((hi - 1) & ~1) + 1
-        A, dL = at(xl)
-        B, dH = at(xh)
-        while max(A, B) > 255:
-            A >>= 1
-            B >>= 1
+        # step 7x: a seg linear across its whole projected width takes its
+        # line from its own ends, d1 at sx1 to d2 at sx2: no at()
+        wf = sx2 - sx1
+        seglin = (AFFINE and SEGLIN and 0 < wf < 256 and sx1 <= xl
+                  and wf * abs(wb - wa) <= 2 * (wa + wb))
+        if seglin:
+            S = (abs(d2 - d1) << 8) // wf
+            sg = -1 if d2 < d1 else 1
+            dL = d1 + sg * ((S * (xl - sx1) + 128) >> 8)
+            dH = dL + sg * ((S * (xh - xl) + 128) >> 8)
+            A = B = 1
+        else:
+            A, dL = at(xl)
+            B, dH = at(xh)
+            while max(A, B) > 255:
+                A >>= 1
+                B >>= 1
+        if STATS is not None:
+            STATS['segs'] += 1
+            STATS['seglin'] += seglin
         self.dbg[si] = dict(slot=si, l16=L16, d1=d1, d2=d2, wa=wa, wb=wb, xl=xl, xh=xh,
                             dl=dL, dh=dH, A=A, B=B)   # (the 6502 debug view)
         d_prev = None                       # (x, d) of the last byte with d
         # step 7w: a wall whose d is near linear between its ends takes it
         # linearly (see the docstring)
-        aff = AFFINE and xh > xl and (xh - xl) * abs(B - A) <= 2 * (A + B)
-        if aff:
+        aff = AFFINE and xh > xl and (seglin or (xh - xl) * abs(B - A) <= 2 * (A + B))
+        if STATS is not None:
+            STATS['aff'] += aff
+        if aff and not seglin:
             dd = dH - dL
             S = (abs(dd) << 8) // (xh - xl)
             sg = -1 if dd < 0 else 1

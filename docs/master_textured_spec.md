@@ -1883,6 +1883,14 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   The frames change: 5% of wall cells over the slow and regression
   poses, 87% of those by one texture column, the rest mostly by two or
   three. 26.67M -> 26.33M (-1.26%).
+  Then step 7x: a seg linear across its whole projected width (0 < wf =
+  sx2 - sx1 < 256, sx1 <= xl, wf * |wb - wa| <= 2 (wa + wb): the same
+  bound from the end weights) skips `at` altogether: S = (|d2 - d1| <<
+  8) // wf, dL = d1 +- ((S (xl - sx1) + 128) >> 8), dH likewise from
+  dL, then 7w's rule with that S (`tx_7x`; `tx_slope` and `tx_at8`
+  shared with 7w). Against exact d, 7w and 7x together move 8.4% of
+  wall cells over the Tube's slow and the regression poses, 84% by one
+  texture column. 26.33M -> 25.71M (-2.35%). Bank 6 keeps 460 B free.
 
 - **Distant-wall fast path (prototype, `distant_ref.py`, not gated).** For
   segs shorter than 48 lines at both ends: T and B linear in 8.8 from a

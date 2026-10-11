@@ -796,6 +796,29 @@ server 605 ms) the two sides are nearly even.
 
 The host on `TUBE_SLOW`: engine 642K, drawer 400K (521 ms at 2MHz).
 
+## H4s. Linear segs skip `at` (spec step 7x). — DONE
+
+H4r left `at` the largest routine (235K: two exact anchors a wall, each
+three multiplies and a 16-step divide), still run for the walls step 7w
+had made linear. Step 7x (`tex_ref`; spec section 8) decides before
+`at`, from what `tx_seg` already has -- the end weights wa, wb and the
+seg's projected width wf = sx2 - sx1: a seg with 0 < wf < 256, sx1 <= xl
+and wf * |wb - wa| <= 2 (wa + wb) (7w's half-strip bound, over the whole
+seg) takes its line from its own ends: S = (|d2 - d1| << 8) // wf, dL =
+d1 +- ((S (xl - sx1) + 128) >> 8), dH from dL the same way, then 7w's
+per-strip rule with that S. On `TUBE_SLOW` 70 of 74 segs a frame
+qualify. Against 7w alone 3.6% more wall cells move, 90% of them one
+texture column; against exact d (7w and 7x together) 8.4% of wall cells
+over the slow and regression poses, 84% by one column, 9% by two.
+
+On the 6502 (`tx_7x`, both builds): one `mul16` for the test, two byte-
+divisor divides for S (`tx_slope`, shared with 7w), two 8x32 multiplies
+for dL and dH (`tx_at8`, also 7w's per-strip step); a one-column seg
+keeps `tx_getd`'s own path (`tx_one`, dH at xh). `TUBE_SLOW`: the server
+2,017K -> 1,853K cycles a frame (-8.1%; 618 ms at 3MHz, 524 at 4MHz;
+worst 735 / 613 ms -- at 4MHz the worst pose's server now matches its
+host). Code +305 B.
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
