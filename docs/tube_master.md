@@ -774,6 +774,28 @@ stepper's constants are zeroed so `next_col` leaves the slope (kept in
 -> 26.33M (-1.26%, rebaselined). Code +408 B (bank 6 has 765 B left in
 the Master-only build).
 
+## H4r. The slow views again. — MEASURED
+
+After H4l-H4q. A fresh `scan 500 1` (528 poses): the slower side's
+median 280 ms (H4i's scan: 295), 90% 527 (584), 99% 696 (783), worst 807
+(934). The 20 slowest are all still server-bound at 3MHz, 19 of them
+`TUBE_SLOW`'s; their hosts take 450-612 ms, so at 4MHz (the worst
+server 605 ms) the two sides are nearly even.
+
+`TUBE_SLOW`, the server, 2,017K cycles a frame (672 ms at 3MHz):
+
+| Job | Cycles | Share | The most |
+|---|---|---|---|
+| Walls: texture set-up | 546K | 27% | `at` 235K (inclusive; the largest routine), `tx_seg` 90K, `tv_v0` 45K, `tx_getd` 44K, `trun` 38K |
+| Frame-end pass: runs and spans | 526K | 26% | `fs_singles` 99K, `fs_pairs` 90K, `fs_change` 83K, `fs_runs` 73K, `fs_span` 69K, `fs_sweep` 64K |
+| Floors / ceilings: row maths | 305K | 15% | `fs_key` 102K (620 calls, 295 of them making a key: once per plane per line pair), `pl_rowc` 94K, `pl_row` 65K |
+| The column walk | 172K | 9% | `adv` 52K, `next_col` 35K, `mf_fill` 34K |
+| Marks and WALL records | 152K | 8% | `fs_wall` 43K, `fs_trim` 42K, `fs_mark` 36K |
+| Walls: edge steppers | 116K | 6% | `st_init8` 51K, `st_init` 43K |
+| Reading requests | 98K | 5% | `fs_frame` 89K (the parse itself, H4n) |
+
+The host on `TUBE_SLOW`: engine 642K, drawer 400K (521 ms at 2MHz).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
