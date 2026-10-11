@@ -149,27 +149,27 @@ OWNER_JOBS = {
     'walls: texture set-up (u, v, step)': (
         'tx_seg', 'at', 'ld_dress', 'set_cur', 'tx_getd', 'tcol', 'tv_v0', 'tv_divm', 'tvstep',
         'tv_fine', 'trun', 'tr_lines', 'tr_screen', 'sh_lim', 'l16t', 'pl_seg', 'wall_run', 'tx_dat',
-        'tx_ent'),
-    'walls: edge steppers': ('st_init', 'st_init8', 'st_q', 'st_peek', 'st_body'),
+        'tx_ent', 'tx_7x', 'tx_slope', 'tx_at8', 'tx_lin', 'tvd_th'),
+    'walls: edge steppers': ('st_init', 'st_init8', 'st_q', 'st_peek', 'st_body', 'st_flat'),
     'the column walk': ('mf_fill', 'col', 'adv', 'next_col', 'band', 'mf_range', 'mf_snap',
                         'hz_run', 'prun', 'mf_planes'),
     'floors / ceilings: row maths': ('pl_row', 'pl_rowc', 'pl_zrow', 'pl_hq', 'pl_dh', 'pl_dhn',
                                      'fs_key'),
     'frame-end pass: runs and spans': (
-        'fs_end', 'fs_sweep', 'fs_change', 'fs_spans', 'fs_runs', 'fs_pairs', 'fs_singles',
+        'fs_end', 'fs_sweep', 'fs_spans', 'fs_runs', 'fs_pairs', 'fs_singles',
         'fs_span', 'fs_ghead', 'fs_gclose', 'fs_fills'),
-    'reading requests': ('fs_get', 'fs_frame'),
+    'reading requests': ('fs_get', 'fs_frame', 'fs_need', 'fs_used'),
     'marks and WALL records': ('fs_mark', 'fs_trim', 'fs_wall', 'fs_wclose', 'fs_planes', 'fs_pid',
                                'fs_drop1'),
     'the Tube (sending, IRQ)': ('fs_poll', 'fs_irq'),
 }
 
 SERVER_JOBS = {
-    'reading requests': ('fs_get', 'fs_frame'),
+    'reading requests': ('fs_get', 'fs_frame', 'fs_need', 'fs_used'),
     'marks and WALL records': ('fs_mark', 'fs_trim', 'fs_wall', 'fs_wclose', 'fs_planes', 'fs_pid',
                                'fs_drop1'),
     'the frame-end pass (runs, spans, fills)': (
-        'fs_end', 'fs_sweep', 'fs_change', 'fs_spans', 'fs_runs', 'fs_key', 'fs_pairs',
+        'fs_end', 'fs_sweep', 'fs_spans', 'fs_runs', 'fs_key', 'fs_pairs',
         'fs_singles', 'fs_span', 'fs_ghead', 'fs_gclose', 'mul8lo', 'fs_fills'),
     'sending the list': ('fs_poll',),
 }

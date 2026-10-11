@@ -178,7 +178,8 @@ fs_kc_r: .res NPLANE                       ;  and the pair's first plane with
 fs_rl:   .res NPLANE                       ;  that key; those planes, the pair's
 fs_rln:  .res 1                            ;  keys (fs_rln of them)
 fs_kpl:  .res 1                            ; fs_key: the plane made
-fs_kr:   .res 1                            ; fs_runs: a run's key
+fs_kr:   .res 1                            ; fs_runs: a run's key and k1
+fs_k1:   .res 1
 fs_ob:   .res 2                         ; the list being built's buffer
 fs_drop: .res 1                         ; marks / runs / planes / records
                                         ;  dropped (full)
@@ -1279,12 +1280,70 @@ fs_sweep:
    LDA fs_ca                            ; lines fs_y .. fs_e: a change?
    CMP fs_cb
    BEQ @adv
-   LDX fs_y
-@ln:
-   JSR fs_change
+   LDX fs_y                             ; (H4u: the whole segment at once:
+   LDA fs_ca                            ;  every line's open run is fs_ca)
+   BNE @cls
+   LDY fs_k                             ; none open: each line opens fs_cb
+:  LDA fs_cb                            ;  at fs_k
+   STA fs_opc,X
+   TYA
+   STA fs_opk,X
    CPX fs_e
    INX
-   BCC @ln
+   BCC :-
+   BRA @adv
+@cls:                                   ; each line's run (opk .. k - 1, ca)
+   TXA                                  ;  into its list, fs_rn + y * 64
+   ASL A                                ;  (+ 64 a line), and fs_cb opens
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   ASL A
+   STA fs_lp
+   TXA
+   LSR A
+   LSR A
+   CLC
+   ADC #>fs_rn
+   STA fs_lp+1
+   LDA fs_k
+   DEC A
+   STA fs_t
+@cl:
+   LDA fs_rnn,X
+   CMP #RN
+   BCS @full
+   INC fs_rnn,X
+   ASL A
+   ASL A
+   TAY
+   LDA fs_opk,X
+   STA (fs_lp),Y
+   INY
+   LDA fs_t
+   STA (fs_lp),Y
+   INY
+   LDA fs_ca
+   STA (fs_lp),Y
+@op:
+   LDA fs_cb
+   STA fs_opc,X
+   LDA fs_k
+   STA fs_opk,X
+   CLC
+   LDA fs_lp
+   ADC #64
+   STA fs_lp
+   BCC :+
+   INC fs_lp+1
+:  CPX fs_e
+   INX
+   BCC @cl
+   BRA @adv
+@full:
+   DROP                                 ; (full: the run is dropped)
+   BRA @op
 @adv:
    LDA fs_i                             ; past a mark's end: the next
    CMP fs_pn2
@@ -1328,51 +1387,6 @@ fs_sweep:
    BCS :+
    JMP @col
 :  RTS
-
-; fs_change: line X's code becomes fs_cb at column fs_k: its open run
-; closes at fs_k - 1 (into its list), the new one opens (X kept)
-fs_change:
-   LDA fs_opc,X
-   BEQ @open
-   STA fs_c
-   TXA                                  ; the line's runs: + y * 64
-   ASL A
-   ASL A
-   ASL A
-   ASL A
-   ASL A
-   ASL A
-   STA fs_lp
-   TXA
-   LSR A
-   LSR A
-   CLC
-   ADC #>fs_rn
-   STA fs_lp+1
-   LDA fs_rnn,X
-   CMP #RN
-   BCC :+
-   DROP                          ; (full: the run is dropped)
-   BRA @open
-:  INC fs_rnn,X
-   ASL A
-   ASL A
-   TAY
-   LDA fs_opk,X
-   STA (fs_lp),Y
-   INY
-   LDA fs_k
-   DEC A
-   STA (fs_lp),Y
-   INY
-   LDA fs_c
-   STA (fs_lp),Y
-@open:
-   LDA fs_cb
-   STA fs_opc,X
-   LDA fs_k
-   STA fs_opk,X
-   RTS
 
 ; ---- fs_spans: the lines' runs as SPANs, a line pair at a time -----------
 ; Each line's runs join where neighbours have the same row maths, flat
@@ -1472,15 +1486,17 @@ fs_runs:
    STA fs_lp+1
    LDY #0
 @r:
-   PHY
+   LDA (fs_lp),Y                        ; k0, k1, its code: the key
+   STA fs_k
    INY
-   INY
-   LDA (fs_lp),Y                        ; its code: the key
-   JSR fs_key
-   STA fs_kr
-   PLY
    LDA (fs_lp),Y
-   STA fs_k                             ; k0
+   STA fs_k1
+   INY
+   LDA (fs_lp),Y
+   JSR fs_key                           ; (Y kept)
+   STA fs_kr
+   INY                                  ; (the next run)
+   INY
    CPX #0                               ; (no run yet on this line?)
    BEQ @new
    CPX #RO
@@ -1492,26 +1508,18 @@ fs_runs:
    LDA fs_kr
    CMP re_id-1,X
    BNE @new
-   INY                                  ; extend it to k1
-   LDA (fs_lp),Y
+   LDA fs_k1                            ; extend it to k1
    STA re_k1-1,X
-   DEY
    BRA @nx
 @new:
    LDA fs_k
    STA re_k0,X
-   INY
-   LDA (fs_lp),Y
+   LDA fs_k1
    STA re_k1,X
-   DEY
    LDA fs_kr
    STA re_id,X
    INX
 @nx:
-   INY
-   INY
-   INY
-   INY
    DEC fs_n
    BEQ @rts
    JMP @r

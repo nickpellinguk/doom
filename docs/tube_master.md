@@ -834,6 +834,31 @@ the same. `TUBE_SLOW`: the server 1,853K -> 1,756K cycles a frame
 The slower side's mean is now 587 ms at 3MHz: on some slow poses the
 host is the limit.
 
+## H4u. Building the line runs. — TWO CUTS, THE REST NEAR ITS FLOOR
+
+The runs at the frame's end: `fs_sweep` walks the columns' marks, and at
+each segment of lines whose code changes `fs_change` closed every line's
+open run into its list (835 calls a frame on `TUBE_SLOW`, ~100 cycles
+each); then `fs_runs` reads each pair's lines back (620 runs), keys
+them and joins neighbours. 220K cycles in all after H4t.
+
+- In a segment every line's open run has the same code (the column
+  before's, fs_ca) and every line opens the same one (fs_cb at fs_k):
+  the sweep now closes the segment in one loop, k - 1 and the codes
+  fixed, the list pointer + 64 a line, not shifted out of y each time;
+  lines with no open run only open. `fs_change` is gone. 1,756K ->
+  1,728K.
+- `fs_runs` reads a run's k0, k1 and code once (Y kept across `fs_key`),
+  not twice: 1,728K -> 1,724K. (Testing `fs_key`'s cache inline there
+  cost more than the call it saved: 1,731K.)
+
+`TUBE_SLOW`: the server 1,756K -> 1,724K cycles a frame (-1.8%; 575 ms at
+3MHz), code +32 B. What is left -- ~95 cycles a closed run in the sweep,
+~110 a run in `fs_runs` (only 17% of runs join a neighbour) -- is mostly
+the indexed loads and stores themselves. (The profiler now files the
+7w / 7x routines under the walls' set-up, `st_flat` under the steppers,
+`fs_need` / `fs_used` under reading requests.)
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
