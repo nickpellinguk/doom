@@ -1,0 +1,20 @@
+# MEDIA0 28x19 tones (wall_art.TCH), space transparent; seeded by sprite_art.py
+   6666666666666666666666
+  666666666666666666666666
+ 66666666666666666666666666
+6wwwwwwwwwwwwwwwwwwwwwwwwww6
+cccccccccccccccccccccccccccc
+cCcccccccccccRRccccccccccCCc
+cCCccccccccccrrcccccccccCCCc
+CcCCCCcccccRrrrrRccccCCCCCcC
+CrcCCCCCCCCRrrrrRCCCCCCCCcrC
+CcrcCCcwcCCCCrrCCCCcwcCCcrcC
+CccrcCcwcCCCCRRCCCCcwcCcrccC
+CccYrCCCccccccccccccCCCrYccC
+CcccYb...brrrrrrrrb...bYcccC
+CccccC.B.CccccccccC.B.CccccC
+CCCCCCBbBCCCCCCCCCCBbBCCCCCC
+CCCCCC.B.CCCCCCCCCC.B.CCCCCC
+CCCCCC...CCCCCCCCCC...CCCCCC
+CCCCCC...CCCCCCCCCC...CCCCCC
+CrrrrrBBBrrrrrrrrrrBBBrrrrrC

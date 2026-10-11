@@ -1029,6 +1029,16 @@ cross-hatch); a transparent texel is skipped, so there is no masking.
 2. *Art*: DOOM1.WAD's sprites (STIMA0, MEDIA0, BON1A0, BON2A0, ARM1A0,
    ARM2A0, COLUA0, BAR1A0) resampled to texel bytes (two Mode 2 pixels;
    the flats' quantiser) with a transparent code, column-major.
+   **Done**: `sprite_art.py` seeds `art/sprites/NAME.txt` (hand-editable,
+   `wall_art.TCH` letters, space transparent) and decodes them to
+   column-major texel bytes, `TRANS` = $80 transparent (no tone makes
+   it or its FLIP). One texel a DOOM pixel, the sprite's own size:
+   3,601 B for the seven kinds (green and blue armour share K_VEST, so
+   ARM1A0 only). The seed is the flats' tone ramps chosen PER PIXEL by
+   hue -- one ramp a sprite, as a flat takes, turned the stimpack's
+   white box brown -- with vivid pixels (red crosses, the armour's
+   green) kept as the nearest hue tone. Preview:
+   `build/master/sprites.png`.
 3. *Model*: a SPRITE display-list record (a byte column: lines, sprite,
    texel column, v and its step), drawn after everything else, farthest
    first. Each sprite is clipped to the clip spans open when its

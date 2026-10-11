@@ -1,0 +1,16 @@
+# BON2A0 16x15 tones (wall_art.TCH), space transparent; seeded by sprite_art.py
+     CccccC
+   Cccwww6cCC
+  Cccwwwww6cCC
+ CcYc6wwww6cCCC
+ cYyc66ww6cccCC
+CcYy666666ccCCCC
+CYYy666ww6ccCCCC
+CYYcc66wwwwccccC
+CYcc66cccc66cccC
+Ccb...CCCC...bcC
+CCc...bccb...cCC
+CCCc...cc...cCCC
+CCC6...ccb..6CCC
+ CC6  bc6b  6CC
+  C6  .bb.  6C
