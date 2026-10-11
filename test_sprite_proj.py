@@ -60,6 +60,7 @@ def engine_staged():
                 fake.x = x
                 at_draw(fake)
         r.sc.pc_hooks = {sym('rq_objs'): at_rq}
+        list.__setitem__(m, 0xFEE0, 0x40)       # register 1: always room
 
     gone_at = sym('OBJ_GONE') if 'TUBE' in os.environ.get('DOOM_ASMDEFS', '') else None
 

@@ -91,9 +91,9 @@ gm_tick:
    STA gm_clock
    LDA #0
    ROL A
-   STA gm_t                             ; the clock's 9th bit
+   STA gm_c9                            ; the clock's 9th bit
 @clk:
-   LDA gm_t                             ; clock >= GM_PERIOD?
+   LDA gm_c9                            ; clock >= GM_PERIOD?
    BNE :+
    LDA gm_clock
    CMP #GM_PERIOD
@@ -102,9 +102,9 @@ gm_tick:
    LDA gm_clock
    SBC #GM_PERIOD
    STA gm_clock
-   LDA gm_t
+   LDA gm_c9
    SBC #0
-   STA gm_t
+   STA gm_c9
    LDA gm_ss                            ; a wrap: in nukage?
    LSR A
    LSR A
@@ -245,4 +245,6 @@ gm_atype:  .byte 0
 gm_clock:  .byte 0
 gm_t:      .byte 0
 gm_s:      .byte 0
+gm_c9:     .byte 0                      ; (the clock's 9th bit: gm_hurt
+                                        ;  takes gm_t)
 .include "hgame_tab.s"
