@@ -893,6 +893,32 @@ Fewer rows means a spec change, e.g. one row's maths shared by the two
 line pairs of a 4-line band beyond some depth (each half the 293 there),
 or the far tone from a nearer depth.
 
+## H4x. The second processor, reviewed. — MEASURED
+
+After H4l-H4w. A fresh `scan 500 1` (528 poses), the slower side at
+3MHz: median 268 ms (H4r: 280), 90% 478 (527), 99% 578 (696), worst 701
+(807). Of the worst 20, 4 are now host-bound at 3MHz; at 4MHz the
+server's worst (701 -> 526 ms) is under the host's (612 ms), so the host
+sets the worst frames there. The server's worst poses are now dense near
+views with big lists (5.3K) and small requests, not the big rooms.
+
+`TUBE_SLOW`, the server, 1,679K cycles a frame (560 ms at 3MHz; H4r
+2,017K, H4f 2,663K):
+
+| Job | Cycles | Share |
+|---|---|---|
+| Frame-end pass: runs and spans | 398K | 24% |
+| Walls: texture set-up (`tv_v0`, `trun`, `tx_slope`, `tx_seg`, ...) | 370K | 22% |
+| Floors / ceilings: row maths (`pl_rowc`, `fs_key`, `pl_row`) | 290K | 17% |
+| The column walk | 172K | 10% |
+| Marks and WALL records | 152K | 9% |
+| Walls: edge steppers (with `st_flat`) | 137K | 8% |
+| Reading requests (with `fs_need`) | 123K | 7% |
+
+Memory: 5.8K free (the span pool aside), 4.0K of it in one piece for
+code above `fs_imgend`. The host on `TUBE_SLOW`: engine 642K, drawer
+400K (521 ms at 2MHz).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
