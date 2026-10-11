@@ -101,7 +101,7 @@ RAWY_MAX = $0490        ;  1168
 .import ok_clear
 .import gun_draw
 .ifdef TUBE
-.import hd_frame
+.import hd_frame, pn_update
 .endif
 .import split_init
 .import fb_clr0
@@ -474,6 +474,9 @@ frame:
     LDA #BANK_C
     STA $FE30
     JSR gun_draw           ; the gun overlay (bank 6, step 6f)
+.ifdef TUBE
+    JSR pn_update          ; TUBE MASTER: the panel's numbers (H7, bank 6)
+.endif
     JSR flip_sched
     JMP frame
 

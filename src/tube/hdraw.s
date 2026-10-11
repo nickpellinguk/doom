@@ -35,7 +35,7 @@ PAIR_Y  = $88                           ; tube_dl.PAIR_Y
 ACC_DY  = $09                           ; (master/mfill.s) render-time ACCCON,
 ACC_DXY = $0D                           ;  and with X: the CPU on the shadow
 ZB      = VX1                           ; 26 bytes of scratch, then 2 more
-.export hd_frame
+.export hd_frame, pn_update, pn_val, pn_shown
 .export tx_bank, tx_ph, tx_ro, tx_rm, tx_ixl, tx_ixh, tx_ix, fl_bank, fl_page
 .else
         .include "hdraw_tab.inc"
@@ -883,5 +883,6 @@ sp_vst: clc
         sta v+1
         rts
         .include "hsprite_tab.s"
+        .include "hpanel.s"             ; H7: the panel's big numbers
 .endif
 

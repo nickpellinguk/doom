@@ -95,6 +95,8 @@ run('tube_link', ['test_tube_link.py'], lambda o: 'TUBELINK: PASS' in o)
 # H6 step 1: the engine's billboard projection against sprite_ref
 run('sprite_proj', ['test_sprite_proj.py'], lambda o: 'SPRITEPROJ: PASS' in o)
 run('sprite_dl', ['test_sprite_dl.py'], lambda o: 'SPRITEDL: PASS' in o)
+# H7: the panel's big numbers (Tube host, bank 6) against master_panel.panel_with
+run('panel_nums', ['test_panel_nums.py'], lambda o: 'PANELNUMS: PASS' in o)
 run('master_music', ['test_master_music.py'], lambda o: 'MASTERMUSIC: PASS' in o)
 # BAKED ADDRESSES: a literal address is a copy of a fact. This ratchets: the
 # count may fall, never rise.

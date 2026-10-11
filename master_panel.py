@@ -96,16 +96,13 @@ def status_bar():
     w = M.Wad()
     bar = w._patch('STBAR')
     big = np.zeros(bar.shape, bool)
-    _num(w, bar, 'STTNUM', 14, 50, 44, 3, big)          # ammo
-    _num(w, bar, 'STTNUM', 14, 100, 90, 3, big)         # health
-    _draw(w, bar, 'STTPRCNT', 90, 3, big)
+    # (the big numbers -- ammo, health, armour and their % -- are the
+    #  panel's own: BIG_DIGITS, drawn in fields by panel_with)
     _draw(w, bar, 'STARMS', 104, 0)                     # arms box
     for i, wp in enumerate(range(2, 8)):                # the pistol owned
         _draw(w, bar, f'{"STYSNUM" if wp == 2 else "STGNUM"}{wp}',
               111 + (i % 3) * 12, 4 + (i // 3) * 10)
     _draw(w, bar, 'STFST01', 143, 0)                    # face
-    _num(w, bar, 'STTNUM', 14, 0, 221, 3, big)          # armour
-    _draw(w, bar, 'STTPRCNT', 221, 3, big)
     for y, have, most in ((5, 50, 200), (11, 0, 50), (23, 0, 300), (17, 0, 50)):
         _num(w, bar, 'STYSNUM', 4, have, 288, y)        # ammo counts
         _num(w, bar, 'STYSNUM', 4, most, 314, y)
@@ -228,7 +225,8 @@ FACE = [
     '....drhhhhhhhrd....',
     '.....ddrrrrrdd.....',
 ]
-FACE_BOX = (114, 1, 141, 23)            # the face's black box (x0, y0, x1, y1)
+FACE_BOX = (114, 1, 139, 23)            # the face's black box (x0, y0, x1, y1;
+                                        #  x1 clear of the armour field)
 
 
 def face(px):
@@ -270,14 +268,129 @@ def lettering(px):
     return px
 
 
+# ---- The big numbers (docs/tube_master.md H7) -------------------------
+# Ammo, health and armour in the panel's own 9 x 13 digits, pure red with
+# a 1-pixel black outline on the stone. A digit CELL is 12 pixels -- three
+# Mode 1 bytes -- by lines 0..15 (line 0 the panel's black top edge, the
+# outline inside lines 1..15), and every field starts on a byte, so the
+# stone's (x + y) cross-hatch is the same in every cell: one pre-built
+# image a glyph (BLANK: stone only) is copied straight into the shared
+# panel, two 24-byte runs (character rows 17 and 18). The % signs are
+# drawn once, in the base panel.
+BIG_DIGITS = {
+    '0': ['.#######.', '#########', '###...###', '###...###', '###...###',
+          '###...###', '###...###', '###...###', '###...###', '###...###',
+          '###...###', '#########', '.#######.'],
+    '1': ['...###...', '.#####...', '.#####...', '...###...', '...###...',
+          '...###...', '...###...', '...###...', '...###...', '...###...',
+          '...###...', '.#######.', '.#######.'],
+    '2': ['.#######.', '#########', '......###', '......###', '......###',
+          '.########', '########.', '###......', '###......', '###......',
+          '###......', '#########', '#########'],
+    '3': ['########.', '#########', '......###', '......###', '......###',
+          '..######.', '..#######', '......###', '......###', '......###',
+          '......###', '#########', '########.'],
+    '4': ['###...###', '###...###', '###...###', '###...###', '###...###',
+          '#########', '#########', '......###', '......###', '......###',
+          '......###', '......###', '......###'],
+    '5': ['#########', '#########', '###......', '###......', '###......',
+          '########.', '#########', '......###', '......###', '......###',
+          '......###', '#########', '########.'],
+    '6': ['.########', '#########', '###......', '###......', '###......',
+          '########.', '#########', '###...###', '###...###', '###...###',
+          '###...###', '#########', '.#######.'],
+    '7': ['#########', '#########', '......###', '......###', '.....###.',
+          '.....###.', '....###..', '....###..', '....###..', '....###..',
+          '....###..', '....###..', '....###..'],
+    '8': ['.#######.', '#########', '###...###', '###...###', '###...###',
+          '.#######.', '#########', '###...###', '###...###', '###...###',
+          '###...###', '#########', '.#######.'],
+    '9': ['.#######.', '#########', '###...###', '###...###', '###...###',
+          '#########', '.########', '......###', '......###', '......###',
+          '......###', '#########', '########.'],
+    '%': ['###....##', '###...###', '###..###.', '.....###.', '....###..',
+          '....###..', '...###...', '..###....', '.###.....', '.###.....',
+          '.###..###', '###...###', '##....###'],
+}
+BLANK = 10                              # glyph ids: 0-9 the digits, 10 none
+CELL_W, CELL_LINES = 12, 16             # a cell: 3 bytes by lines 0..15
+DIGIT_Y = 2                             # the body's first line (13 lines)
+# (name, the field's first byte column, its value at boot): three cells
+# each, on byte boundaries clear of the dividers (x 37, 87, 188) and the
+# face box; the % beside health and armour
+FIELDS = [('ammo', 0, 50), ('health', 10, 100), ('armor', 35, 0)]
+PERCENT_X = (76, 176)
+
+
+def _stamp(px, rows, x0, y0):
+    """A big glyph's body red, its 8-neighbour ring black, at (x0, y0)."""
+    body = np.zeros(px.shape, bool)
+    for r, row in enumerate(rows):
+        for i, c in enumerate(row):
+            if c == '#':
+                body[y0 + r, x0 + i] = True
+    ring = np.zeros_like(body)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            ring |= np.roll(np.roll(body, dy, 0), dx, 1)
+    px[ring & ~body] = BLACK
+    px[body] = RED
+
+
+def cell_pixels(g):
+    """Glyph g's cell: (16, 12) colours -- line 0 black, then stone with
+    the digit (none for BLANK) one pixel in from the cell's left (its
+    outline at 0..10, a stone column between neighbours)."""
+    yy, xx = np.mgrid[0:CELL_LINES, 0:CELL_W]
+    px = np.where((xx + yy) & 1, CYAN, RED)
+    px[0, :] = BLACK
+    if g != BLANK:
+        _stamp(px, BIG_DIGITS[str(g)], 1, DIGIT_Y)
+    return px
+
+
 @functools.lru_cache(None)
-def panel_bytes():
-    """The panel as it sits in a buffer: 1536 bytes, character rows 17..19
-    (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 1 byte
-    per four pixels."""
-    px = face(lettering(panel_pixels()))
-    px[0, :] = BLACK                     # a black top edge: the split IRQ
-    out = bytearray(PANEL_SIZE)          #  rewrites the palette during it (6e)
+def glyph_bytes(g):
+    """Glyph g as the 6502 copies it: 48 bytes, character row 17's 24
+    (byte column c's lines 0..7 at c * 8 + line) then row 18's."""
+    px = cell_pixels(g)
+    out = bytearray()
+    for r in (0, 1):
+        for c in range(3):
+            for ln in range(8):
+                out.append(mode1_byte([SPLIT_LOGICAL[int(v)]
+                                       for v in px[r * 8 + ln, 4 * c:4 * c + 4]]))
+    return bytes(out)
+
+
+def field_glyphs(v):
+    """A value's three glyphs: right-aligned, leading zeros blank, 999 at
+    most (DOOM's own fields stop there too)."""
+    v = max(0, min(999, v))
+    d = [v // 100, v // 10 % 10, v % 10]
+    if d[0] == 0:
+        d[0] = BLANK
+        if d[1] == 0:
+            d[1] = BLANK
+    return d
+
+
+def _fields(px, values):
+    for (_, k, _), v in zip(FIELDS, values):
+        for i, g in enumerate(field_glyphs(v)):
+            x = 4 * k + CELL_W * i
+            px[0:CELL_LINES, x:x + CELL_W] = cell_pixels(g)
+    return px
+
+
+def _percents(px):
+    for x in PERCENT_X:
+        _stamp(px, BIG_DIGITS['%'], x, DIGIT_Y)
+    return px
+
+
+def _to_bytes(px):
+    out = bytearray(PANEL_SIZE)
     for y in range(PANEL_LINES):
         for k in range(64):
             out[(y >> 3) * 512 + k * 8 + (y & 7)] = mode1_byte(
@@ -285,7 +398,55 @@ def panel_bytes():
     return bytes(out)
 
 
+@functools.lru_cache(None)
+def _base_pixels():
+    px = face(lettering(panel_pixels()))
+    px[0, :] = BLACK                     # a black top edge: the split IRQ
+    return _percents(px)                 #  rewrites the palette during it (6e)
+
+
+def panel_with(values):
+    """The panel with the fields showing values (ammo, health, armour):
+    exactly what copying each field's glyph_bytes into the base gives."""
+    return _to_bytes(_fields(_base_pixels().copy(), values))
+
+
+@functools.lru_cache(None)
+def panel_bytes():
+    """The panel as it sits in a buffer: 1536 bytes, character rows 17..19
+    (offset (line >> 3 - 17) * 512 + k * 8 + (line & 7)), one Mode 1 byte
+    per four pixels."""
+    return panel_with(tuple(v for _, _, v in FIELDS))
+
+
+TAB = os.path.join(ROOT, 'src', 'tube', 'hpanel_tab.s')
+
+
+def tab_source():
+    """src/tube/hpanel_tab.s: the big glyphs as the host copies them
+    (pn_glyph: 11 x 48 bytes, glyph_bytes), per glyph its address, and per
+    field its first byte column and its value at boot."""
+    L = ['; GENERATED by master_panel.py -- the panel\'s big numbers for the',
+         '; Tube host (src/tube/hpanel.s, H7). Do not edit.',
+         f'PN_FIELDS = {len(FIELDS)}',
+         'pn_k:   .byte ' + ', '.join(str(k) for _, k, _ in FIELDS),
+         'pn_gl:  .byte ' + ', '.join(f'<(pn_glyph + {48 * g})' for g in range(11)),
+         'pn_gh:  .byte ' + ', '.join(f'>(pn_glyph + {48 * g})' for g in range(11)),
+         '; the values (set by the game; bank 6 RAM) and those on show,',
+         '; both the boot panel\'s',
+         'pn_val:   .word ' + ', '.join(str(v) for _, _, v in FIELDS),
+         'pn_shown: .word ' + ', '.join(str(v) for _, _, v in FIELDS),
+         'pn_glyph:']
+    for g in range(11):
+        b = glyph_bytes(g)
+        L.append(f'; {g if g != BLANK else "blank"}')
+        for i in range(0, 48, 16):
+            L.append('        .byte ' + ', '.join(f'${x:02X}' for x in b[i:i + 16]))
+    return '\n'.join(L) + '\n'
+
+
 if __name__ == '__main__':
+    open(TAB, 'w').write(tab_source())
     import textured_ref as T
     out = os.path.join(ROOT, 'build', 'master')
     os.makedirs(out, exist_ok=True)
