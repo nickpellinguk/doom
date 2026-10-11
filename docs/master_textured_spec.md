@@ -1952,3 +1952,31 @@ Master suite (framebuffer lockstep + cycle baseline); ship `doom_master.ssd`.
   step 7 decides whether lower-detail options are needed.
 - **Switch textures**: E1M1's exit switch SW1STRTN normally changes to
   SW2STRTN when pressed; not included (the spec lists 32 textures).
+
+## 9. The loading screen (both discs)
+
+DOOM's TITLEPIC (`title_art.py`; the editable grid `art/title/TITLE.txt`,
+128 x 160 Mode 2 pixels, seeded from DOOM1.WAD by hue ramps and a 2 x 2
+ordered dither) is up from about two seconds in until the game's first
+frame, on both discs, with a yellow bar along its black last character
+row growing a step a file.
+
+It lives in the game's own window: `mboot.s` sets MODE 130, then the
+driver's CRTC registers (64 bytes a line, 160 lines, centred, cursor
+parked) and the 10K screen size, and copies MTITLE (10K) into shadow
+$3000-$57FF -- the first thing loaded, before the Tube build's SERVER.
+
+What has to wait for the last disc access (HAZEL: the filing system's
+workspace; ANDY: the MOS's) used to be parked raw across the whole shadow
+screen, 14.5K. It now ships as ONE compressed file, MPARK (`lzpark.py`:
+HAZEL 7.5K, ANDY 4K, gun_b0 1.2K and the panel 1.5K, 8.5K together),
+parked in shadow above the picture ($5E00-$7FFF). After MCBITS, the stub
+(now two pages, $0900-$0AFF, copied down first: its `bar` routine serves
+the whole load; the bounce page moved to $0B00) unpacks the four streams
+straight from shadow into their homes -- HAZEL with ACCCON Y, ANDY with
+ROMSEL bit 7, the gun and the panel within shadow (the panel last: its
+stream sits above its home). The LZ format: $00-$7F t + 1 literals,
+$80-$FE a copy of (t & $7F) + 3 bytes from d back (2 bytes), $FF the end;
+`lzpark.decode` is the spec. The boot is a little quicker for it (the
+Master disc's engine runs ~110 fields sooner). The disc gates (both pass)
+hold the unpacked panel, the game and the music as before.

@@ -18,12 +18,13 @@ Files on the disc (DFS, boot option *RUN):
   MMAIN   engine MAIN $0F00-$57FF (driver + code)         loads in place
   MCBITS  bank-C content laid linear, $5800-$79FF, and
           the mtex_ix column index blob to $7FFF          loads in place
-  MHAZEL  HAZEL: pattern, HUD, FLIP, font at $C000; the filler +
-          wall texturer and its sky map at $C800          staged $3000
-  MANDY   ANDY: the per-seg wall tables (master_walls)    staged $3000
-  MPANEL  the control panel (master_panel): the bottom    staged $3000
-          24 lines under both buffers, shadow $5800
-  MGUN    gun_b0, the buffer-0 gun overlay, shadow $3000  staged $3000
+  MTITLE  the loading screen (title_art.py), 10K: shadow  staged $3000
+          $3000-$57FF, shown from the start
+  MPARK   (lzpark.py) compressed: HAZEL (pattern, HUD,    staged $3000
+          FLIP, font at $C000; the filler at $C800), ANDY
+          (the per-seg wall tables), gun_b0 (shadow $3000)
+          and the control panel (shadow $5800): parked in
+          shadow above the picture, unpacked by the stub
 """
 import os, subprocess, sys
 
@@ -136,7 +137,23 @@ def build(tube=False):
     assert len(hz) <= 0x280, 'boot HAZEL block runs into the plane caches at $C280'
     hz = hz.ljust(0x800, b'\0') + hzeng            # $C000 pattern/HUD | $C800 filler
     assert len(andy) == 0x1000
-    defs = [f'HAZEL_PAGES={(len(hz) + 255) // 256}']
+    gun = open(os.path.join(ROOT, 'engine_gun_m.bin'), 'rb').read()   # gun_b0
+    assert len(gun) <= 0x600, 'gun_b0 overruns shadow $3000-$35FF'
+    # the loading screen (section 9): the picture, and what waits for the
+    # last disc access parked compressed above it (lzpark)
+    import lzpark
+    import title_art
+    title = title_art.screen_bytes()
+    park, pstart, streams = lzpark.blob([('HAZEL', hz, 0xC000), ('ANDY', andy, 0x8000),
+                                         ('GUN', gun, abi.MGUN0),
+                                         ('PANEL', master_panel.panel_bytes(), abi.MPANEL)])
+    assert pstart >= 0x5800, 'the parked blob runs into the picture'
+    steps = 7 + (1 if tube else 0)                  # banks, MPARK, MMAIN, MCBITS
+    inc = [f'PARK_PAGE = ${pstart >> 8:02X}', f'PARK_PAGES = {len(park) // 256}',
+           f'BAR_W = {64 // steps}', f'BAR_BYTE = ${M.mode2_byte((M.YELLOW, M.YELLOW)):02X}']
+    inc += [f'S_{n} = ${a:04X}' for n, a, _, _ in streams]
+    open(os.path.join(OUT, 'mboot_park.inc'), 'w').write('\n'.join(inc) + '\n')
+    defs = []
     server = []
     if tube:
         import tube_req
@@ -146,19 +163,15 @@ def build(tube=False):
         defs += ['TUBE=1', f'SERVER_ENTRY=${entry:04X}']
     boot = asm('mboot', defs)
     assert len(main) == 0x4900 and len(cbits) == 0x2800
-    gun = open(os.path.join(ROOT, 'engine_gun_m.bin'), 'rb').read()   # gun_b0
-    assert len(gun) <= 0x600, 'gun_b0 overruns shadow $3000-$35FF'
     files = [('!BOOT', HOST | 0x1900, HOST | 0x1900, boot),
+             ('MTITLE', HOST | 0x3000, HOST | 0x3000, title),
              ('MBANK4', HOST | 0x3000, HOST | 0x3000, b4),
              ('MBANK7', HOST | 0x3000, HOST | 0x3000, b7),
              ('MBANK5', HOST | 0x3000, HOST | 0x3000, b5),
              ('MBANK6', HOST | 0x3000, HOST | 0x3000, b6),
              ('MMAIN', HOST | abi.LOW_BASE, HOST | abi.LOW_BASE, main),
              ('MCBITS', HOST | abi.CBITS_M, HOST | abi.CBITS_M, cbits),
-             ('MHAZEL', HOST | 0x3000, HOST | 0x3000, hz),
-             ('MANDY', HOST | 0x3000, HOST | 0x3000, andy),
-             ('MPANEL', HOST | 0x3000, HOST | 0x3000, master_panel.panel_bytes()),
-             ('MGUN', HOST | 0x3000, HOST | 0x3000, gun)] + server
+             ('MPARK', HOST | 0x3000, HOST | 0x3000, park)] + server
     path = os.path.join(OUT, 'doom_tube.ssd' if tube else 'doom_master.ssd')
     ssd(files, path)
     for n, l, e, d in files:

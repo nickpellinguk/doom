@@ -1,48 +1,43 @@
 ; Master engine disc loader (docs/master_textured_spec.md). !BOOT, *RUN at
-; $1900.
+; $1900. Both discs: the Master's and (TUBE) the Tube Master's.
+;
+; THE LOADING SCREEN (section 9): DOOM's title picture (title_art.py, 10K)
+; goes up first, in the game's own 10K window (its CRTC set-up: 64 bytes a
+; line, 160 lines, centred; the 10K screen size), and stays up the whole
+; load, a bar growing along its bottom two lines as each file lands. It
+; lives in the shadow screen's first half, $3000-$57FF -- so everything
+; that must wait for the last disc access is parked in the other half,
+; compressed (MPARK, lzpark.py: HAZEL, ANDY, the gun and the panel, 8.5K at
+; shadow PARK_PAGE..$7FFF). The stub is two pages ($0900-$0AFF); the
+; bounce page is $0B00 (the OS's soft keys; the engine's span pool later).
 ;
 ; Order matters, because two things may not be touched until the last
 ; disc access is done: HAZEL (the filing system keeps its workspace there)
-; and, once loaded, the engine's own main-RAM image.
+; and ANDY (the MOS's font and workspace).
 ;
-;   1. MODE 130 (shadow Mode 2, step 6a; its default palette is the eight
-;      solid colours), while the OS is whole.
-;   2. Banks 4, 7, 5 and 6: staged at $3000, copied into their sideways
-;      banks (5 and 6 are the wall textures; 6's tail the part records).
-;   3. MHAZEL, then MANDY: staged at $3000 and parked in SHADOW RAM (the
-;      screen; it shows as noise during the load) one after the other,
-;      bounced a page at a time through $0A00 because the CPU sees either
-;      main or shadow at $3000, not both. Then MPANEL, the control panel
-;      (master_panel.py), parked at shadow $7A00-$7FFF, and MGUN (gun_b0)
-;      below it at $7400, clear of the parked blocks.
-;   4. From the page-9 stub: MMAIN straight to $0F00 (on the Master DFS
-;      keeps its workspace in HAZEL, so main RAM from $0E00 is free) --
-;      this overwrites the loader; then MCBITS to $5800. Last disc access.
-;   5. SEI; the parked HAZEL block goes shadow -> $0A00 -> HAZEL ($C000),
-;      the parked ANDY block shadow -> ANDY ($8000, ROMSEL bit 7: the MOS
-;      keeps its font and workspace there, so it waits for the last OS
-;      call too); the panel shadow $7A00 -> $5800 (MPANEL, the one panel
-;      both buffers show: buffer 0 runs into it, buffer 1 wraps onto it
-;      at the 10K screen size; the parked ANDY block covered it), gun_b0
-;      $7400 -> $3000 (MGUN0, which parked HAZEL covered); the music
-;      player bank 5 $B800 -> $0300-$07FF (MUS_ORG); JMP DRV_ORG.
-;      No OS call after this point.
-;
-; (The first cut staged MHAZEL at $3000 AFTER the engine image was in
-; place, which wrote the HAZEL block over engine code at $3000+.)
+;   1. MODE 130 (shadow Mode 2), the cursor off, the game's CRTC window;
+;      the page-9 stub copied down (its bar routine runs from there); the
+;      picture: MTITLE staged at main $3000, copied to shadow $3000 a page
+;      at a time through the bounce page $0B00 (the CPU sees main or shadow
+;      at $3000, not both).
+;   2. TUBE: the fill server, SERVER into the second processor and started
+;      there (the MOS serves it until its OSCLI *GOIO 1903 lands on l_cont).
+;   3. Banks 4, 7, 5 and 6: staged at $3000, copied into their banks.
+;   4. MPARK, staged at $3000 and parked in shadow above the picture.
+;   5. From page 9: MMAIN straight to $0F00 (this overwrites the loader),
+;      MCBITS to $5800. The last disc access.
+;   6. SEI; the stub decompresses the parked streams (lz) into HAZEL
+;      ($C000, ACCCON Y), ANDY ($8000, ROMSEL bit 7), the gun (shadow $3000,
+;      MGUN0) and the panel (shadow $5800, MPANEL: last, its stream above
+;      its home), copies the music player bank 5 $B800 -> $0300, JMP DRV_ORG.
+;      No OS call after this point. The game draws over the picture.
 
         .include "abi.inc"
-
-ROMSEL_COPY = $F4
-ANDY_PAGES  = 16                        ; MANDY: 4K
-PANEL_PAGES = 6                         ; MPANEL: character rows 17..19
-PANEL_STAGE = $7A00                     ; parked here (clear of HAZEL + ANDY),
-                                        ;  then copied to MPANEL ($5800), the one
-                                        ;  panel both buffers show
-GUN_PAGES   = 6                         ; MGUN: gun_b0, for shadow MGUN0 ($3000)
-GUN_STAGE   = PANEL_STAGE - GUN_PAGES * 256   ; parked at $7400 meanwhile
-.assert $3000 + (HAZEL_PAGES + ANDY_PAGES) * 256 <= GUN_STAGE, error, "parked HAZEL + ANDY reach the gun's stage"
-; the bounce page is $0A00, one free OS buffer page (written inline)
+        .include "mboot_park.inc"       ; (build_master_ssd.py: PARK_PAGE,
+                                        ;  PARK_PAGES, S_HAZEL .. S_PANEL,
+ROMSEL_COPY = $F4                       ;  BAR_W, BAR_BYTE)
+BAR_ADDR  = $3000 + 19 * 512 + 2        ; the bar: lines 154-157 (title_art)
+BP        = $88                         ; (2) the bar's next column
 
 .ifdef TUBE
 .define STAGE "FFFF3000"                ; (a second processor is on: a bare
@@ -54,13 +49,7 @@ GUN_STAGE   = PANEL_STAGE - GUN_PAGES * 256   ; parked at $7400 meanwhile
 ldr:
         jmp l_start
 l_cont:                                 ; $1903 (TUBE: *GOIO 1903, from the
-        ldx #0                          ;  fill server, started below)
-@vdu:   lda vdu_init,x                  ; MODE 130 first
-        jsr $FFEE
-        inx
-        cpx #vdu_end - vdu_init
-        bne @vdu
-        ldx #<c_b4
+        ldx #<c_b4                      ;  fill server, started below)
         ldy #>c_b4
         jsr $FFF7                       ; *LOAD MBANK4 3000 (bank A)
         lda #4
@@ -80,52 +69,65 @@ l_cont:                                 ; $1903 (TUBE: *GOIO 1903, from the
         jsr $FFF7                       ; *LOAD MBANK6 3000 (textures + parts)
         lda #6
         jsr copy
-        ldx #<c_hz
-        ldy #>c_hz
-        jsr $FFF7                       ; *LOAD MHAZEL 3000
-        lda #$30                        ; park it in shadow $3000+
-        ldx #HAZEL_PAGES
+        ldx #<c_pk
+        ldy #>c_pk
+        jsr $FFF7                       ; *LOAD MPARK 3000
+        lda #PARK_PAGE                  ; parked above the picture
+        ldx #PARK_PAGES
         jsr park
-        ldx #<c_an
-        ldy #>c_an
-        jsr $FFF7                       ; *LOAD MANDY 3000
-        lda #$30 + HAZEL_PAGES          ; park it in shadow above HAZEL's
-        ldx #ANDY_PAGES
-        jsr park
-        ldx #<c_pn
-        ldy #>c_pn
-        jsr $FFF7                       ; *LOAD MPANEL 3000
-        lda #>PANEL_STAGE               ; park it at the top of shadow
-        ldx #PANEL_PAGES
-        jsr park
-        ldx #<c_gn
-        ldy #>c_gn
-        jsr $FFF7                       ; *LOAD MGUN 3000
-
-        lda #>GUN_STAGE                 ; park it below the panel
-        ldx #GUN_PAGES
-        jsr park
-        ldx #stub_len
-:       lda stub_image-1,x
-        sta $0900-1,x
-        dex
-        bne :-
-        jmp $0900
+        jsr bar
+        jmp s_load                      ; (page 9: MMAIN overwrites this)
 
 l_start:
+        ldx #0
+@vdu:   lda vdu_init,x                  ; MODE 130, the cursor off
+        jsr $FFEE
+        inx
+        cpx #vdu_end - vdu_init
+        bne @vdu
+        ldx #0                          ; the game's window
+@crtc:  lda crtc_tab,x
+        sta $FE00
+        lda crtc_tab+1,x
+        sta $FE01
+        inx
+        inx
+        cpx #crtc_end - crtc_tab
+        bne @crtc
+        lda #$0C                        ; screen size 10K (latch B4 = B5 = 1)
+        sta $FE40
+        lda #$0D
+        sta $FE40
+        ldx #0                          ; the stub to pages 9-10 now: its
+:       lda stub_image,x                ;  bar routine serves the whole load
+        sta $0900,x
+        lda stub_image+$100,x
+        sta $0A00,x
+        inx
+        bne :-
+        lda #<BAR_ADDR
+        sta BP
+        lda #>BAR_ADDR
+        sta BP+1
+        ldx #<c_ti
+        ldy #>c_ti
+        jsr $FFF7                       ; *LOAD MTITLE 3000
+        lda #$30                        ; the picture: shadow $3000-$57FF
+        ldx #40
+        jsr park
 .ifndef TUBE
         jmp l_cont
 .else
-        ; TUBE MASTER (docs/tube_master.md H4): first, while nothing is parked
-        ; in the shadow screen (the MOS writes it from here), the fill server:
-        ; SERVER into the second processor (its own address), started there
-        ; through the MOS's Tube host code at &0406 -- claim, then transfer
-        ; type 4, execute. The host then serves the second processor (the
-        ; MOS's Tube loop) until the server's first act, an OSCLI: *GOIO
-        ; 1903, l_cont above, the rest of the boot.
+        ; TUBE MASTER (docs/tube_master.md H4): the fill server: SERVER into
+        ; the second processor (its own address), started there through
+        ; the MOS's Tube host code at &0406 -- claim, then transfer type 4,
+        ; execute. The host then serves the second processor (the MOS's
+        ; Tube loop) until the server's first act, an OSCLI: *GOIO 1903,
+        ; l_cont above, the rest of the boot.
         ldx #<c_sv
         ldy #>c_sv
         jsr $FFF7                       ; *LOAD SERVER
+        jsr bar
 @claim: lda #$C0 + TUBE_ID
         jsr $0406
         bcc @claim
@@ -148,13 +150,13 @@ park:                                   ; main $3000 (X pages) -> shadow page A
         sei
 @park:  ldy #0
 @pk1:   lda ($80),y                     ; main page -> bounce
-        sta $0A00,y
+        sta $0B00,y
         iny
         bne @pk1
         lda $FE34
         ora #$04                        ; X: CPU on shadow
         sta $FE34
-@pk2:   lda $0A00,y                    ; bounce -> shadow page
+@pk2:   lda $0B00,y                    ; bounce -> shadow page
         sta ($82),y
         iny
         bne @pk2
@@ -195,28 +197,38 @@ copy:                                   ; A = bank: $3000-$6FFF -> $8000
         sta $FE30
         sta ROMSEL_COPY
         cli
-        rts
+        jmp bar                         ; (a bank loaded)
 oldrom: .byte 0
+c_ti:   .byte "LOAD MTITLE ", STAGE, 13
 c_b4:   .byte "LOAD MBANK4 ", STAGE, 13
 c_b7:   .byte "LOAD MBANK7 ", STAGE, 13
 c_b5:   .byte "LOAD MBANK5 ", STAGE, 13
 c_b6:   .byte "LOAD MBANK6 ", STAGE, 13
-c_hz:   .byte "LOAD MHAZEL ", STAGE, 13
-c_an:   .byte "LOAD MANDY ", STAGE, 13
-c_pn:   .byte "LOAD MPANEL ", STAGE, 13
-c_gn:   .byte "LOAD MGUN ", STAGE, 13
+c_pk:   .byte "LOAD MPARK ", STAGE, 13
 .ifdef TUBE
 c_sv:   .byte "LOAD SERVER", 13
 .endif
 vdu_init:
         .byte 22, 130                   ; MODE 130: Mode 2 in shadow RAM
+        .byte 23, 1, 0, 0, 0, 0, 0, 0, 0, 0     ; the cursor off
 vdu_end:
+crtc_tab:                               ; walk_drv.s's window (and cur_park)
+        .byte 1, 64, 2, 90, 6, 20, 7, 28, 8, 0, 10, $20
+        .byte 14, $3F, 15, $FF, 12, $30 >> 3, 13, 0
+crtc_end:
 
 stub_image:
-        .segment "STUB"                 ; runs at $0900
+        .segment "STUB"                 ; runs at $0900 (copied there first)
 stub:
-        jmp s_load
-s_go:                                   ; the loads are done
+s_load:
+        ldx #<s_main
+        ldy #>s_main
+        jsr $FFF7                       ; *LOAD MMAIN (to its own $0F00)
+        jsr bar
+        ldx #<s_cbits
+        ldy #>s_cbits
+        jsr $FFF7                       ; *LOAD MCBITS (to its own $5800) -- LAST
+        jsr bar
 .ifdef TUBE
         sei
         lda #$1D                        ; no Tube interrupts (clear Q J M V)
@@ -225,68 +237,29 @@ s_go:                                   ; the loads are done
         sta $FEE0                       ;  1 (set I): it waits to see I
 .endif
         sei
-        lda #$00
-        sta $80
-        sta $82
-        lda #$30
-        sta $81                         ; shadow source
-        lda #$C0
-        sta $83                         ; HAZEL destination
-        ldx #HAZEL_PAGES
-@hz:    lda $FE34
-        ora #$04                        ; X: read the parked page from shadow
+        lda $FE34                       ; X (read the parked streams in
+        ora #$0C                        ;  shadow) and Y (HAZEL at $C000)
         sta $FE34
-        ldy #0
-@h1:    lda ($80),y
-        sta $0A00,y
-        iny
-        bne @h1
-        lda $FE34
-        and #$FB
-        ora #$08                        ; X off, Y on: write HAZEL
-        sta $FE34
-@h2:    lda $0A00,y
-        sta ($82),y
-        iny
-        bne @h2
-        lda $FE34
-        and #$F7                        ; Y off again (ROM back at $C000)
-        sta $FE34
-        inc $81
-        inc $83
-        dex
-        bne @hz
-        lda #$30 + HAZEL_PAGES          ; ANDY: shadow -> $8000, direct (X puts
-        sta $81                         ; shadow at $3000-$7FFF; ROMSEL bit 7
-        lda #$80                        ; puts ANDY at $8000-$8FFF)
-        sta $83
-        sta $FE30
-        lda $FE34
-        ora #$04
-        sta $FE34
-        ldx #ANDY_PAGES
-@an:    lda ($80),y                     ; (Y = 0 from the HAZEL loop)
-        sta ($82),y
-        iny
-        bne @an
-        inc $81
-        inc $83
-        dex
-        bne @an
-        lda #>PANEL_STAGE               ; the panel -> MPANEL, the gun body
-        sta $81                         ;  -> MGUN0 (X still on: shadow to
-        lda #>MPANEL                    ;  shadow; both clear of HAZEL's and
-        sta $83                         ;  ANDY's parked copies, now done)
-        ldx #PANEL_PAGES
-        jsr s_copy
-        lda #>GUN_STAGE
+        ldx #0
+@un:    lda s_src,x                     ; each stream: from shadow, to its
+        sta $80                         ;  home (ANDY: ROMSEL bit 7)
+        lda s_src+1,x
         sta $81
-        lda #>MGUN0
+        lda s_dst,x
+        sta $82
+        lda s_dst+1,x
         sta $83
-        ldx #GUN_PAGES
-        jsr s_copy
+        lda s_rom,x
+        sta $FE30
+        phx
+        jsr lz
+        plx
+        inx
+        inx
+        cpx #8
+        bne @un
         lda $FE34
-        and #$FB
+        and #$F3                        ; X and Y off again
         sta $FE34
         lda #5                          ; the music player (step 7ac): bank 5
         sta $FE30                       ;  MUS_STAGE -> MUS_ORG, pages 3..7,
@@ -294,19 +267,10 @@ s_go:                                   ; the loads are done
         sta $81
         lda #>MUS_ORG
         sta $83
+        stz $80
+        stz $82
+        ldy #0
         ldx #5
-        jsr s_copy
-        stz $FE30                       ; ANDY out (the engine pages its own)
-        jmp DRV_ORG                     ; -> driver (SEI held; no OS from here)
-s_load:
-        ldx #<s_main
-        ldy #>s_main
-        jsr $FFF7                       ; *LOAD MMAIN (to its own $0F00)
-        ldx #<s_cbits
-        ldy #>s_cbits
-        jsr $FFF7                       ; *LOAD MCBITS (to its own $5800) -- LAST
-        jmp s_go
-s_copy:                                 ; X pages ($80) -> ($82), Y = 0
 @cp:    lda ($80),y
         sta ($82),y
         iny
@@ -315,10 +279,91 @@ s_copy:                                 ; X pages ($80) -> ($82), Y = 0
         inc $83
         dex
         bne @cp
+        stz $FE30                       ; ANDY out (the engine pages its own)
+        jmp DRV_ORG                     ; -> driver (SEI held; no OS from here)
+
+; lz: the stream at ($80) into ($82) (lzpark.decode): $00-$7F t + 1
+; literals, $80-$FE (t & $7F) + 3 bytes from dest - d (d: 2 bytes), $FF end
+lz:     lda ($80)
+        jsr s_inc
+        cmp #$FF
+        beq @rts
+        cmp #$80
+        bcs @m
+        tax
+        inx
+@l:     lda ($80)
+        sta ($82)
+        jsr s_inc
+        jsr d_inc
+        dex
+        bne @l
+        bra lz
+@m:     and #$7F
+        clc
+        adc #3
+        tax
+        sec                             ; the source: dest - d
+        lda $82
+        sbc ($80)
+        sta $84
+        jsr s_inc                       ; (INC keeps C)
+        lda $83
+        sbc ($80)
+        sta $85
+        jsr s_inc
+@c:     lda ($84)
+        sta ($82)
+        inc $84
+        bne :+
+        inc $85
+:       jsr d_inc
+        dex
+        bne @c
+        bra lz
+@rts:   rts
+s_inc:  inc $80
+        bne :+
+        inc $81
+:       rts
+d_inc:  inc $82
+        bne :+
+        inc $83
+:       rts
+
+; bar: BAR_W more columns of the loading bar (lines 154-157 of the
+; picture, its black last row), BP the next; ACCCON X for the call
+bar:    lda $FE34
+        ora #$04
+        sta $FE34
+        ldx #BAR_W
+@b:     lda #BAR_BYTE
+        ldy #3
+:       sta (BP),y
+        dey
+        bpl :-
+        lda BP
+        clc
+        adc #8
+        sta BP
+        bcc :+
+        inc BP+1
+:       dex
+        bne @b
+        lda $FE34
+        and #$FB
+        sta $FE34
         rts
+
+; the streams: shadow source, destination, ROMSEL (HAZEL, ANDY, the gun,
+; the panel -- the panel last: its stream sits above its home)
+s_src:  .word S_HAZEL, S_ANDY, S_GUN, S_PANEL
+s_dst:  .word $C000, $8000, MGUN0, MPANEL
+s_rom:  .byte 0, 0, $80, 0, 0, 0, 0, 0  ; (indexed by X = 2 * stream)
 s_main:  .byte "LOAD MMAIN", 13
 s_cbits: .byte "LOAD MCBITS", 13
 s_end:
 stub_len = s_end - stub
-        .assert stub_len <= 256, error, "stub must fit page 9"
+        .assert stub_len <= 512, error, "stub must fit pages 9 and 10"
         .assert l_cont = $1903, error, "the server's *GOIO 1903 lands on l_cont"
+        .assert S_PANEL >= MPANEL + $600, error, "the panel's stream sits above its home"
