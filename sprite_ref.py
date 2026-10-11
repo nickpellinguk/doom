@@ -90,7 +90,7 @@ class Staging:
             for o in by_ss.get(idx, ()):
                 p = project(o, box['ctx'], box['vz'])
                 if p is not None:
-                    self.staged.append((idx, p, list(box['clips'].spans)))
+                    self._stage((idx, p, list(box['clips'].spans)))
         dw._anim_ss_hook = ss_hook
         orig_bsp = dw.packed_render_bsp
 
@@ -102,6 +102,10 @@ class Staging:
             return super().render(px, py, ab)
         finally:
             dw._anim_ss_hook, dw.packed_render_bsp = orig, orig_bsp
+
+
+    def _stage(self, e):
+        self.staged.append(e)
 
 
 class SpriteRef(Staging, Fm.FillRef):

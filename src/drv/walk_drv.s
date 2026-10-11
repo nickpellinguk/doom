@@ -348,7 +348,9 @@ vxinit:
     JSR MHZ_PATTERN
     LDA #ACC_D | ACC_Y
     STA $FE34
-    JSR ok_clear                    ; MASTER: billboard objects OFF -- they
+.ifndef TUBE                        ; (TUBE MASTER: objects ON -- H6's
+    JSR ok_clear                    ;  sprite requests; anim_init filled
+.endif                              ;  OBJ_ANYB) MASTER: objects OFF -- they
                                     ; apply span lines outside any seg's
                                     ; fill window (no sprites yet). (Not
                                     ; ok_flip: that toggles, and OFF is

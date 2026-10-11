@@ -5,7 +5,8 @@
 ;
 ; Records (tube_dl.encode): WALL groups $80 | n-1, tid, k0, then n byte
 ; columns; SPAN groups $40 | n-1, y (or $88 + y/2: pairs), then n spans;
-; FILL $01, k, y0, y1, byte; $00 ends the frame.
+; FILL $01, k, y0, y1, byte; SPRITE groups (MASTER, H6) $20 | n-1, spr,
+; k0, step, then n byte columns; $00 ends the frame.
 ;
 ; Textures and flats are the Master's own images (master_assets): a
 ; stored wall column at ptr + (i >> 3) * 256 + (i & 7) in its bank, its
@@ -98,7 +99,16 @@ next:   GETB
         cmp #$40
         bcc :+
         jmp span
-:       jmp fill
+:
+.ifdef MASTER
+        cmp #$20                        ; H6: SPRITE groups, in bank 6
+        bcc :+
+        ldx #6                          ; (BANK_C: the art and the loop)
+        stx $FE30
+        jmp sprite
+:
+.endif
+        jmp fill
 done:   rts
 
 ; ---------------------------------------------------------------------------
@@ -760,3 +770,118 @@ tx_ix:   .res 896                       ; the column indexes, every texture
 .endif
 ; a WALL group's columns' page (SCREEN + kk >> 5)
 wch:     .res 1
+
+.ifdef MASTER
+; ---------------------------------------------------------------------------
+; SPRITE (H6): one sprite's consecutive byte columns. Bank 6 holds the art
+; (hsprite_tab.s, column-major, top row first) and this loop; the dispatch
+; in next pages it. A column's texel is read ONCE a line pair: the even
+; line takes the byte, the odd its FLIP (the cross-hatch); SPR_TRANS is
+; skipped, so nothing behind a transparent texel is touched.
+; ---------------------------------------------------------------------------
+        .segment "MB6C"
+sbase   = k1                            ; the kind's first column index
+sprite: and #$1F
+        sta cnt                         ; entries - 1
+        GETB                            ; spr
+        tax
+        lda spr_first,x
+        sta sbase
+        GETB                            ; k0
+        sta kk
+        GETB                            ; step (a line): doubled, a pair
+        asl a
+        sta vst
+        GETB
+        rol a
+        sta vst+1
+sp_col: GETB                            ; y0
+        sta ln
+        GETB                            ; y1
+        sec
+        sbc ln
+        sta nl
+        inc nl                          ; lines
+        GETB                            ; col: its address into the reads
+        clc
+        adc sbase
+        tax
+        lda spr_cl,x
+        sta st1+1
+        sta st2+1
+        sta st3+1
+        lda spr_ch,x
+        sta st1+2
+        sta st2+2
+        sta st3+2
+        GETB                            ; v0 (8.8)
+        sta v
+        GETB
+        sta v+1
+        jsr cellptr                     ; scr, Y for (ln, kk)
+        lda ln
+        lsr a
+        bcc sp_even
+        ldx v+1                         ; an odd first line: alone, FLIPped
+st1:    lda $FFFF,x
+        cmp #SPR_TRANS
+        beq :+
+        tax
+        lda flip,x
+        sta (scr),y
+:       jsr sp_vst
+        dec nl
+        beq sp_end
+        iny
+        cpy #8
+        bne sp_even
+        jsr nextrow
+sp_even:
+        lda nl
+        cmp #2
+        bcc sp_last
+        ldx v+1                         ; a line pair: the byte, its FLIP
+st2:    lda $FFFF,x
+        cmp #SPR_TRANS
+        beq sp_skip
+        sta (scr),y
+        iny
+        tax
+        lda flip,x
+        sta (scr),y
+        iny
+        bra sp_adv
+sp_skip:
+        iny
+        iny
+sp_adv: jsr sp_vst
+        dec nl
+        dec nl
+        beq sp_end
+        cpy #8
+        bne sp_even
+        jsr nextrow
+        bra sp_even
+sp_last:
+        ldx v+1                         ; a last even line alone
+st3:    lda $FFFF,x
+        cmp #SPR_TRANS
+        beq sp_end
+        sta (scr),y
+sp_end: inc kk
+        dec cnt
+        bmi :+
+        jmp sp_col
+:       jmp next
+; v += the pair step
+sp_vst: clc
+        lda v
+        adc vst
+        sta v
+        lda v+1
+        adc vst+1
+        sta v+1
+        rts
+        .include "hsprite_tab.s"
+.endif
+

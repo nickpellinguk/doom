@@ -109,7 +109,10 @@ HDR_PER_PAGE = 256 / LAY_HDR_STRIDE     ; page-slotted seg headers
 .exportzp zw_ddh
 .endif
 .ifdef TUBE
-.export rq_frame, rq_fill, rq_end
+.export rq_frame, rq_fill, rq_end, rq_objs
+.import obj_sd_l, obj_sd_h, obj_scx_l, obj_scx_h, obj_syt_l, obj_syt_h
+.import obj_syb_l, obj_syb_h, obj_sasp
+.importzp obj_n
 .export hi16, flip                      ; (tube/hdraw.s: lsr4 and flip)
 .endif
 
@@ -247,6 +250,9 @@ mf_hi:   .res 1
 mf_x:    .res 1                         ; current byte column's first pixel
 mf_i:    .res 1                         ; snapshot cursor
 sn_n:    .res 1                         ; snapshot count
+.ifdef TUBE
+rq_oi:   .res 1                         ; rq_objs: the slot being sent
+.endif
 ; seg lines: y = y1 + floor(D * (x - sx1) / W)
 l_sx1:   .res 2
 l_w:     .res 2
@@ -6629,6 +6635,54 @@ rq_after:
    LDA POOL_NEXT,X
    TAX
    JMP @lv
+
+; rq_objs (objects.s obj_subsector, bank 6 paged): each staged object
+; slot as a SPRITE request (H6, tube_req.py): $02, kind, depth, cx,
+; yt - Y_BIAS, yb - Y_BIAS, then EVERY live span (the sprite's columns are
+; the server's to find), $FF
+rq_objs:
+   LDA #0
+   STA mf_lo                            ; rq_after's window: the whole pool
+   LDA #$FF                             ;  (no span starts at 255)
+   STA mf_hi
+   LDX #0
+@ob:
+   CPX obj_n
+   BCC @go
+   RTS
+@go:
+   STX rq_oi
+   LDA #$02
+   PUTB
+   LDA obj_sasp,X
+   PUTB
+   LDA obj_sd_l,X
+   PUTB
+   LDA obj_sd_h,X
+   PUTB
+   LDA obj_scx_l,X
+   PUTB
+   LDA obj_scx_h,X
+   PUTB
+   LDA obj_syt_l,X
+   SEC
+   SBC #48                              ; (the borrow kept through PUTB)
+   PUTB
+   LDA obj_syt_h,X
+   SBC #0
+   PUTB
+   LDA obj_syb_l,X
+   SEC
+   SBC #48
+   PUTB
+   LDA obj_syb_h,X
+   SBC #0
+   PUTB
+   LDX zp_head
+   JSR rq_after
+   LDX rq_oi
+   INX
+   JMP @ob
 
 ; the six line ends' offsets in the VX1 / VX2 blocks: sx1 sx2 ft1 ft2 fb1 fb2
 rq_lof:

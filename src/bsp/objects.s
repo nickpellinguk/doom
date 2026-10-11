@@ -89,6 +89,11 @@ OBJ_ANYB:    .res 25                    ; [25] per-ss billboard bitmap, boot-fil
                                         ;  reason this block is declared, not baked.
 obj_cur     = obj_t                     ; probe x cursor: columns covered so far
 SEG_CODE
+.ifdef TUBE
+.export obj_sd_l, obj_sd_h, obj_scx_l, obj_scx_h, obj_syt_l, obj_syt_h
+.export obj_syb_l, obj_syb_h, obj_sasp
+.import rq_objs
+.endif
 
 .assert obj_Y = obj_X + 12, error, "obj_hex addresses the lid as obj_X+12"
 
@@ -247,6 +252,15 @@ obj_skip:
    CPX #LAY_N_OBJ
    BCC obj_scan
 obj_run_end:
+.ifdef TUBE
+; TUBE MASTER (docs/tube_master.md H6): the slots go to the second
+; processor as sprite requests (mfill.s rq_objs) -- no outline art and
+; NO TIGHTEN: a sprite with transparent texels must not close the
+; columns behind it. The server orders and draws them, last.
+   PAGE BANK_C
+   JSR rq_objs
+   JMP obj_done
+.endif
 ; PASS 2 -- draw FRONT TO BACK.  Order matters now that each billboard
 ; tightens behind itself: the nearest must claim its columns first, or a
 ; farther one would tighten them and clip the nearer one away.  n <= 3,

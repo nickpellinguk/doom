@@ -45,17 +45,24 @@ Bytes, one frame:
             H4z); a span is the pool's own fields, XSTART XEND TXLO
             TDEN TL BL TR BR BXLO BDEN (u8: line ends as start +
             delta)                                     10 B each, + 1
+  sprite    $02 (H6), at the start of an object's home subsector, one
+            per object staged there (objects.s obj_project), then:
+            kind (u8), depth (u16: the staged key), cx, yt - Y_BIAS,
+            yb - Y_BIAS (s16)                                    9 B
+            the pool's live spans, ALL of them, $FF (as above)
   end       $00
 """
 import struct
 
 import fill_ref as Fm
+import sprite_ref
 import tube_dl
 from span_clip_6502 import Span
 
 
-class ReqRef(tube_dl.DLRef):
-    """DLRef recording, per frame, the view and each wall seg's request."""
+class ReqRef(sprite_ref.Staging, tube_dl.DLRef):
+    """DLRef recording, per frame, the view, each wall seg's request and
+    each staged object's (sprite_ref.Staging)."""
 
     def __init__(self):
         super().__init__()
@@ -68,6 +75,12 @@ class ReqRef(tube_dl.DLRef):
     def render(self, px, py, ab):
         self.reqs = []
         return super().render(px, py, ab)
+
+    def _stage(self, e):
+        super()._stage(e)
+        ss, (vy, cx, yt, yb, kind), spans = e
+        self.reqs.append(dict(obj=True, ss=ss, vy=vy, cx=cx, yt=yt - self.bias,
+                              yb=yb - self.bias, kind=kind, spans=spans))
 
     def _fill(self, si, before, after, x_lo, x_hi, sx1, sx2, ft1, ft2, fb1, fb2, solid):
         lo, hi = max(0, x_lo), min(255, x_hi)
@@ -105,6 +118,13 @@ def encode(frame):
     out = bytearray(px.to_bytes(3, 'little', signed=True) + py.to_bytes(3, 'little', signed=True)
                     + bytes((vz & 0xFF, ab, sm, cm, sn | so << 1 | cn << 2 | co << 3)))
     for r in frame['reqs']:
+        if r.get('obj'):
+            out.append(0x02)
+            out += struct.pack('<BHhhh', r['kind'], r['vy'], r['cx'], r['yt'], r['yb'])
+            for s in r['spans']:
+                out += _span_bytes(s)
+            out.append(0xFF)
+            continue
         assert r['si'] < 1024
         out.append(0x01)
         out += struct.pack('<H', r['si'] | r['solid'] << 10 | r['c1'] << 11 | r['c2'] << 12)
@@ -131,7 +151,23 @@ def decode(b):
                  trig=(b[8], f & 1, f >> 1 & 1, b[9], f >> 2 & 1, f >> 3 & 1), reqs=[])
     p = 11
     s8 = lambda x: x - 256 if x & 0x80 else x
+
+    def spans_at(p):
+        lst = []
+        while b[p] != 0xFF:
+            xs, xe, tx0, tden, tl, bl, tr, br, bx0, bden = b[p:p + 10]
+            s = Span((xs, xe, tx0, (tx0 + tden) & 0xFF, tl, bl, tr, br))
+            s.bxlo, s.bxhi = bx0, (bx0 + bden) & 0xFF
+            lst.append(s)
+            p += 10
+        return lst, p + 1
     while b[p]:
+        if b[p] == 0x02:
+            kind, vy, cx, yt, yb = struct.unpack_from('<BHhhh', b, p + 1)
+            spans, p = spans_at(p + 10)
+            frame['reqs'].append(dict(obj=True, vy=vy, cx=cx, yt=yt, yb=yb, kind=kind,
+                                      spans=spans))
+            continue
         assert b[p] == 0x01, f'request tag ${b[p]:02X}'
         w, = struct.unpack_from('<H', b, p + 1)
         si, solid, c1, c2 = w & 0x3FF, w >> 10 & 1, w >> 11 & 1, w >> 12 & 1
@@ -145,14 +181,7 @@ def decode(b):
             p += 2
         spans = []
         for _ in range(2):
-            lst = []
-            while b[p] != 0xFF:
-                xs, xe, tx0, tden, tl, bl, tr, br, bx0, bden = b[p:p + 10]
-                s = Span((xs, xe, tx0, (tx0 + tden) & 0xFF, tl, bl, tr, br))
-                s.bxlo, s.bxhi = bx0, (bx0 + bden) & 0xFF
-                lst.append(s)
-                p += 10
-            p += 1
+            lst, p = spans_at(p)
             spans.append(lst)
         frame['reqs'].append(dict(si=si, ss=ss, dz=(s8(dc), s8(df)), lo=lo, hi=hi, line=line,
                                   solid=bool(solid),
@@ -195,10 +224,17 @@ class FillServer(tube_dl.DLRef):
         self.near, self.geom, self.bands, self.rows = {}, {}, {}, {}
         self.walls, self.pcells = [], {}
         self.xt, self.dz = {}, {}
+        staged = []
         for r in frame['reqs']:
+            if r.get('obj'):                    # H6: drawn after the fill
+                staged.append((None, (r['vy'], r['cx'], r['yt'] + self.bias,
+                                      r['yb'] + self.bias, r['kind']), r['spans']))
+                continue
             self.dz[r['si']] = r['dz']
             self.near[r['si']] = (r['c1'], r['c2'], 0, 0, 0, 0) + r['m']
             self.xt[r['si']] = r['t']
             self._fill(r['si'], r['before'], r['after'], r['lo'], r['hi'], *r['line'], r['solid'])
         self.dl = self._display_list()
-        return self._compose()
+        self.sprites = sprite_ref.records(staged, self.top, self.bot, self.bias, Fm.LINES)
+        self.dl += self.sprites
+        return bytes(sprite_ref.draw_records(bytearray(self._compose()), self.sprites))

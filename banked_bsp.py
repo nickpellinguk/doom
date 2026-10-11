@@ -416,9 +416,13 @@ class MasterBspRender(BspRender6502):
         # sky map is seeded where the disc builder seeds it.
         import fill_ref
         self.bm.define_shadow()
-        _anyb = _sym('OBJ_ANYB')
-        for i in range(32):
-            self.bm[_anyb + i] = 0
+        # (the TUBE link keeps them ON, as its driver does: H6's sprite
+        # requests -- build_banked seeded the bitmap)
+        import os as _os
+        if 'TUBE' not in _os.environ.get('DOOM_ASMDEFS', ''):
+            _anyb = _sym('OBJ_ANYB')
+            for i in range(32):
+                self.bm[_anyb + i] = 0
         sk = _sym('mf_skymap')
         for i, b in enumerate(fill_ref.sky_bitmap()):
             self.bm[sk + i] = b

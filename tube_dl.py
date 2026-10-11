@@ -252,7 +252,7 @@ def draw(dl, tex, tparams, flats):
 
 def size(dl):
     """The list's encoded bytes (module docstring sizes) and record counts."""
-    n = {'WALL': 0, 'SPAN': 0, 'FILL': 0}
+    n = {'WALL': 0, 'SPAN': 0, 'FILL': 0, 'SPRITE': 0}
     b = 0
     for r in dl:
         n[r['kind']] += 1
@@ -260,6 +260,8 @@ def size(dl):
             b += WALL_B + (0 if r['share'] else WALL_DH_B)
         elif r['kind'] == 'SPAN':
             b += SPAN_FAR_B if 'far' in r else SPAN_B
+        elif r['kind'] == 'SPRITE':
+            b += 5
         else:
             b += FILL_B
     return b, n
@@ -276,6 +278,10 @@ def size(dl):
 #           k0, k1, flat, u0, v0, du, dv                       (7 B)
 #           k0, k1, $FF, far byte                              (4 B)
 #   FILL  $01, k, y0, y1, byte  (FLIPped on odd lines iff the sky byte)
+#   SPRITE $20 | n-1, spr, k0, step lo, hi, then n byte columns k0, k0+1,
+#         ...: y0, y1, col, v0 lo, hi                          (5 B)
+#         (H6: after everything else, in drawing order, farthest first;
+#         a group is one sprite's consecutive columns, at most 32)
 # Groups hold at most 64 entries; a WALL group is one texture over
 # consecutive byte columns, a SPAN group one line.
 # ---------------------------------------------------------------------------
@@ -320,6 +326,18 @@ def encode(dl, fid):
         if r['kind'] == 'FILL':
             assert r['flip'] == (r['byte'] == M.SKY_BYTE)
             out += bytes((0x01, r['k'], r['y0'], r['y1'], r['byte']))
+    spr = [r for r in dl if r['kind'] == 'SPRITE']   # last, in drawing order
+    i = 0
+    while i < len(spr):
+        j = i + 1
+        while (j < len(spr) and j - i < 32 and spr[j]['spr'] == spr[i]['spr']
+               and spr[j]['step'] == spr[i]['step'] and spr[j]['k'] == spr[j - 1]['k'] + 1):
+            j += 1
+        a = spr[i]
+        out += bytes((0x20 | (j - i - 1), a['spr'], a['k'], a['step'] & 0xFF, a['step'] >> 8))
+        for r in spr[i:j]:
+            out += bytes((r['y0'], r['y1'], r['col'], r['v0'] & 0xFF, r['v0'] >> 8))
+        i = j
     return bytes(out + b'\0')
 
 
@@ -357,6 +375,14 @@ def decode(b, flat_name):
                     r.update(flat=flat_name[b[p + 2]], u0=b[p + 3], v0=b[p + 4], du=b[p + 5], dv=b[p + 6])
                     p += 7
                 dl.append(r)
+        elif op & 0x20:
+            n, spr, k, step = (op & 0x1F) + 1, b[p + 1], b[p + 2], b[p + 3] | b[p + 4] << 8
+            p += 5
+            for _ in range(n):
+                dl.append(dict(kind='SPRITE', k=k, y0=b[p], y1=b[p + 1], spr=spr, col=b[p + 2],
+                               v0=b[p + 3] | b[p + 4] << 8, step=step))
+                p += 5
+                k += 1
         else:
             dl.append(dict(kind='FILL', k=b[p + 1], y0=b[p + 2], y1=b[p + 3], byte=b[p + 4],
                            flip=b[p + 4] == M.SKY_BYTE))

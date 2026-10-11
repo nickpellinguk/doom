@@ -73,6 +73,7 @@ def main():
 
     os.environ['DOOM_ASMDEFS'] = 'TUBE=1'
     import tube_req
+    import sprite_ref
     from banked_mem import BankedMemory
     from symmap import sym
 
@@ -120,6 +121,16 @@ def main():
         if len(req['reqs']) != len(want['reqs']):
             why.append(f'{len(req["reqs"])} requests, model {len(want["reqs"])}')
         for a, b in zip(req['reqs'], want['reqs']):
+            if a.get('obj') != b.get('obj'):
+                why.append('order: ' + ''.join('o' if x.get('obj') else 's' for x in req['reqs'])
+                           + ' model ' + ''.join('o' if x.get('obj') else 's' for x in want['reqs']))
+                break
+            if a.get('obj'):                        # H6: a sprite request
+                k = [f for f in ('obj', 'kind', 'vy', 'cx', 'yt', 'yb') if a.get(f) != b.get(f)]
+                if k:
+                    why.append('object: ' + ' '.join(f'{f} {a.get(f)} (model {b.get(f)})' for f in k))
+                gaps['spans'] += _spans(a['spans']) != _spans(b['spans'])
+                continue
             k = [f for f in strict if a[f] != b[f]]
             if k:
                 why.append(f'seg {a["si"]}: ' + ' '.join(f'{f} {a[f]} (model {b[f]})' for f in k))
@@ -127,7 +138,10 @@ def main():
             gaps['spans'] += any(_spans(a[f]) != _spans(b[f]) for f in ('before', 'after'))
         nreq += len(req['reqs'])
         frame = S.serve(req)
-        ref = frames[n * 10240:(n + 1) * 10240]
+        # the Master's frame (objects off) with the model's sprites (H6)
+        ref = bytes(sprite_ref.draw_records(
+            bytearray(frames[n * 10240:(n + 1) * 10240]),
+            sprite_ref.records(H.staged, H.top, H.bot, H.bias, 136)))
         diff = sum(x != y for x, y in zip(frame, ref))
         if diff:
             why.append(f'served frame: {diff} bytes differ from the Master\'s')
