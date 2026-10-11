@@ -1,18 +1,18 @@
-# ARM1A0 31x17 tones (wall_art.TCH), space transparent; seeded by sprite_art.py
-  Y222222bGG.     .GGb222222Y
- Y2222222Ybbb.....bbbY2222222Y
-G222222222GBB.....BBG222222222G
-Y22222222222bB...Bb22222222222Y
-Y22222Y222222G.B.G222222Y22222Y
-GbGG2bG22222222GG2222222Gb2GGbG
-     BbG2222222YG222222GbB
-     BBbGY2YYGGGGGYYYYGbBB
-      BBBBbbbbbbbbbbbBBBB
-      B..BbGGGGGGGGGbB..B
-       ..BbGGGGGGGGGbB..
-       ..BbGYYYYYYYGbB..
-       B.BbGYYYYYYYGbB.B
-       GbBbGYYYYYYYGbBbG
-       YGbGY2222222YGG2Y
-        YY222222222222Y
-          YGGbbBbbGGY
+# ARM1A0 31x17 tones (wall_art.TCH), space transparent; drawn by hand
+   .......           .......
+ ..2222222..       ..2222222..
+.222222222222.....222222222222.
+.2222ggggggg2G...G2ggggggg2222.
+.2gggggggggggG. .Gggggggggggg2.
+.ggggGgggggggg...ggggggggGgggg.
+ ...ggg22ggggggggggggg22ggg...
+    .gg22ggggggGgggggg22gg.
+    .gg22ggggggGgggggg22gg.
+    .ggg2ggggggGgggggg2ggg.
+    .ggggggggggGgggggggggg.
+    .GgggggggggGgggggggggG.
+    .GGggggggggGggggggggGG.
+    .GGGgggggGGGGGgggggGGG.
+    ..GGGGGGGGGGGGGGGGGGG..
+     .....................
+

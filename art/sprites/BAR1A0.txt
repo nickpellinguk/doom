@@ -1,33 +1,33 @@
-# BAR1A0 23x32 tones (wall_art.TCH), space transparent; seeded by sprite_art.py
-  cycccccccccc6www666
-6wcCbbCCCY222Yccccc6wcC
-wwcCYY222222222YYCcc6Cb
-w6wwwyyyyyccccCCcccCb.b
-wccccccCCCCCCCCCCbb.bbC
-wyy3ycccCCCCCCCbb.bbbbC
-wwwwwyccccccCCCCCbbbbbb
-w6www3yyycccccccCCbBbbC
-6ccycccccCCCCCCCCbb.bbC
-wcccCCCCCCbbbbbBBbBBbCC
-wcc3ycCCCCCbbbbB.bbbbbC
-wccwyccccCCCCCCbb...bbC
-wccwycccccCCCCCbb...bbC
-wccwycccccCCCCCbb...BbC
-wyy3ycccccCCCCCbb...BbC
-wwww3yccycccCCCCCbbbb.b
-w6www3yyycccccccCCbBBBC
-6ccycccccCCCCCCCCbb.BBC
-wcccCCCCCCbbbbbBBbBBbbb
-wcy3yCCCCCCbbbbB.bbbbbC
-wcywyccccCCCCCCbb...bbC
-wcywycccccCCCCCbb...bbC
-wyywycccccCCCCCbb...bbC
-ww3w3cccycccCCCCCbbbbbb
-w3ww3yyyycccccccCCbBbbC
-6ccycccccCCCCCCCCbb.bbC
-wcccCCCCCCbbbbbBBbB.bbC
-wcc3ycCCCCCbbbbB.bb.bbC
-wycwycccccCCCCCbb...bbC
-6yc33ccycccCCCCCb...bBC
-ccyycycccCCCCCCCbBBBb.b
-  CCCCCbbbbbbb......b
+# BAR1A0 23x32 tones (wall_art.TCH), space transparent; drawn by hand
+   .................
+ ..GGGGGGGGGGGGGGGGG..
+.GGgggggggggggggggggGG.
+.Gg22222222222222222gG.
+.GGgggggggggggggggggGG.
+.GGGGGGGGGGGGGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.YYyyyYYYYYYYYYYYYYYYY.
+.YYyyyYYYYYYYYYYYYYYYY.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.YYyyyYYYYYYYYYYYYYYYY.
+.YYyyyYYYYYYYYYYYYYYYY.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.Ggg2ggggggggGGGGGGGGG.
+.YYyyyYYYYYYYYYYYYYYYY.
+.YYyyyYYYYYYYYYYYYYYYY.
+.Ggg2ggggggggGGGGGGGGG.

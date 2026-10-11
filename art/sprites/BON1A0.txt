@@ -1,19 +1,19 @@
-# BON1A0 14x18 tones (wall_art.TCH), space transparent; seeded by sprite_art.py
-      6w
-     C66b
-     bbbb
-     bCCb
-     bCBb
-     bBbb
-    bbCBBb
-  bbbbbCBbbb
- bbbbbCBbbbbC
- bbwbCCCBbbbC
-CbwwbCCCCBbbbC
-CbwwbbCCCBbbbC
-CbbbCCBbbbbbbb
-BCBC.b...bCBBC
- bb..b...bbCb
- bBCCCbbbbCBb
-  bBbBCbbCBb
-    bCCCCb
+# BON1A0 14x18 tones (wall_art.TCH), space transparent; drawn by hand
+     .yy.
+     .yy.
+     .bb.
+     .4b.
+    .b4bb.
+   .bb4bbb.
+  .bb44bbbb.
+ .bb44bbbbBB.
+ .b44bbbbbbB.
+.bb44bbbbbbBB.
+.b44bbbbbbbbB.
+.b4bbbbbbbbbB.
+.bbbbbbbbbbBB.
+.bbbbbbbbbBBB.
+ .bbbbbbbBBB.
+ .BbbbbbBBBB.
+  .BBBBBBBB.
+   ........

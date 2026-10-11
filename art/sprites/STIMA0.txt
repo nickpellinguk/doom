@@ -1,16 +1,16 @@
-# STIMA0 14x15 tones (wall_art.TCH), space transparent; seeded by sprite_art.py
-  cccccccccc
- 666666666666
-6wwwwwwwwwwww6
-CccccccccccccC
-.cCCCCcCCCCCc.
-brCCCCwcCCCCrb
-bCrbbC6CbbCrCb
-bCCrrbbbbrrCCb
-CcccCCrrCCCccb
-CcccCCrrCCCccb
-bCCCrrrrrrCCCb
-bCCCrrrrrrCCCb
-bCCCCCrrCCCCC.
-bbbbbbRRbbbbb.
-BRRRRRRRRRRRRB
+# STIMA0 14x15 tones (wall_art.TCH), space transparent; drawn by hand
+  ..........
+ .wwwwwwwwww.
+.wwwwwwwwwwww.
+.666666666666.
+.wwwwwwwwwwww.
+.wwwwwrrwwwww.
+.wwwwwrrwwwww.
+.wwwrrrrrrwww.
+.wwwrrrrrrwww.
+.wwwwwrrwwwww.
+.wwwwwrrwwwww.
+.wwwwwwwwwwww.
+.666666666666.
+.cccccccccccc.
+ ............
