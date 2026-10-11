@@ -576,6 +576,38 @@ mf_snap:
 @rts:
    RTS
 
+.ifndef SERVER
+; hdr_slot: tx_slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo /
+; LAY_HDR_STRIDE, the seg's slot (H4y: was a loop of adds a page and of
+; subtracts a header, ~430 cycles). p * 28 = (8 p - p) * 4 (p < 32); hdr
+; lo is 9 i (i < 28), and i = (29 * lo) >> 8 exactly (for i <= 51). X, Y
+; used
+hdr_slot:
+.assert HDR_PER_PAGE = 28 .and LAY_HDR_STRIDE = 9, error, "hdr_slot: 28 headers of 9 a page"
+   SEC
+   LDA zp_seg_hdr_p+1
+   SBC #>ROM_SEG_HDR_C
+   STA tx_slot                          ; p
+   ASL A
+   ASL A
+   ASL A
+   SEC
+   SBC tx_slot                          ; 7 p
+   STZ tx_slot+1
+   ASL A
+   ROL tx_slot+1
+   ASL A
+   ROL tx_slot+1
+   STA tx_slot
+   QMUL zp_seg_hdr_p, #29               ; A = (29 lo) >> 8 = i
+   CLC
+   ADC tx_slot
+   STA tx_slot
+   BCC :+
+   INC tx_slot+1
+:  RTS
+.endif
+
 .ifndef TUBE                            ; (the fill: on the second processor)
 ; ============================================================================
 ; mf_fill: fill what the seg's span updates removed
@@ -4734,37 +4766,11 @@ m8_nx:
 ; ANDY's $8000-$8FFF, so it runs with ANDY paged.
 ; ============================================================================
 .segment "MB6C"
+
 ; ---- tx_seg ----------------------------------------------------------------
 tx_seg:
 .ifndef SERVER                          ; (SERVER: tx_slot is the request's)
-   ; slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo / LAY_HDR_STRIDE
-   STZ tx_slot
-   STZ tx_slot+1
-   SEC
-   LDA zp_seg_hdr_p+1
-   SBC #>ROM_SEG_HDR_C
-   TAX
-   BEQ @lo
-@pg:
-   CLC
-   LDA tx_slot
-   ADC #HDR_PER_PAGE
-   STA tx_slot
-   BCC :+
-   INC tx_slot+1
-:  DEX
-   BNE @pg
-@lo:
-   LDA zp_seg_hdr_p
-@l9:
-   CMP #LAY_HDR_STRIDE
-   BCC @slot
-   SBC #LAY_HDR_STRIDE                  ; (C = 1)
-   INC tx_slot
-   BNE @l9
-   INC tx_slot+1
-   BRA @l9
-@slot:
+   JSR hdr_slot                         ; tx_slot
 .endif
    ; ---- ANDY: the slot's dressing and length ----
    LDA #BANK_C | $80                    ; ANDY over $8000-$8FFF
@@ -6475,34 +6481,7 @@ rq_fill:
 @go:
    LDA #$01
    PUTB
-   ; slot = (hdr hi - >ROM_SEG_HDR_C) * HDR_PER_PAGE + hdr lo / LAY_HDR_STRIDE
-   STZ tx_slot
-   STZ tx_slot+1
-   SEC
-   LDA zp_seg_hdr_p+1
-   SBC #>ROM_SEG_HDR_C
-   TAX
-   BEQ @lo
-@pg:
-   CLC
-   LDA tx_slot
-   ADC #HDR_PER_PAGE
-   STA tx_slot
-   BCC :+
-   INC tx_slot+1
-:  DEX
-   BNE @pg
-@lo:
-   LDA zp_seg_hdr_p
-@l9:
-   CMP #LAY_HDR_STRIDE
-   BCC @slot
-   SBC #LAY_HDR_STRIDE                  ; (C = 1)
-   INC tx_slot
-   BNE @l9
-   INC tx_slot+1
-   BRA @l9
-@slot:
+   JSR hdr_slot                         ; tx_slot
    LDA tx_slot
    PUTB
    LDA tx_slot+1

@@ -919,6 +919,18 @@ Memory: 5.8K free (the span pool aside), 4.0K of it in one piece for
 code above `fs_imgend`. The host on `TUBE_SLOW`: engine 642K, drawer
 400K (521 ms at 2MHz).
 
+## H4y. The host: a seg's slot without loops. — DONE
+
+The host's request building (`rq_fill`, `mf_snap`) was 179K of the
+engine's 642K on `TUBE_SLOW`. Its slot number, (hdr hi - page 0) * 28 +
+hdr lo / 9, was a loop of adds a page and of subtracts a header: ~430
+cycles a seg, 39K a frame (the Master-only build's `tx_seg` the same).
+`hdr_slot` (bank 6, beside `mf_snap`; both builds): p * 28 = (8 p - p) *
+4, and as hdr lo is 9 i with i < 28, i = (29 lo) >> 8 exactly (one
+quarter-square `QMUL`). `TUBE_SLOW`: the engine 642K -> 613K cycles a
+frame (-4.6%); the 4MHz worst frame 613 -> 594 ms. The Master-only
+regression -0.52% (rebaselined).
+
 ## 4a. Does the second processor's half fit? — not as it stands
 
 `tools/tube_fit.py` counts everything the second processor would hold,
