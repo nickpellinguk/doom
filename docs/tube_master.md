@@ -961,9 +961,11 @@ frame's list: 176 textured pair spans (1,781 bytes), 77 far pair spans
 (822), 33 single-line spans, 121 wall byte columns (1,261 lines), 27
 FILLs (1,750 lines). The textured pair loop (`fp_lp`) is ~71 cycles a
 byte, 127K: the texel's index ((v & $F0) | u >> 4), its read, the odd
-line's FLIP, two stores, u and v stepped, Y on 7. Its steps are
-irreducible without a 256-byte Y table (HAZEL has 122 bytes left) or a
-change to the spans' arithmetic (`tube_dl.draw`, the spec).
+line's FLIP, two stores, u and v stepped, Y on 7. Its steps are near
+irreducible: Y's step (TYA CLC ADC #7 TAY, 8 cycles) cannot become a
+table read, as there is no LDY abs,Y and X holds the texel index (TYA
+TAX LDY tab,X is the same 8); fewer cycles a byte means a change to the
+spans' arithmetic (`tube_dl.draw`, the spec).
 
 Exact cuts, the frames the same (`test_tube_host`, `test_tube_hreq`):
 - a span group's line kind (even, odd, pair) is fixed, so each span
@@ -992,7 +994,8 @@ Master-only build; `TUBE` assembles the differences. Its HAZEL:
 The last was dead on the Tube host: its fill is on the second processor,
 and since H4z its snapshot goes straight from the pool. `MPLANE` is now
 assembled only without `TUBE` (the Tube link has no reference to any of
-it), so 1,120 bytes of HAZEL (BSS, no file) are free there. The
+it), so 1,120 bytes of HAZEL (BSS, no file) are free there. (A Y + 7
+table for the span loops was tried there and dropped: no LDY abs,Y.) The
 Master-only build is unchanged. (Both builds write `build/engine_m.map`;
 it is the last one built.)
 
