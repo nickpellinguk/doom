@@ -1,19 +1,19 @@
-# BON1A0 14x18 tones (wall_art.TCH), space transparent; drawn by hand
+# BON1A0 14x18 tones (wall_art.TCH), space transparent; drawn by hand, solid colours only
      .yy.
      .yy.
      .bb.
-     .4b.
-    .b4bb.
-   .bb4bbb.
-  .bb44bbbb.
- .bb44bbbbBB.
- .b44bbbbbbB.
-.bb44bbbbbbBB.
-.b44bbbbbbbbB.
-.b4bbbbbbbbbB.
-.bbbbbbbbbbBB.
-.bbbbbbbbbBBB.
- .bbbbbbbBBB.
- .BbbbbbBBBB.
-  .BBBBBBBB.
+     .cb.
+    .bcbb.
+   .bbcbbb.
+  .bbccbbbb.
+ .bbccbbbbbb.
+ .bccbbbbbbb.
+.bbccbbbbbbbb.
+.bccbbbbbbbbb.
+.bcbbbbbbbbbb.
+.bbbbbbbbbbbb.
+.bbbbbbbbbbbb.
+ .bbbbbbbbbb.
+ .bbbbbbbbbb.
+  .bbbbbbbb.
    ........

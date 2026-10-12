@@ -1,48 +1,48 @@
-# COLUA0 23x48 tones (wall_art.TCH), space transparent; drawn by hand
+# COLUA0 23x48 tones (wall_art.TCH), space transparent; drawn by hand, solid colours only
          .....
         .ccccc.
        .bbbbbbb.
        .yyyyyyy.
-       .y3www3y.
-       .y3www3y.
-       .y3www3y.
+       .yywwwyy.
+       .yywwwyy.
+       .yywwwyy.
        .yyyyyyy.
        .bbbbbbb.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
-       .c4bbbBB.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
+       .ccbbbbb.
        .ccccccc.
       .bbbbbbbbb.
       .ccccccccc.
      .bbbbbbbbbbb.
      .ccccccccccc.
-    .BBBBBBBBBBBBB.
+    .bbbbbbbbbbbbb.
    .bbbbbbbbbbbbbbb.
   .cccccccccccccccccc.
  .bbbbbbbbbbbbbbbbbbb.

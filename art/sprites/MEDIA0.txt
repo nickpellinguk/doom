@@ -1,8 +1,8 @@
-# MEDIA0 28x19 tones (wall_art.TCH), space transparent; drawn by hand
+# MEDIA0 28x19 tones (wall_art.TCH), space transparent; drawn by hand, solid colours only
    ......................
   .wwwwwwwwwwwwwwwwwwwwww.
  .wwwwwwwwwwwwwwwwwwwwwwww.
-.66666666666666666666666666.
+.cccccccccccccccccccccccccc.
 .wwwwwwwwwwwwrrwwwwwwwwwwww.
 .wwwwwwwwwwwwrrwwwwwwwwwwww.
 .wwwwwwwwwwrrrrrrwwwwwwwwww.
@@ -10,11 +10,11 @@
 .wwwwwwwwwwwwrrwwwwwwwwwwww.
 .wwwwwwwwwwwwrrwwwwwwwwwwww.
 .ww.wwwwwwwwwwwwwwwwwwww.ww.
-.66666666666666666666666666.
+.cccccccccccccccccccccccccc.
 .cc..cccccccccccccccccc..cc.
 .cc..cccccccccccccccccc..cc.
 .cc..cccccccccccccccccc..cc.
 .cc..cccccccccccccccccc..cc.
-.66..666666666666666666..66.
-.BBBBBBBBBBBBBBBBBBBBBBBBBB.
+.cc..cccccccccccccccccc..cc.
+.bbbbbbbbbbbbbbbbbbbbbbbbbb.
  ..........................

@@ -1,16 +1,16 @@
-# BON2A0 16x15 tones (wall_art.TCH), space transparent; drawn by hand
+# BON2A0 16x15 tones (wall_art.TCH), space transparent; drawn by hand, solid colours only
      ......
    ..cccccc..
   .bcccwwcccb.
  .bbccccccccbb.
  .bbbccccccbbb.
 .bbbbccccccbbbb.
-.YYYYYYYYYYYYYY.
+.yyyyyyyyyyyyyy.
 .bbb........bbb.
 .bbbbb.cc.bbbbb.
 .bbbbb.cc.bbbbb.
-.Bbbbb.bb.bbbbB.
-.BBbb..bb..bbBB.
- .BB. .BB. .BB.
- .BB.  ..  .BB.
+.bbbbb.bb.bbbbb.
+.bbbb..bb..bbbb.
+ .bb. .bb. .bb.
+ .bb.  ..  .bb.
   ..        ..

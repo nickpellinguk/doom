@@ -1014,6 +1014,11 @@ A sprite here is drawn like a floor: ONE TEXEL A BYTE COLUMN, read once
 a line pair, the even line the byte and the odd line its FLIP (the
 cross-hatch); a transparent texel is skipped, so there is no masking.
 
+The pickup art uses the eight SOLID tones only (no black / white +
+colour pairs): a hatched tone's checker breaks up at the sizes a pickup
+is seen at, so each sprite is flat colours with black outlines, and the
+FLIP on the odd line is the same byte.
+
 1. *Projection spec* (`sprite_ref.py`): `obj_project`'s maths in Python
    (the vertex pipeline's rotation, the reciprocal, `project_x`,
    `project_y`, the per-kind growth and width ratio), gated against the

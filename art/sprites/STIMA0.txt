@@ -1,8 +1,8 @@
-# STIMA0 14x15 tones (wall_art.TCH), space transparent; drawn by hand
+# STIMA0 14x15 tones (wall_art.TCH), space transparent; drawn by hand, solid colours only
   ..........
  .wwwwwwwwww.
 .wwwwwwwwwwww.
-.666666666666.
+.cccccccccccc.
 .wwwwwwwwwwww.
 .wwwwwrrwwwww.
 .wwwwwrrwwwww.
@@ -11,6 +11,6 @@
 .wwwwwrrwwwww.
 .wwwwwrrwwwww.
 .wwwwwwwwwwww.
-.666666666666.
+.cccccccccccc.
 .cccccccccccc.
  ............

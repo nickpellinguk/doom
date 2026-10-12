@@ -1,18 +1,18 @@
-# ARM1A0 31x17 tones (wall_art.TCH), space transparent; drawn by hand
+# ARM1A0 31x17 tones (wall_art.TCH), space transparent; drawn by hand, solid colours only
    .......           .......
- ..2222222..       ..2222222..
-.222222222222.....222222222222.
-.2222ggggggg2G...G2ggggggg2222.
-.2gggggggggggG. .Gggggggggggg2.
-.ggggGgggggggg...ggggggggGgggg.
- ...ggg22ggggggggggggg22ggg...
-    .gg22ggggggGgggggg22gg.
-    .gg22ggggggGgggggg22gg.
-    .ggg2ggggggGgggggg2ggg.
-    .ggggggggggGgggggggggg.
-    .GgggggggggGgggggggggG.
-    .GGggggggggGggggggggGG.
-    .GGGgggggGGGGGgggggGGG.
-    ..GGGGGGGGGGGGGGGGGGG..
+ ..wwwwwww..       ..wwwwwww..
+.wwwwwwwwwwww.....wwwwwwwwwwww.
+.wwwwgggggggwg...gwgggggggwwww.
+.wgggggggggggg. .ggggggggggggw.
+.ggggggggggggg...ggggggggggggg.
+ ...gggwwgggggggggggggwwggg...
+    .ggwwgggggggggggggwwgg.
+    .ggwwgggggggggggggwwgg.
+    .gggwgggggggggggggwggg.
+    .ggggggggggggggggggggg.
+    .ggggggggggggggggggggg.
+    .ggggggggggggggggggggg.
+    .ggggggggggggggggggggg.
+    ..ggggggggggggggggggg..
      .....................
 
